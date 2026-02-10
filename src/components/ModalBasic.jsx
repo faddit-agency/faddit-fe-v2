@@ -12,7 +12,7 @@ function ModalBasic({ children, id, title, modalOpen, setModalOpen }) {
     };
     document.addEventListener('click', clickHandler);
     return () => document.removeEventListener('click', clickHandler);
-  });
+  }, [modalOpen]);
 
   // close if the esc key is pressed
   useEffect(() => {
@@ -22,8 +22,7 @@ function ModalBasic({ children, id, title, modalOpen, setModalOpen }) {
     };
     document.addEventListener('keydown', keyHandler);
     return () => document.removeEventListener('keydown', keyHandler);
-  });
-
+  }, [modalOpen]);
   return (
     <>
       {/* Modal backdrop */}
@@ -54,10 +53,10 @@ function ModalBasic({ children, id, title, modalOpen, setModalOpen }) {
       >
         <div
           ref={modalContent}
-          className='bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-auto max-w-lg w-full max-h-full'
+          className='bg-white dark:bg-gray-800 rounded-lg shadow-lg max-w-lg w-full max-h-full flex flex-col'
         >
-          {/* Modal header */}
-          <div className='px-5 py-3 border-b border-gray-200 dark:border-gray-700/60'>
+          {/* Modal header - 고정 */}
+          <div className='px-5 py-3 border-b border-gray-200 dark:border-gray-700/60 flex-shrink-0'>
             <div className='flex justify-between items-center'>
               <div className='font-semibold text-gray-800 dark:text-gray-100'>{title}</div>
               <button
@@ -74,7 +73,8 @@ function ModalBasic({ children, id, title, modalOpen, setModalOpen }) {
               </button>
             </div>
           </div>
-          {children}
+          {/* 스크롤 가능한 컨텐츠 영역 */}
+          <div className='overflow-y-auto flex-1'>{children}</div>
         </div>
       </Transition>
     </>
