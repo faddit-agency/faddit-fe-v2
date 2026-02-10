@@ -1,26 +1,40 @@
-# Mosaic React
+# Faddit FE v2
 
-React landing page template designed by Cruip.
+This project is a React application built with Vite and Tailwind CSS.
 
-## Project setup
-```
-npm install
-```
+## Prerequisites
 
-### Compiles and hot-reloads for development
-```
-npm run dev
-```
+- Node.js (v18 or higher recommended)
+- pnpm (v9 or higher recommended)
 
-### Compiles and minifies for production
-```
-npm run build
-```
+## Setup
 
-### Customize configuration
-See [Configuration Reference](https://vitejs.dev/guide/).
+1.  **Install dependencies:**
 
-## Support notes
-We are shipping our templates with a very basic React configuration to let you quickly get into the development process, but we don't discourage you from using any other configuration or framework built on the top of React. So, please note that any request dealing with React (e.g. extra features, customisations, et cetera) is to be considered out of the support scope.
+    ```bash
+    pnpm install
+    # or if you don't have pnpm installed:
+    # npm install -g pnpm && pnpm install
+    ```
 
-For more information about what support covers, please see our (FAQs)[https://cruip.com/faq/].
+2.  **Start development server:**
+
+    ```bash
+    pnpm dev
+    ```
+
+## Scripts
+
+- `pnpm dev`: Starts the development server.
+- `pnpm build`: Builds the application for production.
+- `pnpm preview`: Previews the production build locally.
+- `pnpm lint`: Runs ESLint to check for code quality issues.
+- `pnpm format`: Runs Prettier to format code.
+
+## Tech Stack
+
+- [React](https://react.dev/)
+- [Vite](https://vitejs.dev/)
+- [Tailwind CSS](https://tailwindcss.com/)
+- [ESLint](https://eslint.org/)
+- [Prettier](https://prettier.io/)

@@ -6,7 +6,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "host": "vite --host"
+    "host": "vite --host",
+    "lint": "eslint .",
+    "format": "prettier --write ."
   },
   "dependencies": {
     "@radix-ui/react-popover": "^1.1.5",
