@@ -127,3 +127,6 @@ dist
 *.njsproj
 *.sln
 *.sw?
+
+# Cursor
+.cursor
