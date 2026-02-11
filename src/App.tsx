@@ -72,7 +72,10 @@ import IconsPage from './pages/component/IconsPage';
 // Faddit Pages
 import Login from './pages/faddit/auth/Login';
 import FadditSignup from './pages/faddit/auth/Signup';
+import FadditMain from './pages/faddit/Main';
+import FadditHome from './pages/faddit/Home';
 import AuthLayout from './layouts/AuthLayout';
+import MainLayout from './layouts/MainLayout';
 
 function App() {
   const location = useLocation();
@@ -157,6 +160,10 @@ function App() {
         <Route element={<AuthLayout />}>
           <Route path='/faddit/sign/in' element={<Login />} />
           <Route path='/faddit/sign/up' element={<FadditSignup />} />
+        </Route>
+        <Route element={<MainLayout />}>
+          <Route path='/faddit/home' element={<FadditHome />} />
+          <Route path='/faddit/main' element={<FadditMain />} />
         </Route>
 
         <Route path='*' element={<PageNotFound />} />

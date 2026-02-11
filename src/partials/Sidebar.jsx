@@ -60,7 +60,7 @@ function Sidebar({ sidebarOpen, setSidebarOpen, variant = 'default' }) {
       <div
         id='sidebar'
         ref={sidebar}
-        className={`flex lg:flex! flex-col absolute z-40 left-0 top-0 lg:static lg:left-auto lg:top-auto lg:translate-x-0 h-[100dvh] overflow-y-scroll lg:overflow-y-auto no-scrollbar w-64 lg:w-20 lg:sidebar-expanded:!w-64 2xl:w-64! shrink-0 bg-white dark:bg-gray-800 p-4 transition-all duration-200 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-64'} ${variant === 'v2' ? 'border-r border-gray-200 dark:border-gray-700/60' : 'rounded-r-2xl shadow-xs'}`}
+        className={`flex lg:flex! flex-col absolute z-40 left-0 top-0 lg:static lg:left-auto lg:top-auto lg:translate-x-0 h-[100dvh] overflow-y-scroll lg:overflow-y-auto no-scrollbar w-64 lg:w-20 lg:sidebar-expanded:!w-64 2xl:w-64! shrink-0 bg-gray-100 dark:bg-gray-800 p-4 transition-all duration-200 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-64'} ${variant === 'v2' ? 'border-r border-gray-200 dark:border-gray-700/60' : 'rounded-r-2xl shadow-xs'}`}
       >
         {/* Sidebar header */}
         <div className='flex justify-between mb-10 pr-3 sm:px-2'>
@@ -108,6 +108,35 @@ function Sidebar({ sidebarOpen, setSidebarOpen, variant = 'default' }) {
               <span className='lg:hidden lg:sidebar-expanded:block 2xl:block'>Pages</span>
             </h3>
             <ul className='mt-3'>
+              {/* Home */}
+              <li
+                className={`pl-4 pr-3 py-2 rounded-lg mb-0.5 last:mb-0 bg-linear-to-r ${(pathname === '/faddit/home' || pathname === '/faddit/main') && 'from-violet-500/[0.12] dark:from-violet-500/[0.24] to-violet-500/[0.04]'}`}
+              >
+                <NavLink
+                  end
+                  to='/faddit/home'
+                  className={`block text-gray-800 dark:text-gray-100 truncate transition duration-150 ${
+                    pathname === '/faddit/home' || pathname === '/faddit/main'
+                      ? ''
+                      : 'hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  <div className='flex items-center'>
+                    <svg
+                      className={`shrink-0 fill-current ${pathname === '/faddit/home' || pathname === '/faddit/main' ? 'text-violet-500' : 'text-gray-400 dark:text-gray-500'}`}
+                      xmlns='http://www.w3.org/2000/svg'
+                      width='16'
+                      height='16'
+                      viewBox='0 0 24 24'
+                    >
+                      <path d='M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z' />
+                    </svg>
+                    <span className='text-sm font-medium ml-4 lg:opacity-0 lg:sidebar-expanded:opacity-100 2xl:opacity-100 duration-200'>
+                      Home
+                    </span>
+                  </div>
+                </NavLink>
+              </li>
               {/* Dashboard */}
               <SidebarLinkGroup
                 activecondition={pathname === '/' || pathname.includes('dashboard')}
