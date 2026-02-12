@@ -1,12 +1,6 @@
 import React from 'react';
 import FilterButton from '../../components/DropdownFilter';
 import Datepicker from '../../components/Datepicker';
-import ShopCards01 from '../../partials/ecommerce/ShopCards01';
-import ShopCards02 from '../../partials/ecommerce/ShopCards02';
-import ShopCards03 from '../../partials/ecommerce/ShopCards03';
-import ShopCards04 from '../../partials/ecommerce/ShopCards04';
-import ShopCards05 from '../../partials/ecommerce/ShopCards05';
-import ShopCards06 from '../../partials/ecommerce/ShopCards06';
 import DriveItemCard from '../../components/DriveItemCard';
 import AppImage01 from '../../images/applications-image-01.jpg';
 
