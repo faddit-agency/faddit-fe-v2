@@ -77,6 +77,10 @@ import FadditHome from './pages/faddit/Home';
 import AuthLayout from './layouts/AuthLayout';
 import MainLayout from './layouts/MainLayout';
 
+// Faddit Drive Pages From Jin
+import FadditDrive from './pages/faddit/drive/Drive';
+import DriveLayout from './layouts/DriveLayout';
+
 function App() {
   const location = useLocation();
 
@@ -164,6 +168,10 @@ function App() {
         <Route element={<MainLayout />}>
           <Route path='/faddit/home' element={<FadditHome />} />
           <Route path='/faddit/main' element={<FadditMain />} />
+        </Route>
+
+        <Route element={<DriveLayout />}>
+          <Route path='/faddit/drive' element={<FadditDrive />} />
         </Route>
 
         <Route path='*' element={<PageNotFound />} />
