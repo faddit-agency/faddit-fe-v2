@@ -1,10 +1,11 @@
 import React, { useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useForm, SubmitHandler } from 'react-hook-form';
 import Img from '../../../components/atoms/Img';
 import GoogleLogo from '../../../images/icons/google-logo.svg';
 import KakaoLogo from '../../../images/icons/kakao-logo.svg';
 import NaverLogo from '../../../images/icons/naver-logo.svg';
+import { signIn } from '../../../lib/api/authApi';
 
 interface LoginFormInputs {
   email: string;
@@ -17,8 +18,10 @@ const Login: React.FC = () => {
     register,
     handleSubmit,
     setValue,
+    setError,
     formState: { errors },
   } = useForm<LoginFormInputs>();
+  const navigate = useNavigate();
 
   useEffect(() => {
     const savedEmail = localStorage.getItem('savedEmail');
@@ -28,15 +31,31 @@ const Login: React.FC = () => {
     }
   }, [setValue]);
 
-  const onSubmit: SubmitHandler<LoginFormInputs> = (data) => {
-    console.log('Form Data:', data);
+  const onSubmit: SubmitHandler<LoginFormInputs> = async (data) => {
+    if (!data.password) {
+      setError('password', { message: '비밀번호를 입력해주세요.' });
+      return;
+    }
+
+    try {
+      await signIn({
+        email: data.email,
+        password: data.password,
+      });
+    } catch (error) {
+      setError('password', {
+        message: '로그인에 실패했습니다. 이메일 또는 비밀번호를 확인해주세요.',
+      });
+      return;
+    }
 
     if (data.saveId) {
       localStorage.setItem('savedEmail', data.email);
     } else {
       localStorage.removeItem('savedEmail');
     }
-    // Add login logic here
+
+    navigate('/faddit/drive');
   };
 
   return (
@@ -110,7 +129,7 @@ const Login: React.FC = () => {
           </div>
           <Link
             className='text-sm text-gray-600 underline hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
-            to='/reset-password'
+            to='/sign/reset-password'
           >
             비밀번호를 잊으셨나요?
           </Link>

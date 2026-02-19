@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useForm, SubmitHandler } from 'react-hook-form';
 import ModalFooterBasic from '../../../components/ModalFooterBasic';
 import ModalAction from '../../../components/ModalAction';
 import { AGREEMENT_OPTIONS } from '../../../constants/agreements';
+import { checkVerificationEmail, requestEmailVerification, signUp } from '../../../lib/api/authApi';
 
 interface SignupFormInputs {
   name: string;
@@ -17,6 +18,7 @@ interface SignupFormInputs {
 }
 
 const Signup: React.FC = () => {
+  const navigate = useNavigate();
   const {
     register,
     handleSubmit,
@@ -24,6 +26,7 @@ const Signup: React.FC = () => {
     setValue,
     trigger,
     setError,
+    clearErrors,
     formState: { errors },
   } = useForm<SignupFormInputs>({
     mode: 'onChange',
@@ -72,13 +75,67 @@ const Signup: React.FC = () => {
   }, [isTimerActive, timeLeft]);
 
   useEffect(() => {
-    if (verificationCodeValue === '123456') {
-      setIsEmailVerified(true);
-      setIsTimerActive(false);
-    } else {
+    if (
+      !isVerificationVisible ||
+      !verificationCodeValue ||
+      verificationCodeValue.length < 6 ||
+      !emailValue
+    ) {
       setIsEmailVerified(false);
+      clearErrors('verificationCode');
+      return;
     }
-  }, [verificationCodeValue]);
+
+    if (!/^\d+$/.test(verificationCodeValue)) {
+      setIsEmailVerified(false);
+      setError('verificationCode', { message: '인증번호는 숫자만 입력해주세요.' });
+      return;
+    }
+
+    let cancelled = false;
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const verification = await checkVerificationEmail({
+          email: emailValue,
+          code: Number(verificationCodeValue),
+        });
+
+        if (cancelled) {
+          return;
+        }
+
+        const isVerified = Boolean(
+          verification?.verified ??
+          verification?.isVerified ??
+          verification?.is_verified ??
+          verification?.success,
+        );
+
+        setIsEmailVerified(isVerified);
+        if (isVerified) {
+          clearErrors('verificationCode');
+        } else {
+          setError('verificationCode', { message: '인증번호가 올바르지 않습니다.' });
+        }
+        if (isVerified) {
+          setIsTimerActive(false);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setIsEmailVerified(false);
+          setError('verificationCode', {
+            message: '인증번호 확인에 실패했습니다. 잠시 후 다시 시도해주세요.',
+          });
+        }
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [isVerificationVisible, verificationCodeValue, emailValue, clearErrors, setError, trigger]);
 
   useEffect(() => {
     if (isEmailVerified) {
@@ -124,21 +181,37 @@ const Signup: React.FC = () => {
       return;
     }
 
-    setIsVerificationVisible(true);
-    setTimeLeft(180);
-    setIsTimerActive(true);
-    setModalOpen(true);
-    setValue('verificationCode', '');
-    setIsEmailVerified(false);
+    try {
+      await requestEmailVerification(emailValue);
+      setIsVerificationVisible(true);
+      setTimeLeft(180);
+      setIsTimerActive(true);
+      setModalOpen(true);
+      setValue('verificationCode', '');
+      setIsEmailVerified(false);
+      clearErrors('verificationCode');
+    } catch (error) {
+      setError('email', { message: '인증 메일 발송에 실패했습니다. 잠시 후 다시 시도해주세요.' });
+    }
   };
 
-  const handleResend = (e: React.MouseEvent) => {
+  const handleResend = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    setTimeLeft(180);
-    setIsTimerActive(true);
-    setModalOpen(true);
-    setValue('verificationCode', '');
-    setIsEmailVerified(false);
+    if (!emailValue) {
+      return;
+    }
+
+    try {
+      await requestEmailVerification(emailValue);
+      setTimeLeft(180);
+      setIsTimerActive(true);
+      setModalOpen(true);
+      setValue('verificationCode', '');
+      setIsEmailVerified(false);
+      clearErrors('verificationCode');
+    } catch (error) {
+      setError('email', { message: '인증 메일 재전송에 실패했습니다. 잠시 후 다시 시도해주세요.' });
+    }
   };
 
   const formatTime = (seconds: number) => {
@@ -160,15 +233,20 @@ const Signup: React.FC = () => {
     }
   };
 
-  const onSubmit: SubmitHandler<SignupFormInputs> = (data) => {
-    console.log({
-      name: data.name,
-      email: data.email,
-      password: data.password,
-      serviceAgreement: data.serviceAgreement,
-      userAgreement: data.userAgreement,
-      marketingAgreement: data.marketingAgreement,
-    });
+  const onSubmit: SubmitHandler<SignupFormInputs> = async (data) => {
+    try {
+      await signUp({
+        name: data.name,
+        email: data.email,
+        password: data.password,
+        serviceAgreement: data.serviceAgreement,
+        userAgreement: data.userAgreement,
+        marketingAgreement: data.marketingAgreement,
+      });
+      navigate('/faddit/sign/in');
+    } catch (error) {
+      setError('email', { message: '회원가입에 실패했습니다. 입력값을 확인해주세요.' });
+    }
   };
 
   const onError = (errors: any) => {
@@ -246,7 +324,7 @@ const Signup: React.FC = () => {
                       placeholder='인증번호 입력'
                       {...register('verificationCode', {
                         required: '인증번호를 입력해주세요.',
-                        validate: (value) => value === '123456' || '인증번호가 올바르지 않습니다.',
+                        validate: () => isEmailVerified || '인증번호가 올바르지 않습니다.',
                       })}
                     />
                     {!isEmailVerified && (
