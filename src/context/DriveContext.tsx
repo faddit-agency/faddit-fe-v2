@@ -13,6 +13,14 @@ export interface DriveItem {
   size?: string;
 }
 
+export interface DriveFolder {
+  id: string;
+  name: string;
+  shared: boolean;
+  updatedAt: string;
+  updatedBy: string;
+}
+
 export interface SidebarItem {
   id: string;
   type: 'folder' | 'file';
@@ -21,13 +29,26 @@ export interface SidebarItem {
   isOpen?: boolean; // For folders
 }
 
+export interface ActiveDriveDragItem {
+  id: string;
+  type: 'drive-item' | 'drive-folder';
+  title: string;
+  subtitle?: string;
+  imageSrc?: string;
+  imageAlt?: string;
+  shared?: boolean;
+  count?: number;
+}
+
 interface DriveContextType {
   items: DriveItem[];
   setItems: React.Dispatch<React.SetStateAction<DriveItem[]>>;
-  moveItemToFolder: (itemId: string, folderId: string) => void;
+  driveFolders: DriveFolder[];
+  setDriveFolders: React.Dispatch<React.SetStateAction<DriveFolder[]>>;
+  moveItemToFolder: (item: SidebarItem, folderId: string) => boolean;
   moveSidebarItem: (itemId: string, targetId: string) => void;
-  activeDragItem: DriveItem | null;
-  setActiveDragItem: (item: DriveItem | null) => void;
+  activeDragItem: ActiveDriveDragItem | null;
+  setActiveDragItem: (item: ActiveDriveDragItem | null) => void;
   workspaces: SidebarItem[];
   setWorkspaces: React.Dispatch<React.SetStateAction<SidebarItem[]>>;
   favorites: SidebarItem[];
@@ -59,6 +80,37 @@ const initialFavorites: SidebarItem[] = Array.from({ length: 3 }).map((_, i) => 
   name: `좋아하는 폴더 ${i + 1}`,
   children: [{ id: `file-favorite-${i}-1`, type: 'file', name: '작지 파일 1' }],
 }));
+
+const initialDriveFolders: DriveFolder[] = [
+  {
+    id: 'drive-folder-1',
+    name: '2026 faddit',
+    shared: false,
+    updatedAt: '2026. 2. 8.',
+    updatedBy: '김한재',
+  },
+  {
+    id: 'drive-folder-2',
+    name: 'files',
+    shared: false,
+    updatedAt: '2025. 3. 30.',
+    updatedBy: '최성락',
+  },
+  {
+    id: 'drive-folder-3',
+    name: 'Planning',
+    shared: false,
+    updatedAt: '2025. 3. 30.',
+    updatedBy: '최성락',
+  },
+  {
+    id: 'drive-folder-4',
+    name: 'Templates',
+    shared: true,
+    updatedAt: '2025. 8. 11.',
+    updatedBy: '최성락',
+  },
+];
 
 const SECTION_WORKSPACE_ID = 'section-workspace';
 const SECTION_FAVORITE_ID = 'section-favorite';
@@ -168,13 +220,25 @@ export const DriveProvider = ({
   initialItems?: DriveItem[];
 }) => {
   const [items, setItems] = useState<DriveItem[]>(initialItems || []);
-  const [activeDragItem, setActiveDragItem] = useState<DriveItem | null>(null);
+  const [driveFolders, setDriveFolders] = useState<DriveFolder[]>(initialDriveFolders);
+  const [activeDragItem, setActiveDragItem] = useState<ActiveDriveDragItem | null>(null);
   const [workspaces, setWorkspaces] = useState<SidebarItem[]>(initialWorkspaces);
   const [favorites, setFavorites] = useState<SidebarItem[]>(initialFavorites);
 
-  const moveItemToFolder = (itemId: string, folderId: string) => {
-    console.log(`Moving item ${itemId} to folder ${folderId}`);
-    setItems((prevItems) => prevItems.filter((item) => item.id !== itemId));
+  const moveItemToFolder = (item: SidebarItem, folderId: string) => {
+    const workspaceInsert = insertItemIntoFolder(workspaces, folderId, item);
+    if (workspaceInsert.inserted) {
+      setWorkspaces(workspaceInsert.nextTree);
+      return true;
+    }
+
+    const favoriteInsert = insertItemIntoFolder(favorites, folderId, item);
+    if (favoriteInsert.inserted) {
+      setFavorites(favoriteInsert.nextTree);
+      return true;
+    }
+
+    return false;
   };
 
   const moveSidebarItem = (itemId: string, targetId: string) => {
@@ -251,6 +315,8 @@ export const DriveProvider = ({
       value={{
         items,
         setItems,
+        driveFolders,
+        setDriveFolders,
         moveItemToFolder,
         moveSidebarItem,
         activeDragItem,

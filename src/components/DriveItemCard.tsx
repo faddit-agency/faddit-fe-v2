@@ -36,7 +36,11 @@ export interface DriveItemCardProps {
   /** 그리드 컬럼 클래스 (기본: col-span-full sm:col-span-6 xl:col-span-3) */
   className?: string;
   isSelected?: boolean;
+  isActive?: boolean;
   onSelectChange?: (id: string, checked: boolean) => void;
+  onCardClick?: (id: string, event: React.MouseEvent<HTMLDivElement>) => void;
+  dragSelectionIds?: string[];
+  dragSelectionEntries?: Array<{ id: string; type: 'file' | 'folder'; name: string }>;
 }
 
 const PencilIcon = ({ className }: { className?: string }) => (
@@ -350,7 +354,11 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
   children,
   className = 'col-span-full sm:col-span-6 xl:col-span-3',
   isSelected = false,
+  isActive = false,
   onSelectChange,
+  onCardClick,
+  dragSelectionIds,
+  dragSelectionEntries,
 }) => {
   const idPrefix = useId();
   const checkboxId = id || title;
@@ -398,12 +406,14 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
       title,
       subtitle,
       badge,
+      selectedIds: dragSelectionIds,
+      selectedEntries: dragSelectionEntries,
     },
   });
 
   const style = isDragging
     ? {
-        opacity: 0,
+        opacity: 0.45,
       }
     : transform
       ? {
@@ -499,12 +509,22 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
     <div
       ref={setNodeRef}
       style={style}
+      data-selectable-item='true'
+      data-item-id={id}
       {...listeners}
       {...attributes}
+      onClick={(event) => {
+        if (!id || !onCardClick) {
+          return;
+        }
+        onCardClick(id, event);
+      }}
       className={`group ${className} cursor-pointer touch-none overflow-hidden rounded-xl border bg-white shadow-xs transition-all dark:bg-gray-800 ${
         isSelected
           ? 'border-violet-300 shadow-lg shadow-violet-500/10 dark:border-violet-500/60'
-          : 'border-gray-200 hover:border-violet-200 hover:shadow-lg hover:shadow-violet-500/10 dark:border-gray-700/60 dark:hover:border-violet-500/50'
+          : isActive
+            ? 'border-violet-300 shadow-md shadow-violet-500/10 dark:border-violet-500/60'
+            : 'border-gray-200 hover:border-violet-200 hover:shadow-lg hover:shadow-violet-500/10 dark:border-gray-700/60 dark:hover:border-violet-500/50'
       }`}
     >
       <div className='flex h-full flex-col'>

@@ -30,7 +30,7 @@
 .btn-lg,
 .btn-sm,
 .btn-xs {
-  @apply font-medium text-sm inline-flex items-center justify-center border border-transparent rounded-lg leading-5 shadow-xs transition;
+  @apply inline-flex items-center justify-center rounded-lg border border-transparent text-sm leading-5 font-medium shadow-xs transition;
 }
 
 .btn {
@@ -63,7 +63,7 @@ input[type='search']::-webkit-search-results-decoration {
 .form-select,
 .form-checkbox,
 .form-radio {
-  @apply bg-white dark:bg-gray-900/30 border focus:ring-0 focus:ring-offset-0 dark:disabled:bg-gray-700/30 dark:disabled:border-gray-700 dark:disabled:hover:border-gray-700;
+  @apply border bg-white focus:ring-0 focus:ring-offset-0 dark:bg-gray-900/30 dark:disabled:border-gray-700 dark:disabled:bg-gray-700/30 dark:disabled:hover:border-gray-700;
 }
 
 .form-checkbox {
@@ -74,7 +74,7 @@ input[type='search']::-webkit-search-results-decoration {
 .form-textarea,
 .form-multiselect,
 .form-select {
-  @apply text-sm text-gray-800 dark:text-gray-100 leading-5 py-2 px-3 border-gray-200 hover:border-gray-300 focus:border-gray-300 dark:border-gray-700/60 dark:hover:border-gray-600 dark:focus:border-gray-600 shadow-xs rounded-lg;
+  @apply rounded-lg border-gray-200 px-3 py-2 text-sm leading-5 text-gray-800 shadow-xs hover:border-gray-300 focus:border-gray-300 dark:border-gray-700/60 dark:text-gray-100 dark:hover:border-gray-600 dark:focus:border-gray-600;
 }
 
 .form-input,
@@ -88,7 +88,7 @@ input[type='search']::-webkit-search-results-decoration {
 
 .form-checkbox,
 .form-radio {
-  @apply text-violet-500 checked:bg-violet-500 checked:border-transparent border border-gray-300 dark:border-gray-700/60 dark:checked:border-transparent focus-visible:not-checked:ring-2 focus-visible:not-checked:ring-violet-500/50;
+  @apply border border-gray-300 text-violet-500 checked:border-transparent checked:bg-violet-500 focus-visible:not-checked:ring-2 focus-visible:not-checked:ring-violet-500/50 dark:border-gray-700/60 dark:checked:border-transparent;
 }
 
 /* Switch element */
@@ -98,7 +98,7 @@ input[type='search']::-webkit-search-results-decoration {
 }
 
 .form-switch label {
-  @apply block overflow-hidden cursor-pointer h-6 rounded-full;
+  @apply block h-6 cursor-pointer overflow-hidden rounded-full;
 }
 
 .form-switch label > span:first-child {
@@ -124,7 +124,7 @@ input[type='search']::-webkit-search-results-decoration {
 }
 
 .form-switch input[type='checkbox']:disabled + label {
-  @apply cursor-not-allowed bg-gray-100 dark:bg-gray-700/20 border border-gray-200 dark:border-gray-700/60;
+  @apply cursor-not-allowed border border-gray-200 bg-gray-100 dark:border-gray-700/60 dark:bg-gray-700/20;
 }
 
 .form-switch input[type='checkbox']:disabled + label > span:first-child {
@@ -139,4 +139,91 @@ input[type='search']::-webkit-search-results-decoration {
 .no-scrollbar {
   -ms-overflow-style: none; /* IE and Edge */
   scrollbar-width: none; /* Firefox */
+}
+
+/* Transparent scrollbar for all browsers */
+.transparent-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+  background-color: transparent;
+}
+
+.transparent-scrollbar::-webkit-scrollbar-track {
+  background-color: transparent;
+  border: none;
+}
+
+.transparent-scrollbar::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border: none;
+}
+
+.transparent-scrollbar::-webkit-scrollbar-corner {
+  background-color: transparent;
+}
+
+.transparent-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+/* Custom scrollbar styles */
+.scrollbar-custom::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.scrollbar-custom::-webkit-scrollbar-track {
+  background-color: transparent;
+  border: none;
+}
+
+.scrollbar-custom::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.scrollbar-custom::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.3);
+}
+
+.dark .scrollbar-custom::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.dark .scrollbar-custom::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.3);
+}
+
+.scrollbar-drive::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.scrollbar-drive::-webkit-scrollbar-track {
+  background-color: transparent;
+  border: none;
+}
+
+.scrollbar-drive::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.22);
+  border-radius: 4px;
+  border: none;
+}
+
+.scrollbar-drive::-webkit-scrollbar-corner {
+  background-color: transparent;
+}
+
+.scrollbar-drive {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.22) transparent;
+}
+
+.dark .scrollbar-drive::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.24);
+}
+
+.dark .scrollbar-drive {
+  scrollbar-color: rgba(255, 255, 255, 0.24) transparent;
 }

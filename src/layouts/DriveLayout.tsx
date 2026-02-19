@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom';
 import {
   DndContext,
   DragOverlay,
+  Modifier,
   useSensor,
   useSensors,
   MouseSensor,
@@ -13,8 +14,48 @@ import {
 } from '@dnd-kit/core';
 import Drivebar from '../partials/Drivebar';
 import Header from '../partials/Header';
-import { DriveProvider, useDrive, DriveItem } from '../context/DriveContext';
+import { DriveProvider, useDrive } from '../context/DriveContext';
 import DriveItemCard from '../components/DriveItemCard';
+
+const getPointerCoordinates = (event: Event | null) => {
+  if (!event) {
+    return null;
+  }
+
+  if (event instanceof MouseEvent) {
+    return {
+      x: event.clientX,
+      y: event.clientY,
+    };
+  }
+
+  if (event instanceof TouchEvent) {
+    const touch = event.touches[0] || event.changedTouches[0];
+    if (!touch) {
+      return null;
+    }
+
+    return {
+      x: touch.clientX,
+      y: touch.clientY,
+    };
+  }
+
+  return null;
+};
+
+const cursorTopLeftModifier: Modifier = ({ transform, activeNodeRect, activatorEvent }) => {
+  const coordinates = getPointerCoordinates(activatorEvent);
+  if (!coordinates || !activeNodeRect) {
+    return transform;
+  }
+
+  return {
+    ...transform,
+    x: transform.x + (coordinates.x - activeNodeRect.left),
+    y: transform.y + (coordinates.y - activeNodeRect.top),
+  };
+};
 
 // Inner component to use the context
 const DriveLayoutContent: React.FC = () => {
@@ -26,6 +67,8 @@ const DriveLayoutContent: React.FC = () => {
     moveSidebarItem,
     items,
     setItems,
+    driveFolders,
+    setDriveFolders,
     addFileToSection,
   } = useDrive();
 
@@ -46,14 +89,51 @@ const DriveLayoutContent: React.FC = () => {
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
     const activeType = active.data.current?.type;
-    if (activeType !== 'drive-item') {
-      setActiveDragItem(null);
+    const selectedEntries =
+      (active.data.current?.selectedEntries as
+        | Array<{ id: string; type: 'file' | 'folder'; name: string }>
+        | undefined) || [];
+
+    if (selectedEntries.length > 1) {
+      setActiveDragItem({
+        id: active.id.toString(),
+        type: 'drive-item',
+        title: `${selectedEntries.length}개 항목`,
+        subtitle: '선택됨',
+        count: selectedEntries.length,
+      });
       return;
     }
 
-    const item = items.find((i) => i.id === active.id);
-    if (item) {
-      setActiveDragItem(item);
+    if (activeType === 'drive-item') {
+      const item = items.find((i) => i.id === active.id);
+      if (item) {
+        setActiveDragItem({
+          id: item.id,
+          type: 'drive-item',
+          imageSrc: item.imageSrc,
+          imageAlt: item.imageAlt,
+          title: item.title,
+          subtitle: item.subtitle,
+        });
+        return;
+      }
+    }
+
+    if (activeType === 'drive-folder') {
+      setActiveDragItem({
+        id: active.id.toString(),
+        type: 'drive-folder',
+        title: String(active.data.current?.title || 'Folder'),
+        subtitle: String(active.data.current?.subtitle || '폴더'),
+        shared: Boolean(active.data.current?.shared),
+      });
+      return;
+    }
+
+    if (activeType !== 'drive-item' && activeType !== 'drive-folder') {
+      setActiveDragItem(null);
+      return;
     }
   };
 
@@ -76,30 +156,59 @@ const DriveLayoutContent: React.FC = () => {
       return;
     }
 
-    if (over && active.id !== over.id && activeType === 'drive-item') {
-      const activeItem = items.find((i) => i.id === active.id);
+    if (
+      over &&
+      active.id !== over.id &&
+      (activeType === 'drive-item' || activeType === 'drive-folder')
+    ) {
+      const selectedEntries =
+        (active.data.current?.selectedEntries as
+          | Array<{ id: string; type: 'file' | 'folder'; name: string }>
+          | undefined) || [];
 
-      if (over.id === 'section-workspace' && activeItem) {
-        // Drop on Workspace Section
-        addFileToSection('workspace', {
-          id: activeItem.id,
-          type: 'file',
-          name: activeItem.title,
+      const entries =
+        selectedEntries.length > 0
+          ? selectedEntries
+          : [
+              {
+                id: active.id.toString(),
+                type: activeType === 'drive-folder' ? ('folder' as const) : ('file' as const),
+                name: String(active.data.current?.title || ''),
+              },
+            ];
+
+      const targetId = over.id.toString();
+      const movedIds = new Set<string>();
+
+      if (targetId === 'section-workspace' || targetId === 'section-favorite') {
+        const section = targetId === 'section-workspace' ? 'workspace' : 'favorite';
+        entries.forEach((entry) => {
+          addFileToSection(section, {
+            id: entry.id,
+            type: entry.type,
+            name: entry.name,
+          });
+          movedIds.add(entry.id);
         });
-        // Remove from main list
-        setItems((prev) => prev.filter((i) => i.id !== active.id));
-      } else if (over.id === 'section-favorite' && activeItem) {
-        // Drop on Favorites Section
-        addFileToSection('favorite', {
-          id: activeItem.id,
-          type: 'file',
-          name: activeItem.title,
-        });
-        // Remove from main list
-        setItems((prev) => prev.filter((i) => i.id !== active.id));
       } else {
-        // Drop on a folder (existing logic)
-        moveItemToFolder(active.id.toString(), over.id.toString());
+        entries.forEach((entry) => {
+          const moved = moveItemToFolder(
+            {
+              id: entry.id,
+              type: entry.type,
+              name: entry.name,
+            },
+            targetId,
+          );
+          if (moved) {
+            movedIds.add(entry.id);
+          }
+        });
+      }
+
+      if (movedIds.size > 0) {
+        setItems((prev) => prev.filter((item) => !movedIds.has(item.id)));
+        setDriveFolders((prev) => prev.filter((folder) => !movedIds.has(folder.id)));
       }
     }
 
@@ -116,7 +225,7 @@ const DriveLayoutContent: React.FC = () => {
       <div className='flex h-[100dvh] overflow-hidden'>
         <Drivebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
 
-        <div className='relative flex flex-1 flex-col overflow-x-hidden overflow-y-auto'>
+        <div className='relative flex flex-1 flex-col overflow-hidden'>
           <Header sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
 
           <main className='grow'>
@@ -124,17 +233,53 @@ const DriveLayoutContent: React.FC = () => {
           </main>
         </div>
       </div>
-      <DragOverlay>
+      <DragOverlay modifiers={[cursorTopLeftModifier]}>
         {activeDragItem ? (
           <div className='pointer-events-none w-[200px] rounded-xl border-2 border-violet-500 bg-white opacity-90 shadow-2xl dark:bg-gray-800'>
             <div className='flex items-center p-2'>
-              <div className='h-10 w-10 shrink-0 overflow-hidden rounded-md bg-gray-200'>
-                <img
-                  src={activeDragItem.imageSrc}
-                  alt={activeDragItem.imageAlt}
-                  className='h-full w-full object-cover'
-                />
-              </div>
+              {activeDragItem.type === 'drive-folder' ? (
+                <div className='flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-gray-100 dark:bg-gray-700'>
+                  {activeDragItem.shared ? (
+                    <svg
+                      className='h-5 w-5 fill-gray-600 dark:fill-gray-200'
+                      viewBox='0 0 20 20'
+                      aria-hidden='true'
+                    >
+                      <path d='M3.5 6A2.5 2.5 0 0 1 6 3.5h3.33c.44 0 .86.18 1.17.48l.69.69c.31.31.73.48 1.17.48H14A2.5 2.5 0 0 1 16.5 7v1.17a3.25 3.25 0 0 0-1-.17h-1.3A3.2 3.2 0 0 0 11 10.9v2.1a2.5 2.5 0 0 1-2.5 2.5H6A2.5 2.5 0 0 1 3.5 13V6Zm10.7 2a2.3 2.3 0 0 1 2.3 2.3v.2a2.9 2.9 0 1 1-4.6 2.35V10.9A2.9 2.9 0 0 1 14.8 8Zm0 1.4a1.5 1.5 0 0 0-1.5 1.5v1.9a1.5 1.5 0 0 0 3 0v-1.9a1.5 1.5 0 0 0-1.5-1.5Z' />
+                    </svg>
+                  ) : (
+                    <svg
+                      className='h-5 w-5 fill-gray-600 dark:fill-gray-200'
+                      viewBox='0 0 20 20'
+                      aria-hidden='true'
+                    >
+                      <path d='M2.5 4.75A2.25 2.25 0 0 1 4.75 2.5h3.21a2 2 0 0 1 1.41.59l.75.75c.19.19.44.29.71.29h4.42a2.25 2.25 0 0 1 2.25 2.25v6.87a2.25 2.25 0 0 1-2.25 2.25H4.75A2.25 2.25 0 0 1 2.5 13.25V4.75Z' />
+                    </svg>
+                  )}
+                </div>
+              ) : (
+                <>
+                  {activeDragItem.count && activeDragItem.count > 1 ? (
+                    <div className='flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-gray-100 dark:bg-gray-700'>
+                      <svg
+                        className='h-5 w-5 fill-gray-600 dark:fill-gray-200'
+                        viewBox='0 0 20 20'
+                        aria-hidden='true'
+                      >
+                        <path d='M4 2.5A1.5 1.5 0 0 0 2.5 4v10A1.5 1.5 0 0 0 4 15.5h8A1.5 1.5 0 0 0 13.5 14V4A1.5 1.5 0 0 0 12 2.5H4Zm4.5 2h5.5A1.5 1.5 0 0 1 15.5 6v10A1.5 1.5 0 0 1 14 17.5H6A1.5 1.5 0 0 1 4.5 16v-.5H12A2.5 2.5 0 0 0 14.5 13V4.5H8.5Z' />
+                      </svg>
+                    </div>
+                  ) : (
+                    <div className='h-10 w-10 shrink-0 overflow-hidden rounded-md bg-gray-200'>
+                      <img
+                        src={activeDragItem.imageSrc}
+                        alt={activeDragItem.imageAlt || activeDragItem.title}
+                        className='h-full w-full object-cover'
+                      />
+                    </div>
+                  )}
+                </>
+              )}
               <div className='ml-3 overflow-hidden'>
                 <h3 className='truncate text-sm font-semibold text-gray-800 dark:text-gray-100'>
                   {activeDragItem.title}

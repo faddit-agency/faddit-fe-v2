@@ -1,12 +1,12 @@
 import React from 'react';
 
-function Notification({ children, className, type, open, setOpen }) {
+function Notification({ children, className, type, open, setOpen, showAction = true }) {
   const typeIcon = (type) => {
     switch (type) {
       case 'warning':
         return (
           <svg
-            className='shrink-0 fill-current text-yellow-500 mt-[3px] mr-3'
+            className='mt-[3px] mr-3 shrink-0 fill-current text-[var(--color-faddit)]'
             width='16'
             height='16'
             viewBox='0 0 16 16'
@@ -17,7 +17,7 @@ function Notification({ children, className, type, open, setOpen }) {
       case 'error':
         return (
           <svg
-            className='shrink-0 fill-current text-red-500 mt-[3px] mr-3'
+            className='mt-[3px] mr-3 shrink-0 fill-current text-red-500'
             width='16'
             height='16'
             viewBox='0 0 16 16'
@@ -28,7 +28,7 @@ function Notification({ children, className, type, open, setOpen }) {
       case 'success':
         return (
           <svg
-            className='shrink-0 fill-current text-green-500 mt-[3px] mr-3'
+            className='mt-[3px] mr-3 shrink-0 fill-current text-green-500'
             width='16'
             height='16'
             viewBox='0 0 16 16'
@@ -39,7 +39,7 @@ function Notification({ children, className, type, open, setOpen }) {
       default:
         return (
           <svg
-            className='shrink-0 fill-current text-violet-500 mt-[3px] mr-3'
+            className='mt-[3px] mr-3 shrink-0 fill-current text-violet-500'
             width='16'
             height='16'
             viewBox='0 0 16 16'
@@ -54,14 +54,14 @@ function Notification({ children, className, type, open, setOpen }) {
     <>
       {open && (
         <div className={className} role='alert'>
-          <div className='inline-flex flex-col w-full max-w-lg px-4 py-2 rounded-lg text-sm bg-white dark:bg-gray-800 shadow-xs border border-gray-200 dark:border-gray-700/60 text-gray-600 dark:text-gray-400'>
-            <div className='flex w-full justify-between items-start'>
+          <div className='inline-flex w-full max-w-lg flex-col rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-600 shadow-xs dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-400'>
+            <div className='flex w-full items-start justify-between'>
               <div className='flex'>
                 {typeIcon(type)}
                 <div>{children}</div>
               </div>
               <button
-                className='opacity-60 hover:opacity-70 ml-3 mt-[3px]'
+                className='mt-[3px] ml-3 cursor-pointer opacity-60 hover:opacity-70'
                 onClick={() => setOpen(false)}
               >
                 <div className='sr-only'>Close</div>
@@ -70,14 +70,16 @@ function Notification({ children, className, type, open, setOpen }) {
                 </svg>
               </button>
             </div>
-            <div className='text-right mt-1'>
-              <a
-                className='font-medium text-violet-500 hover:text-violet-600 dark:hover:text-violet-400'
-                href='#0'
-              >
-                Action -&gt;
-              </a>
-            </div>
+            {showAction && (
+              <div className='mt-1 text-right'>
+                <a
+                  className='font-medium text-violet-500 hover:text-violet-600 dark:hover:text-violet-400'
+                  href='#0'
+                >
+                  Action -&gt;
+                </a>
+              </div>
+            )}
           </div>
         </div>
       )}
