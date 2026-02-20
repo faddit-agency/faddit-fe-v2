@@ -64,13 +64,13 @@ const RECOMMENDED_SECTIONS_COUNT = 3;
 const PLACEHOLDERS_PER_SECTION = 4;
 
 const SHAPE_ITEMS: { tool: ToolType; label: string; icon: React.ReactNode }[] = [
-  { tool: 'rect', label: '사각형', icon: <Square size={18} strokeWidth={1.5} /> },
-  { tool: 'ellipse', label: '원', icon: <Circle size={18} strokeWidth={1.5} /> },
-  { tool: 'triangle', label: '삼각형', icon: <Triangle size={18} strokeWidth={1.5} /> },
-  { tool: 'line', label: '선', icon: <Minus size={18} strokeWidth={1.5} /> },
-  { tool: 'arrow', label: '화살표', icon: <ArrowRight size={18} strokeWidth={1.5} /> },
-  { tool: 'draw', label: '펜', icon: <Pencil size={18} strokeWidth={1.5} /> },
-  { tool: 'text', label: '텍스트', icon: <Type size={18} strokeWidth={1.5} /> },
+  { tool: 'rect', label: '사각형 (R)', icon: <Square size={18} strokeWidth={1.5} /> },
+  { tool: 'ellipse', label: '원 (O)', icon: <Circle size={18} strokeWidth={1.5} /> },
+  { tool: 'triangle', label: '삼각형 (Y)', icon: <Triangle size={18} strokeWidth={1.5} /> },
+  { tool: 'line', label: '선 (L)', icon: <Minus size={18} strokeWidth={1.5} /> },
+  { tool: 'arrow', label: '화살표 (A)', icon: <ArrowRight size={18} strokeWidth={1.5} /> },
+  { tool: 'draw', label: '펜 (P)', icon: <Pencil size={18} strokeWidth={1.5} /> },
+  { tool: 'text', label: '텍스트 (T)', icon: <Type size={18} strokeWidth={1.5} /> },
 ];
 
 export default function WorksheetToolbox() {
@@ -188,7 +188,7 @@ export default function WorksheetToolbox() {
                     <button
                       type='button'
                       onClick={groupSelected}
-                      title='그룹화 (Ctrl+G)'
+                      title='그룹화 (Cmd/Ctrl+G)'
                       className='cursor-pointer rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700'
                     >
                       <Layers size={13} strokeWidth={1.5} />
@@ -196,7 +196,7 @@ export default function WorksheetToolbox() {
                     <button
                       type='button'
                       onClick={ungroupSelected}
-                      title='그룹 해제 (Ctrl+Shift+G)'
+                      title='그룹 해제 (Cmd/Ctrl+Alt+G)'
                       className='cursor-pointer rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700'
                     >
                       <Ungroup size={13} strokeWidth={1.5} />

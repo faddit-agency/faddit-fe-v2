@@ -1,8 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowRight,
+  ArrowDown,
+  ArrowUp,
   Circle,
+  Copy,
   Grid3X3,
+  Group,
   ImageUp,
   Minus,
   MousePointer2,
@@ -13,6 +17,7 @@ import {
   Triangle,
   Type,
   Undo2,
+  Ungroup,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
@@ -50,17 +55,25 @@ interface ToolButtonProps {
 
 function ToolButton({ active, onClick, title, children, disabled }: ToolButtonProps) {
   return (
-    <button
-      type='button'
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-      className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-        active ? 'bg-gray-800 text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'
-      }`}
-    >
-      {children}
-    </button>
+    <div className='group relative'>
+      <button
+        type='button'
+        onClick={onClick}
+        disabled={disabled}
+        title={title}
+        aria-label={title}
+        className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+          active ? 'bg-gray-800 text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'
+        }`}
+      >
+        {children}
+      </button>
+      {!disabled && (
+        <div className='pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 -translate-x-1/2 rounded-md bg-gray-900 px-2 py-1 text-[11px] whitespace-nowrap text-white opacity-0 shadow-sm transition-opacity duration-150 group-hover:opacity-100'>
+          {title}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -83,6 +96,10 @@ export default function SketchBottomBar({ zoom, onZoomChange }: SketchBottomBarP
     setFontSize,
     fontFamily,
     setFontFamily,
+    fontWeight,
+    setFontWeight,
+    cornerRadius,
+    setCornerRadius,
     selectedType,
     showGrid,
     toggleGrid,
@@ -91,6 +108,12 @@ export default function SketchBottomBar({ zoom, onZoomChange }: SketchBottomBarP
     undo,
     redo,
     uploadToCanvas,
+    activeLayerId,
+    moveLayerUp,
+    moveLayerDown,
+    groupSelected,
+    ungroupSelected,
+    duplicateSelected,
   } = useCanvas();
 
   const [shapePopupOpen, setShapePopupOpen] = useState(false);
@@ -115,6 +138,9 @@ export default function SketchBottomBar({ zoom, onZoomChange }: SketchBottomBarP
   }, []);
 
   const isShapeTool = ['rect', 'ellipse', 'triangle', 'line', 'arrow'].includes(activeTool);
+  const isShapeSelection = ['rect', 'ellipse', 'triangle', 'line', 'path'].includes(
+    selectedType ?? '',
+  );
 
   const currentShapeOption = SHAPE_OPTIONS.find((o) => o.tool === activeTool) ?? SHAPE_OPTIONS[0];
 
@@ -127,7 +153,7 @@ export default function SketchBottomBar({ zoom, onZoomChange }: SketchBottomBarP
   };
 
   return (
-    <div className='pointer-events-none absolute inset-x-0 bottom-4 flex flex-col items-center gap-2'>
+    <div className='pointer-events-none absolute inset-x-0 bottom-4 z-40 flex flex-col items-center gap-2'>
       {selectedType === 'i-text' && (
         <div className='pointer-events-auto flex items-center gap-1.5 rounded-xl bg-white px-3 py-1.5 ring-1 shadow-lg ring-gray-200'>
           <select
@@ -164,6 +190,51 @@ export default function SketchBottomBar({ zoom, onZoomChange }: SketchBottomBarP
           >
             +
           </button>
+          <div className='h-5 w-px bg-gray-200' />
+          <button
+            type='button'
+            onClick={() => setFontWeight(fontWeight === 'bold' ? 'normal' : 'bold')}
+            className={`flex h-7 min-w-7 cursor-pointer items-center justify-center rounded px-1 text-xs font-bold transition-colors ${
+              fontWeight === 'bold' ? 'bg-gray-800 text-white' : 'text-gray-700 hover:bg-gray-100'
+            }`}
+            title='굵게'
+          >
+            B
+          </button>
+        </div>
+      )}
+
+      {isShapeSelection && (
+        <div className='pointer-events-auto flex items-center gap-2 rounded-xl bg-white px-3 py-1.5 ring-1 shadow-lg ring-gray-200'>
+          <div className='flex items-center gap-1.5'>
+            <span className='text-[11px] text-gray-500'>선 굵기</span>
+            <input
+              type='range'
+              min={1}
+              max={50}
+              value={strokeWidth}
+              onChange={(e) => setStrokeWidth(Number(e.target.value))}
+              className='h-1.5 w-24 cursor-pointer accent-gray-800'
+            />
+            <span className='w-8 text-right font-mono text-[11px] text-gray-700'>
+              {strokeWidth}px
+            </span>
+          </div>
+          <div className='h-5 w-px bg-gray-200' />
+          <div className='flex items-center gap-1.5'>
+            <span className='text-[11px] text-gray-500'>둥글기</span>
+            <input
+              type='range'
+              min={0}
+              max={40}
+              value={cornerRadius}
+              onChange={(e) => setCornerRadius(Number(e.target.value))}
+              className='h-1.5 w-24 cursor-pointer accent-gray-800'
+            />
+            <span className='w-7 text-right font-mono text-[11px] text-gray-700'>
+              {cornerRadius}
+            </span>
+          </div>
         </div>
       )}
 
@@ -178,11 +249,41 @@ export default function SketchBottomBar({ zoom, onZoomChange }: SketchBottomBarP
 
         <div className='mx-1 h-5 w-px bg-gray-200' />
 
-        <ToolButton onClick={undo} disabled={!canUndo} title='실행 취소 (Ctrl+Z)'>
+        <ToolButton onClick={undo} disabled={!canUndo} title='실행 취소 (Cmd/Ctrl+Z)'>
           <Undo2 size={16} strokeWidth={1.5} />
         </ToolButton>
-        <ToolButton onClick={redo} disabled={!canRedo} title='다시 실행 (Ctrl+Y)'>
+        <ToolButton onClick={redo} disabled={!canRedo} title='다시 실행 (Cmd/Ctrl+Y)'>
           <Redo2 size={16} strokeWidth={1.5} />
+        </ToolButton>
+        <ToolButton onClick={duplicateSelected} title='복제'>
+          <Copy size={16} strokeWidth={1.5} />
+        </ToolButton>
+
+        <div className='mx-1 h-5 w-px bg-gray-200' />
+
+        <ToolButton onClick={groupSelected} title='그룹화 (Cmd/Ctrl+G)'>
+          <Group size={16} strokeWidth={1.5} />
+        </ToolButton>
+        <ToolButton onClick={ungroupSelected} title='그룹 해제 (Cmd/Ctrl+Alt+G)'>
+          <Ungroup size={16} strokeWidth={1.5} />
+        </ToolButton>
+        <ToolButton
+          onClick={() => {
+            if (activeLayerId) moveLayerUp(activeLayerId);
+          }}
+          title='앞으로'
+          disabled={!activeLayerId}
+        >
+          <ArrowUp size={16} strokeWidth={1.5} />
+        </ToolButton>
+        <ToolButton
+          onClick={() => {
+            if (activeLayerId) moveLayerDown(activeLayerId);
+          }}
+          title='뒤로'
+          disabled={!activeLayerId}
+        >
+          <ArrowDown size={16} strokeWidth={1.5} />
         </ToolButton>
 
         <div className='mx-1 h-5 w-px bg-gray-200' />

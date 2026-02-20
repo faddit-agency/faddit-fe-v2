@@ -10,6 +10,7 @@ import {
   Point,
   Rect,
   Triangle,
+  controlsUtils,
   type TPointerEventInfo,
   type TPointerEvent,
   type FabricObject,
@@ -18,6 +19,13 @@ import {
 import { useCanvas } from './CanvasProvider';
 import SketchBottomBar from './SketchBottomBar';
 import PathEditorOverlay, { applyNodesToFabric, type NodePoint } from './PathEditorOverlay';
+import {
+  ENABLE_CANVA_INTERACTION_ENGINE,
+  createInteractionController,
+  InteractionOverlay,
+  type InteractionControllerApi,
+  type OverlayModel,
+} from './interaction';
 
 const LAYER_NAME_MAP: Record<string, string> = {
   rect: '사각형',
@@ -39,6 +47,11 @@ function makeData(type: string) {
 type Mat6 = [number, number, number, number, number, number];
 type ArrowPoint = { x: number; y: number };
 type ArrowObjectData = { id?: string; name?: string; kind?: string };
+const GRID_UNIT = 10;
+
+function snapToGrid(value: number): number {
+  return Math.round(value / GRID_UNIT) * GRID_UNIT;
+}
 
 function invertMat([a, b, c, d, e, f]: Mat6): Mat6 {
   const det = a * d - b * c;
@@ -199,6 +212,17 @@ function applyEndpointHandleStyle(obj: FabricObject): void {
   });
 }
 
+function createRotateControl(): Control {
+  return new Control({
+    x: 0,
+    y: -0.5,
+    offsetY: -26,
+    actionName: 'rotate',
+    cursorStyleHandler: controlsUtils.rotationStyleHandler,
+    actionHandler: controlsUtils.rotationWithSnapping,
+  });
+}
+
 function createLineEndpointControls(): Record<string, Control> {
   const startControl = new Control({
     cursorStyle: 'pointer',
@@ -242,7 +266,11 @@ function createLineEndpointControls(): Record<string, Control> {
     },
   });
 
-  return { start: startControl, end: endControl };
+  return {
+    start: startControl,
+    end: endControl,
+    mtr: createRotateControl(),
+  };
 }
 
 function createArrowEndpointControls(): Record<string, Control> {
@@ -306,17 +334,23 @@ function createArrowEndpointControls(): Record<string, Control> {
     },
   });
 
-  return { start: startControl, end: endControl };
+  return {
+    start: startControl,
+    end: endControl,
+    mtr: createRotateControl(),
+  };
 }
 
 function setupLineEndpointEditing(line: Line): void {
   applyEndpointHandleStyle(line);
+  line.set({ lockRotation: false });
   line.controls = createLineEndpointControls();
 }
 
 function setupArrowEndpointEditing(path: Path): void {
   applyEndpointHandleStyle(path);
   path.set({
+    lockRotation: false,
     perPixelTargetFind: false,
     objectCaching: false,
     padding: 10,
@@ -345,6 +379,8 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
   const containerRef = useRef<HTMLDivElement>(null);
   const drawStartRef = useRef<{ x: number; y: number } | null>(null);
   const activeShapeRef = useRef<FabricObject | null>(null);
+  const interactionControllerRef = useRef<InteractionControllerApi | null>(null);
+  const snapKeyDownRef = useRef(false);
 
   const {
     canvasRef,
@@ -354,16 +390,40 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     fillColor,
     strokeColor,
     strokeWidth,
+    cornerRadius,
     showGrid,
     saveHistory,
     refreshLayers,
     deleteSelected,
+    copySelected,
+    pasteClipboard,
     groupSelected,
     ungroupSelected,
   } = useCanvas();
 
   const [localZoom, setLocalZoom] = useState(zoom);
   const [pathEditingPath, setPathEditingPath] = useState<Path | null>(null);
+  const [interactionOverlayModel, setInteractionOverlayModel] = useState<OverlayModel>({
+    guides: [],
+    hud: [],
+  });
+
+  const gridStyle = (() => {
+    const canvas = fabricRef.current;
+    const vpt = canvas?.viewportTransform ?? [localZoom / 100, 0, 0, localZoom / 100, 0, 0];
+    const scaleX = Math.max(0.0001, Math.abs(vpt[0]));
+    const scaleY = Math.max(0.0001, Math.abs(vpt[3]));
+    const stepX = 10 * scaleX;
+    const stepY = 10 * scaleY;
+
+    return {
+      backgroundImage:
+        'linear-gradient(to right, rgba(255,0,0,0.25) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,0,0,0.25) 1px, transparent 1px)',
+      backgroundSize: `${stepX}px ${stepY}px`,
+      backgroundPosition: `${vpt[4]}px ${vpt[5]}px`,
+      opacity: showGrid ? 1 : 0,
+    };
+  })();
 
   const handlePathEditDone = useCallback(
     (nodes: NodePoint[]) => {
@@ -394,14 +454,21 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     if (!el || !container) return;
 
     const canvas = new Canvas(el, {
-      backgroundColor: '#ffffff',
+      backgroundColor: 'transparent',
       selection: true,
       preserveObjectStacking: true,
       targetFindTolerance: 10,
+      uniScaleKey: 'shiftKey',
+      centeredKey: 'altKey',
     });
+    (canvas as unknown as { snapAngle?: number }).snapAngle = 15;
     fabricRef.current = canvas;
     canvasRef.current = canvas;
     registerCanvas(canvas);
+    if (ENABLE_CANVA_INTERACTION_ENGINE) {
+      interactionControllerRef.current = createInteractionController(canvas);
+      setInteractionOverlayModel(interactionControllerRef.current.getOverlayModel());
+    }
 
     const resizeCanvas = () => {
       const c = containerRef.current;
@@ -422,6 +489,8 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       canvas.dispose();
       fabricRef.current = null;
       canvasRef.current = null;
+      interactionControllerRef.current = null;
+      setInteractionOverlayModel({ guides: [], hud: [] });
     };
   }, []);
 
@@ -518,6 +587,8 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
           overrideFabricCursor('grab');
           setCursor('grab');
         }
+      } else if (e.code === 'KeyQ' && !isTextFocused()) {
+        snapKeyDownRef.current = true;
       }
     };
 
@@ -529,6 +600,18 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
           restoreFabricCursor();
           setCursor('');
         }
+      } else if (e.code === 'KeyQ') {
+        snapKeyDownRef.current = false;
+      }
+    };
+
+    const handleWindowBlur = () => {
+      space.down = false;
+      snapKeyDownRef.current = false;
+      if (pan.active) stopPan();
+      else {
+        restoreFabricCursor();
+        setCursor('');
       }
     };
 
@@ -560,6 +643,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleWindowBlur);
     container.addEventListener('mousedown', handleMouseDown, { capture: true });
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
@@ -567,6 +651,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleWindowBlur);
       container.removeEventListener('mousedown', handleMouseDown, { capture: true });
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
@@ -588,18 +673,50 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         deleteSelected();
-      } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'g') {
+      } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.code === 'KeyC') {
+        e.preventDefault();
+        copySelected();
+      } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.code === 'KeyV') {
+        e.preventDefault();
+        pasteClipboard();
+      } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.code === 'KeyG') {
         e.preventDefault();
         groupSelected();
-      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'G') {
+      } else if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey && e.code === 'KeyG') {
         e.preventDefault();
         ungroupSelected();
+      } else if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (e.code === 'KeyV') {
+          e.preventDefault();
+          setActiveTool('select');
+        } else if (e.code === 'KeyR') {
+          e.preventDefault();
+          setActiveTool('rect');
+        } else if (e.code === 'KeyO') {
+          e.preventDefault();
+          setActiveTool('ellipse');
+        } else if (e.code === 'KeyY') {
+          e.preventDefault();
+          setActiveTool('triangle');
+        } else if (e.code === 'KeyL') {
+          e.preventDefault();
+          setActiveTool('line');
+        } else if (e.code === 'KeyA') {
+          e.preventDefault();
+          setActiveTool('arrow');
+        } else if (e.code === 'KeyP') {
+          e.preventDefault();
+          setActiveTool('draw');
+        } else if (e.code === 'KeyT') {
+          e.preventDefault();
+          setActiveTool('text');
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [deleteSelected, groupSelected, ungroupSelected]);
+  }, [deleteSelected, copySelected, pasteClipboard, groupSelected, ungroupSelected, setActiveTool]);
 
   useEffect(() => {
     const canvas = fabricRef.current;
@@ -614,22 +731,81 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
 
     const handleObjectAdded = (e: { target?: FabricObject }) => {
       if (!e.target) return;
+      if (ENABLE_CANVA_INTERACTION_ENGINE) {
+        interactionControllerRef.current?.applyObjectControls(e.target);
+      }
       setupEndpointEditingIfNeeded(e.target);
     };
 
     const handleSelection = (e: { selected?: FabricObject[] }) => {
       const selected = e.selected ?? [];
+      if (ENABLE_CANVA_INTERACTION_ENGINE) {
+        selected.forEach((obj) => interactionControllerRef.current?.applyObjectControls(obj));
+      }
       selected.forEach(setupEndpointEditingIfNeeded);
+    };
+
+    const handleObjectMoving = (e: { target?: FabricObject; e?: TPointerEvent }) => {
+      const target = e.target;
+      if (!target || !snapKeyDownRef.current) return;
+      const left = target.left;
+      const top = target.top;
+      if (typeof left !== 'number' || typeof top !== 'number') return;
+      target.set({
+        left: snapToGrid(left),
+        top: snapToGrid(top),
+      });
+      target.setCoords();
+    };
+
+    const handleObjectScaling = (e: { target?: FabricObject; e?: TPointerEvent }) => {
+      const target = e.target;
+      if (!target || !snapKeyDownRef.current) return;
+      const baseWidth = target.width ?? 0;
+      const baseHeight = target.height ?? 0;
+      if (baseWidth <= 0 || baseHeight <= 0) return;
+
+      const scaleX = target.scaleX ?? 1;
+      const scaleY = target.scaleY ?? 1;
+      const absScaleX = Math.abs(scaleX);
+      const absScaleY = Math.abs(scaleY);
+      const uniformScale = Math.abs(absScaleX - absScaleY) < 0.001;
+
+      if (uniformScale) {
+        const dominant = Math.max(baseWidth, baseHeight);
+        const snappedDominant = Math.max(
+          GRID_UNIT,
+          snapToGrid(dominant * Math.max(absScaleX, absScaleY)),
+        );
+        const nextScale = snappedDominant / dominant;
+        target.set({
+          scaleX: Math.sign(scaleX) * nextScale,
+          scaleY: Math.sign(scaleY) * nextScale,
+        });
+      } else {
+        const snappedWidth = Math.max(GRID_UNIT, snapToGrid(baseWidth * absScaleX));
+        const snappedHeight = Math.max(GRID_UNIT, snapToGrid(baseHeight * absScaleY));
+        target.set({
+          scaleX: Math.sign(scaleX) * (snappedWidth / baseWidth),
+          scaleY: Math.sign(scaleY) * (snappedHeight / baseHeight),
+        });
+      }
+
+      target.setCoords();
     };
 
     canvas.on('object:added', handleObjectAdded);
     canvas.on('selection:created', handleSelection);
     canvas.on('selection:updated', handleSelection);
+    canvas.on('object:moving', handleObjectMoving);
+    canvas.on('object:scaling', handleObjectScaling);
 
     return () => {
       canvas.off('object:added', handleObjectAdded);
       canvas.off('selection:created', handleSelection);
       canvas.off('selection:updated', handleSelection);
+      canvas.off('object:moving', handleObjectMoving);
+      canvas.off('object:scaling', handleObjectScaling);
     };
   }, []);
 
@@ -673,6 +849,11 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     canvas.defaultCursor = activeTool === 'select' ? 'default' : 'crosshair';
 
     const handleMouseDown = (opt: TPointerEventInfo<TPointerEvent>) => {
+      if (ENABLE_CANVA_INTERACTION_ENGINE && interactionControllerRef.current) {
+        const consumed = interactionControllerRef.current.onMouseDown(opt);
+        setInteractionOverlayModel(interactionControllerRef.current.getOverlayModel());
+        if (consumed) return;
+      }
       if (activeTool === 'select') return;
       const pointer = canvas.getScenePoint(opt.e);
       drawStartRef.current = { x: pointer.x, y: pointer.y };
@@ -706,6 +887,9 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
           fill: fillColor,
           stroke: strokeColor,
           strokeWidth,
+          strokeUniform: true,
+          rx: cornerRadius,
+          ry: cornerRadius,
         });
         (rect as unknown as { data: unknown }).data = makeData('rect');
         activeShapeRef.current = rect;
@@ -722,6 +906,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
           fill: fillColor,
           stroke: strokeColor,
           strokeWidth,
+          strokeUniform: true,
         });
         (ellipse as unknown as { data: unknown }).data = makeData('ellipse');
         activeShapeRef.current = ellipse;
@@ -738,6 +923,8 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
           fill: fillColor,
           stroke: strokeColor,
           strokeWidth,
+          strokeUniform: true,
+          strokeLineJoin: cornerRadius > 0 ? 'round' : 'miter',
         });
         (tri as unknown as { data: unknown }).data = makeData('triangle');
         activeShapeRef.current = tri;
@@ -754,6 +941,9 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
           perPixelTargetFind: true,
           objectCaching: false,
           padding: 8,
+          strokeUniform: true,
+          strokeLineCap: cornerRadius > 0 ? 'round' : 'butt',
+          strokeLineJoin: cornerRadius > 0 ? 'round' : 'miter',
         });
         (line as unknown as { data: unknown }).data = makeData('line');
         setupLineEndpointEditing(line);
@@ -764,6 +954,12 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     };
 
     const handleMouseMove = (opt: TPointerEventInfo<TPointerEvent>) => {
+      if (ENABLE_CANVA_INTERACTION_ENGINE) {
+        interactionControllerRef.current?.onMouseMove(opt);
+        if (interactionControllerRef.current) {
+          setInteractionOverlayModel(interactionControllerRef.current.getOverlayModel());
+        }
+      }
       if (!drawStartRef.current || !activeShapeRef.current) return;
       const pointer = canvas.getScenePoint(opt.e);
       const { x: startX, y: startY } = drawStartRef.current;
@@ -812,6 +1008,11 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     };
 
     const handleMouseUp = (opt: TPointerEventInfo<TPointerEvent>) => {
+      if (ENABLE_CANVA_INTERACTION_ENGINE && interactionControllerRef.current) {
+        const consumed = interactionControllerRef.current.onMouseUp(opt);
+        setInteractionOverlayModel(interactionControllerRef.current.getOverlayModel());
+        if (consumed) return;
+      }
       if (!drawStartRef.current) return;
       const pointer = canvas.getScenePoint(opt.e);
       const { x: startX, y: startY } = drawStartRef.current;
@@ -824,11 +1025,12 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
           stroke: strokeColor,
           strokeWidth,
           fill: '',
-          strokeLineCap: 'round',
-          strokeLineJoin: 'round',
+          strokeLineCap: cornerRadius > 0 ? 'round' : 'butt',
+          strokeLineJoin: cornerRadius > 0 ? 'round' : 'miter',
           perPixelTargetFind: true,
           objectCaching: false,
           padding: 8,
+          strokeUniform: true,
         });
         (arrow as unknown as { data: unknown }).data = { ...makeData('arrow'), kind: 'arrow' };
         setupArrowEndpointEditing(arrow);
@@ -856,7 +1058,18 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       brush.width = strokeWidth;
       canvas.freeDrawingBrush = brush;
 
-      const handlePathCreated = () => saveHistory();
+      const handlePathCreated = (e: { path?: FabricObject }) => {
+        const path = e.path;
+        if (path instanceof Path) {
+          path.set({
+            strokeUniform: true,
+            strokeLineCap: cornerRadius > 0 ? 'round' : 'butt',
+            strokeLineJoin: cornerRadius > 0 ? 'round' : 'miter',
+          });
+          path.setCoords();
+        }
+        saveHistory();
+      };
       canvas.on('path:created', handlePathCreated);
       return () => {
         canvas.isDrawingMode = false;
@@ -874,25 +1087,29 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       canvas.off('mouse:up', handleMouseUp);
       canvas.isDrawingMode = false;
     };
-  }, [activeTool, fillColor, strokeColor, strokeWidth, saveHistory, setActiveTool, refreshLayers]);
+  }, [
+    activeTool,
+    fillColor,
+    strokeColor,
+    strokeWidth,
+    cornerRadius,
+    saveHistory,
+    setActiveTool,
+    refreshLayers,
+  ]);
 
   return (
     <div
       ref={containerRef}
       className='relative h-full w-full overflow-hidden rounded-md bg-[#e0e0e0]'
     >
-      {showGrid && (
-        <div
-          className='pointer-events-none absolute inset-0'
-          style={{
-            backgroundColor: '#ffffff',
-            backgroundImage:
-              'linear-gradient(to right, rgba(255,0,0,0.25) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,0,0,0.25) 1px, transparent 1px)',
-            backgroundSize: '10px 10px',
-          }}
-        />
-      )}
-      <canvas ref={canvasElRef} />
+      <div className='pointer-events-none absolute inset-0 z-0 bg-white' />
+      <div className='pointer-events-none absolute inset-0 z-10' style={gridStyle} />
+      <canvas ref={canvasElRef} className='absolute inset-0 z-20' />
+      <InteractionOverlay
+        canvas={ENABLE_CANVA_INTERACTION_ENGINE ? fabricRef.current : null}
+        model={ENABLE_CANVA_INTERACTION_ENGINE ? interactionOverlayModel : { guides: [], hud: [] }}
+      />
       {pathEditingPath && fabricRef.current && (
         <PathEditorOverlay
           canvas={fabricRef.current}
