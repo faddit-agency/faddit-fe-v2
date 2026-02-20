@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Control,
   Canvas,
   Ellipse,
   IText,
@@ -12,6 +13,7 @@ import {
   type TPointerEventInfo,
   type TPointerEvent,
   type FabricObject,
+  type TSimplePathData,
 } from 'fabric';
 import { useCanvas } from './CanvasProvider';
 import SketchBottomBar from './SketchBottomBar';
@@ -32,6 +34,304 @@ let objCounter = 0;
 function makeData(type: string) {
   objCounter += 1;
   return { id: `${type}-${Date.now()}-${objCounter}`, name: LAYER_NAME_MAP[type] ?? type };
+}
+
+type Mat6 = [number, number, number, number, number, number];
+type ArrowPoint = { x: number; y: number };
+type ArrowObjectData = { id?: string; name?: string; kind?: string };
+
+function invertMat([a, b, c, d, e, f]: Mat6): Mat6 {
+  const det = a * d - b * c;
+  return [d / det, -b / det, -c / det, a / det, (c * f - d * e) / det, (b * e - a * f) / det];
+}
+
+function getObjectData(obj: FabricObject): ArrowObjectData | undefined {
+  return (obj as unknown as { data?: ArrowObjectData }).data;
+}
+
+function isArrowPathObject(obj: FabricObject | null): obj is Path {
+  if (!(obj instanceof Path)) return false;
+  const data = getObjectData(obj);
+  return (
+    data?.kind === 'arrow' ||
+    data?.name === '화살표' ||
+    (typeof data?.id === 'string' && data.id.startsWith('arrow-'))
+  );
+}
+
+function buildArrowPathCommands(tail: ArrowPoint, tip: ArrowPoint): TSimplePathData {
+  const dx = tip.x - tail.x;
+  const dy = tip.y - tail.y;
+  const angle = Math.atan2(dy, dx);
+  const len = Math.sqrt(dx * dx + dy * dy);
+  const headLen = Math.max(10, Math.min(len * 0.3, 20));
+  const headAngle = Math.PI / 6;
+  const wing1 = {
+    x: tip.x - headLen * Math.cos(angle - headAngle),
+    y: tip.y - headLen * Math.sin(angle - headAngle),
+  };
+  const wing2 = {
+    x: tip.x - headLen * Math.cos(angle + headAngle),
+    y: tip.y - headLen * Math.sin(angle + headAngle),
+  };
+  return [
+    ['M', tail.x, tail.y],
+    ['L', tip.x, tip.y],
+    ['M', wing1.x, wing1.y],
+    ['L', tip.x, tip.y],
+    ['L', wing2.x, wing2.y],
+  ];
+}
+
+function getArrowEndpoints(path: Path): { tail: ArrowPoint; tip: ArrowPoint } | null {
+  const commands = path.path;
+  if (!commands || commands.length < 2) return null;
+  const first = commands[0];
+  const second = commands[1];
+  if (!first || !second) return null;
+  if (first[0] !== 'M' || second[0] !== 'L') return null;
+  return {
+    tail: { x: first[1] as number, y: first[2] as number },
+    tip: { x: second[1] as number, y: second[2] as number },
+  };
+}
+
+function viewportToPathLocal(path: Path, vx: number, vy: number): ArrowPoint {
+  const inv = invertMat(path.calcTransformMatrix() as Mat6);
+  const offset = (path as unknown as { pathOffset?: { x: number; y: number } }).pathOffset ?? {
+    x: 0,
+    y: 0,
+  };
+  return {
+    x: inv[0] * vx + inv[2] * vy + inv[4] + offset.x,
+    y: inv[1] * vx + inv[3] * vy + inv[5] + offset.y,
+  };
+}
+
+function pathLocalToScene(path: Path, point: ArrowPoint): ArrowPoint {
+  const matrix = path.calcTransformMatrix() as Mat6;
+  const offset = (path as unknown as { pathOffset?: { x: number; y: number } }).pathOffset ?? {
+    x: 0,
+    y: 0,
+  };
+  const lx = point.x - offset.x;
+  const ly = point.y - offset.y;
+  return {
+    x: matrix[0] * lx + matrix[2] * ly + matrix[4],
+    y: matrix[1] * lx + matrix[3] * ly + matrix[5],
+  };
+}
+
+function getLineEndpointsInScene(line: Line): { start: ArrowPoint; end: ArrowPoint } {
+  const points = line.calcLinePoints();
+  const matrix = line.calcTransformMatrix() as Mat6;
+  const start = new Point(points.x1, points.y1).transform(matrix);
+  const end = new Point(points.x2, points.y2).transform(matrix);
+  return {
+    start: { x: start.x, y: start.y },
+    end: { x: end.x, y: end.y },
+  };
+}
+
+function getArrowEndpointsInScene(path: Path): { tail: ArrowPoint; tip: ArrowPoint } | null {
+  const endpoints = getArrowEndpoints(path);
+  if (!endpoints) return null;
+  return {
+    tail: pathLocalToScene(path, endpoints.tail),
+    tip: pathLocalToScene(path, endpoints.tip),
+  };
+}
+
+function snapPointToAngle(anchor: ArrowPoint, moving: ArrowPoint, degreeStep = 15): ArrowPoint {
+  const dx = moving.x - anchor.x;
+  const dy = moving.y - anchor.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  if (distance === 0) return moving;
+  const step = (degreeStep * Math.PI) / 180;
+  const angle = Math.atan2(dy, dx);
+  const snappedAngle = Math.round(angle / step) * step;
+  return {
+    x: anchor.x + distance * Math.cos(snappedAngle),
+    y: anchor.y + distance * Math.sin(snappedAngle),
+  };
+}
+
+function updateArrowPathPreservePosition(path: Path, commands: TSimplePathData): void {
+  const oldPm = path.calcTransformMatrix() as Mat6;
+  const oldOffset = (path as unknown as { pathOffset?: { x: number; y: number } }).pathOffset ?? {
+    x: 0,
+    y: 0,
+  };
+
+  path.set({ path: commands });
+  path.setBoundingBox();
+
+  const newOffset = (path as unknown as { pathOffset?: { x: number; y: number } }).pathOffset ?? {
+    x: 0,
+    y: 0,
+  };
+  const dx = newOffset.x - oldOffset.x;
+  const dy = newOffset.y - oldOffset.y;
+
+  path.left = oldPm[4] + oldPm[0] * dx + oldPm[2] * dy;
+  path.top = oldPm[5] + oldPm[1] * dx + oldPm[3] * dy;
+  path.setCoords();
+}
+
+function applyEndpointHandleStyle(obj: FabricObject): void {
+  obj.set({
+    selectable: true,
+    evented: true,
+    hasBorders: false,
+    cornerStyle: 'circle',
+    transparentCorners: false,
+    cornerColor: '#2563EB',
+    cornerStrokeColor: '#ffffff',
+    cornerSize: 12,
+    padding: 8,
+    hoverCursor: 'move',
+    moveCursor: 'move',
+    lockScalingX: true,
+    lockScalingY: true,
+    lockSkewingX: true,
+    lockSkewingY: true,
+    lockRotation: true,
+  });
+}
+
+function createLineEndpointControls(): Record<string, Control> {
+  const startControl = new Control({
+    cursorStyle: 'pointer',
+    actionName: 'modifyLineStart',
+    positionHandler: (_dim, finalMatrix, fabricObject) => {
+      const line = fabricObject as Line;
+      const points = line.calcLinePoints();
+      return new Point(points.x1, points.y1).transform(finalMatrix);
+    },
+    actionHandler: (_eventData, transform, x, y) => {
+      const target = transform.target;
+      if (!(target instanceof Line)) return false;
+      const endpoints = getLineEndpointsInScene(target);
+      const shouldSnap = !!transform.shiftKey;
+      const nextStart = shouldSnap ? snapPointToAngle(endpoints.end, { x, y }) : { x, y };
+      target.set({ x1: nextStart.x, y1: nextStart.y, x2: endpoints.end.x, y2: endpoints.end.y });
+      target.setCoords();
+      target.canvas?.requestRenderAll();
+      return true;
+    },
+  });
+
+  const endControl = new Control({
+    cursorStyle: 'pointer',
+    actionName: 'modifyLineEnd',
+    positionHandler: (_dim, finalMatrix, fabricObject) => {
+      const line = fabricObject as Line;
+      const points = line.calcLinePoints();
+      return new Point(points.x2, points.y2).transform(finalMatrix);
+    },
+    actionHandler: (_eventData, transform, x, y) => {
+      const target = transform.target;
+      if (!(target instanceof Line)) return false;
+      const endpoints = getLineEndpointsInScene(target);
+      const shouldSnap = !!transform.shiftKey;
+      const nextEnd = shouldSnap ? snapPointToAngle(endpoints.start, { x, y }) : { x, y };
+      target.set({ x1: endpoints.start.x, y1: endpoints.start.y, x2: nextEnd.x, y2: nextEnd.y });
+      target.setCoords();
+      target.canvas?.requestRenderAll();
+      return true;
+    },
+  });
+
+  return { start: startControl, end: endControl };
+}
+
+function createArrowEndpointControls(): Record<string, Control> {
+  const startControl = new Control({
+    cursorStyle: 'pointer',
+    actionName: 'modifyArrowStart',
+    positionHandler: (_dim, finalMatrix, fabricObject) => {
+      const path = fabricObject as Path;
+      const endpoints = getArrowEndpoints(path);
+      if (!endpoints) return new Point(0, 0).transform(finalMatrix);
+      const offset = (path as unknown as { pathOffset?: { x: number; y: number } }).pathOffset ?? {
+        x: 0,
+        y: 0,
+      };
+      return new Point(endpoints.tail.x - offset.x, endpoints.tail.y - offset.y).transform(
+        finalMatrix,
+      );
+    },
+    actionHandler: (_eventData, transform, x, y) => {
+      const target = transform.target;
+      if (!(target instanceof Path) || !isArrowPathObject(target)) return false;
+      const endpoints = getArrowEndpointsInScene(target);
+      if (!endpoints) return false;
+      const shouldSnap = !!transform.shiftKey;
+      const nextTailScene = shouldSnap ? snapPointToAngle(endpoints.tip, { x, y }) : { x, y };
+      const nextTail = viewportToPathLocal(target, nextTailScene.x, nextTailScene.y);
+      const fixedTip = viewportToPathLocal(target, endpoints.tip.x, endpoints.tip.y);
+      updateArrowPathPreservePosition(target, buildArrowPathCommands(nextTail, fixedTip));
+      target.canvas?.requestRenderAll();
+      return true;
+    },
+  });
+
+  const endControl = new Control({
+    cursorStyle: 'pointer',
+    actionName: 'modifyArrowEnd',
+    positionHandler: (_dim, finalMatrix, fabricObject) => {
+      const path = fabricObject as Path;
+      const endpoints = getArrowEndpoints(path);
+      if (!endpoints) return new Point(0, 0).transform(finalMatrix);
+      const offset = (path as unknown as { pathOffset?: { x: number; y: number } }).pathOffset ?? {
+        x: 0,
+        y: 0,
+      };
+      return new Point(endpoints.tip.x - offset.x, endpoints.tip.y - offset.y).transform(
+        finalMatrix,
+      );
+    },
+    actionHandler: (_eventData, transform, x, y) => {
+      const target = transform.target;
+      if (!(target instanceof Path) || !isArrowPathObject(target)) return false;
+      const endpoints = getArrowEndpointsInScene(target);
+      if (!endpoints) return false;
+      const shouldSnap = !!transform.shiftKey;
+      const nextTipScene = shouldSnap ? snapPointToAngle(endpoints.tail, { x, y }) : { x, y };
+      const fixedTail = viewportToPathLocal(target, endpoints.tail.x, endpoints.tail.y);
+      const nextTip = viewportToPathLocal(target, nextTipScene.x, nextTipScene.y);
+      updateArrowPathPreservePosition(target, buildArrowPathCommands(fixedTail, nextTip));
+      target.canvas?.requestRenderAll();
+      return true;
+    },
+  });
+
+  return { start: startControl, end: endControl };
+}
+
+function setupLineEndpointEditing(line: Line): void {
+  applyEndpointHandleStyle(line);
+  line.controls = createLineEndpointControls();
+}
+
+function setupArrowEndpointEditing(path: Path): void {
+  applyEndpointHandleStyle(path);
+  path.set({
+    perPixelTargetFind: false,
+    objectCaching: false,
+    padding: 10,
+  });
+  path.controls = createArrowEndpointControls();
+}
+
+function setupEndpointEditingIfNeeded(obj: FabricObject): void {
+  if (obj instanceof Line) {
+    setupLineEndpointEditing(obj);
+    return;
+  }
+  if (isArrowPathObject(obj)) {
+    setupArrowEndpointEditing(obj);
+  }
 }
 
 interface WorksheetSketchViewProps {
@@ -97,6 +397,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       backgroundColor: '#ffffff',
       selection: true,
       preserveObjectStacking: true,
+      targetFindTolerance: 10,
     });
     fabricRef.current = canvas;
     canvasRef.current = canvas;
@@ -310,9 +611,34 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
   useEffect(() => {
     const canvas = fabricRef.current;
     if (!canvas) return;
+
+    const handleObjectAdded = (e: { target?: FabricObject }) => {
+      if (!e.target) return;
+      setupEndpointEditingIfNeeded(e.target);
+    };
+
+    const handleSelection = (e: { selected?: FabricObject[] }) => {
+      const selected = e.selected ?? [];
+      selected.forEach(setupEndpointEditingIfNeeded);
+    };
+
+    canvas.on('object:added', handleObjectAdded);
+    canvas.on('selection:created', handleSelection);
+    canvas.on('selection:updated', handleSelection);
+
+    return () => {
+      canvas.off('object:added', handleObjectAdded);
+      canvas.off('selection:created', handleSelection);
+      canvas.off('selection:updated', handleSelection);
+    };
+  }, []);
+
+  useEffect(() => {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
     const handleDblClick = (opt: TPointerEventInfo<TPointerEvent>) => {
       const target = opt.target;
-      if (target instanceof Path && !pathEditingPath) {
+      if (target instanceof Path && !pathEditingPath && !isArrowPathObject(target)) {
         setPathEditingPath(target);
         setActiveTool('select');
         canvas.discardActiveObject();
@@ -423,10 +749,14 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         const line = new Line([pointer.x, pointer.y, pointer.x, pointer.y], {
           stroke: strokeColor,
           strokeWidth,
-          selectable: false,
-          evented: false,
+          selectable: true,
+          evented: true,
+          perPixelTargetFind: true,
+          objectCaching: false,
+          padding: 8,
         });
         (line as unknown as { data: unknown }).data = makeData('line');
+        setupLineEndpointEditing(line);
         activeShapeRef.current = line;
         canvas.add(line);
         canvas.renderAll();
@@ -488,34 +818,26 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
 
       if (activeTool === 'arrow' && activeShapeRef.current) {
         canvas.remove(activeShapeRef.current);
-        const dx = pointer.x - startX;
-        const dy = pointer.y - startY;
-        const angle = Math.atan2(dy, dx);
-        const len = Math.sqrt(dx * dx + dy * dy);
-        const headLen = Math.max(10, Math.min(len * 0.3, 20));
-        const headAngle = Math.PI / 6;
         const tip = { x: pointer.x, y: pointer.y };
         const tail = { x: startX, y: startY };
-        const wing1 = {
-          x: tip.x - headLen * Math.cos(angle - headAngle),
-          y: tip.y - headLen * Math.sin(angle - headAngle),
-        };
-        const wing2 = {
-          x: tip.x - headLen * Math.cos(angle + headAngle),
-          y: tip.y - headLen * Math.sin(angle + headAngle),
-        };
-        const pathData = `M ${tail.x} ${tail.y} L ${tip.x} ${tip.y} M ${wing1.x} ${wing1.y} L ${tip.x} ${tip.y} L ${wing2.x} ${wing2.y}`;
-        const arrow = new Path(pathData, {
+        const arrow = new Path(buildArrowPathCommands(tail, tip), {
           stroke: strokeColor,
           strokeWidth,
           fill: '',
           strokeLineCap: 'round',
           strokeLineJoin: 'round',
+          perPixelTargetFind: true,
+          objectCaching: false,
+          padding: 8,
         });
-        (arrow as unknown as { data: unknown }).data = makeData('arrow');
+        (arrow as unknown as { data: unknown }).data = { ...makeData('arrow'), kind: 'arrow' };
+        setupArrowEndpointEditing(arrow);
         canvas.add(arrow);
         canvas.setActiveObject(arrow);
       } else if (activeShapeRef.current) {
+        if (activeShapeRef.current instanceof Line) {
+          setupLineEndpointEditing(activeShapeRef.current);
+        }
         canvas.setActiveObject(activeShapeRef.current);
       }
 
