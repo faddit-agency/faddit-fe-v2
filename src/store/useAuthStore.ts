@@ -2,6 +2,7 @@ import { createAppStore } from './createAppStore';
 
 export type AuthUser = {
   userId: string;
+  rootFolder?: string;
   name?: string;
   email?: string;
   profileImg?: string;
