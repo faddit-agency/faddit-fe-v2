@@ -130,3 +130,6 @@ dist
 
 # Cursor
 .cursor
+
+# pnpm
+.pnpm-store
