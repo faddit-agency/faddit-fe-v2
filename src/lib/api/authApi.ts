@@ -28,6 +28,7 @@ export type SignOutRequest = {
 
 export type SignInResponse = {
   userId: string;
+  rootFolder?: string;
   accessToken: string;
   accessTokenExpiresAt: string;
   serverNow: string;
@@ -58,6 +59,12 @@ const toAuthUser = (payload: Record<string, unknown>) => {
 
   return {
     userId,
+    rootFolder:
+      typeof payload.rootFolder === 'string'
+        ? payload.rootFolder
+        : typeof payload.root_folder === 'string'
+          ? payload.root_folder
+          : undefined,
     name: typeof payload.name === 'string' ? payload.name : undefined,
     email: typeof payload.email === 'string' ? payload.email : undefined,
     profileImg:
@@ -200,7 +207,7 @@ export const bootstrapAuthSession = async () => {
 
     const { user } = useAuthStore.getState();
     const hasRenderableProfile = Boolean(
-      user?.userId && (user?.name || user?.email || user?.profileImg),
+      user?.userId && user?.rootFolder && (user?.name || user?.email || user?.profileImg),
     );
 
     if (!hasRenderableProfile) {

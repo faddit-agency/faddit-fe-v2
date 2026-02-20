@@ -180,6 +180,7 @@ function App() {
 
         <Route element={<DriveLayout />}>
           <Route path='/faddit/drive' element={<FadditDrive />} />
+          <Route path='/faddit/drive/:folderId' element={<FadditDrive />} />
         </Route>
 
         <Route path='*' element={<PageNotFound />} />

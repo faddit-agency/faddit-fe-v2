@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useDraggable } from '@dnd-kit/core';
+import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { LayoutGrid, List } from 'lucide-react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import DriveItemCard from '../../../components/DriveItemCard';
 import GlobalTooltip from '../../../components/ui/GlobalTooltip';
 import Notification from '../../../components/Notification';
 import ChildCloth from '../../../images/faddit/childcloth.png';
 import { useDrive, DriveItem, DriveFolder } from '../../../context/DriveContext';
+import { useAuthStore } from '../../../store/useAuthStore';
 
 type ViewMode = 'grid' | 'list';
 
@@ -39,7 +41,16 @@ const DriveFolderTile: React.FC<{
   dragSelectionEntries: DragSelectionEntry[];
   onToggleSelect: (checked: boolean) => void;
   onPress: (event: React.MouseEvent<HTMLDivElement>) => void;
-}> = ({ folder, isSelected, dragSelectionIds, dragSelectionEntries, onToggleSelect, onPress }) => {
+  onOpen: (folderId: string) => void;
+}> = ({
+  folder,
+  isSelected,
+  dragSelectionIds,
+  dragSelectionEntries,
+  onToggleSelect,
+  onPress,
+  onOpen,
+}) => {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: folder.id,
     data: {
@@ -51,6 +62,18 @@ const DriveFolderTile: React.FC<{
       selectedEntries: dragSelectionEntries,
     },
   });
+  const { setNodeRef: setDropRef, isOver } = useDroppable({
+    id: folder.id,
+    data: {
+      type: 'folder',
+      id: folder.id,
+    },
+  });
+
+  const setCombinedRef = (node: HTMLDivElement | null) => {
+    setNodeRef(node);
+    setDropRef(node);
+  };
 
   const style = isDragging
     ? {
@@ -64,17 +87,20 @@ const DriveFolderTile: React.FC<{
 
   return (
     <div
-      ref={setNodeRef}
+      ref={setCombinedRef}
       style={style}
       {...listeners}
       {...attributes}
       data-selectable-item='true'
       data-item-id={folder.id}
       onClick={onPress}
+      onDoubleClick={() => onOpen(folder.id)}
       className={`group relative flex cursor-grab touch-none items-center justify-between rounded-xl px-4 py-3 active:cursor-grabbing dark:bg-gray-800/70 ${
         isSelected
           ? 'bg-violet-100 ring-2 ring-violet-300 dark:bg-violet-500/20 dark:ring-violet-500/60'
-          : 'bg-gray-100 dark:bg-gray-800/70'
+          : isOver
+            ? 'bg-gray-100 ring-2 ring-violet-300 dark:bg-gray-700/60 dark:ring-violet-500/50'
+            : 'bg-gray-100 dark:bg-gray-800/70'
       }`}
     >
       <label
@@ -144,6 +170,19 @@ const DriveListRow: React.FC<{
       selectedEntries: dragSelectionEntries,
     },
   });
+  const { setNodeRef: setDropRef, isOver } = useDroppable({
+    id: entry.id,
+    disabled: entry.kind !== 'folder',
+    data: {
+      type: entry.kind === 'folder' ? 'folder' : 'file',
+      id: entry.id,
+    },
+  });
+
+  const setCombinedRef = (node: HTMLTableRowElement | null) => {
+    setNodeRef(node);
+    setDropRef(node);
+  };
 
   const style = isDragging
     ? {
@@ -157,7 +196,7 @@ const DriveListRow: React.FC<{
 
   return (
     <tr
-      ref={setNodeRef}
+      ref={setCombinedRef}
       style={style}
       {...attributes}
       {...listeners}
@@ -167,7 +206,9 @@ const DriveListRow: React.FC<{
       className={`cursor-grab border-t active:cursor-grabbing dark:border-gray-700/60 ${
         isSelected || isActive
           ? 'border-violet-200 bg-violet-50/40 dark:border-violet-500/40 dark:bg-violet-500/10'
-          : 'border-gray-100 hover:bg-gray-50/70 dark:hover:bg-gray-800/50'
+          : isOver && entry.kind === 'folder'
+            ? 'border-violet-200 bg-violet-50/40 dark:border-violet-500/40 dark:bg-violet-500/10'
+            : 'border-gray-100 hover:bg-gray-50/70 dark:hover:bg-gray-800/50'
       }`}
     >
       <td className='px-4 py-3'>
@@ -228,8 +269,22 @@ const DriveListRow: React.FC<{
 };
 
 const FadditDrive: React.FC = () => {
-  const { items, setItems, driveFolders, setDriveFolders } = useDrive();
+  const {
+    items,
+    setItems,
+    driveFolders,
+    setDriveFolders,
+    createFolder,
+    loadFolderView,
+    currentFolderPath,
+    rootFolderId,
+  } = useDrive();
+  const navigate = useNavigate();
+  const { folderId } = useParams<{ folderId?: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rootFolderFromAuth = useAuthStore((state) => state.user?.rootFolder);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activeItemId, setActiveItemId] = useState<string>('');
   const [detailPanelOpen, setDetailPanelOpen] = useState(false);
@@ -246,31 +301,83 @@ const FadditDrive: React.FC = () => {
   const gridContentRef = useRef<HTMLDivElement | null>(null);
   const suppressBlankClearRef = useRef(false);
   const [marqueeRect, setMarqueeRect] = useState<MarqueeRect | null>(null);
+  const { setNodeRef: setRootDropRef } = useDroppable({
+    id: 'drive-root-container',
+    data: {
+      type: 'root-container',
+      id: 'drive-root-container',
+    },
+  });
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const fileIdFromQuery = searchParams.get('file') || '';
+
+  const breadcrumbParts = useMemo(() => {
+    if (!currentFolderPath) {
+      return ['홈'];
+    }
+
+    const segments = currentFolderPath
+      .split('/')
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+
+    return segments.length > 0 ? segments : ['홈'];
+  }, [currentFolderPath]);
+
+  const pageTitle = breadcrumbParts[breadcrumbParts.length - 1] || '홈';
+
+  const navigateToFolder = (nextFolderId: string) => {
+    navigate(`/faddit/drive/${nextFolderId}`);
+  };
+
+  const setFileQuery = (fileId: string | null) => {
+    const next = new URLSearchParams(searchParams);
+    if (fileId) {
+      next.set('file', fileId);
+    } else {
+      next.delete('file');
+    }
+    setSearchParams(next, { replace: true });
+  };
+
+  useEffect(() => {
+    const effectiveRootFolderId = rootFolderId || rootFolderFromAuth;
+    if (!effectiveRootFolderId) {
+      return;
+    }
+
+    const targetFolderId = folderId || effectiveRootFolderId;
+    loadFolderView(targetFolderId).catch((error) => {
+      console.error('Failed to load drive folder view', error);
+    });
+  }, [folderId, loadFolderView, rootFolderFromAuth, rootFolderId]);
+
+  useEffect(() => {
+    if (!fileIdFromQuery) {
+      return;
+    }
+
+    const queryItem = items.find((item) => item.id === fileIdFromQuery);
+    if (!queryItem) {
+      if (items.length > 0) {
+        setActiveItemId('');
+        setDetailPanelOpen(false);
+      }
+      return;
+    }
+
+    setSelectedIds([queryItem.id]);
+    setActiveItemId(queryItem.id);
+    setDetailPanelOpen(true);
+  }, [fileIdFromQuery, items]);
 
   const clearSelectionEffects = () => {
     setSelectedIds([]);
     setActiveItemId('');
     setDetailPanelOpen(false);
+    setFileQuery(null);
   };
-
-  useEffect(() => {
-    if (items.length === 0) {
-      const mockItems = Array.from({ length: 10 }).map((_, index) => ({
-        id: `drive-item-${index + 1}`,
-        imageSrc: ChildCloth,
-        imageAlt: 'Application 01',
-        title: `[패딧] 2025 S/S 남성 청바지_데미지 ${index + 1}`,
-        subtitle: '테스트 필드',
-        badge: '테스트 뱃지1',
-        owner: index % 2 === 0 ? 'Carolyn McNeail' : 'Faddit Team',
-        date: `2026-02-${String((index % 9) + 1).padStart(2, '0')}`,
-        size: `${(index % 5) + 1}.${index % 3} MB`,
-      }));
-      setItems(mockItems);
-    }
-  }, []);
 
   useEffect(() => {
     setSelectedIds((prev) =>
@@ -347,6 +454,7 @@ const FadditDrive: React.FC = () => {
     handleToggleWithGesture(itemId, event);
 
     if (!isMultiSelectGesture(event)) {
+      setFileQuery(itemId);
       setActiveItemId(itemId);
       setDetailPanelOpen(true);
     }
@@ -447,8 +555,30 @@ const FadditDrive: React.FC = () => {
     handleToggleWithGesture(entry.id, event);
 
     if (entry.kind === 'file' && !isMultiSelectGesture(event)) {
+      setFileQuery(entry.id);
       setActiveItemId(entry.id);
       setDetailPanelOpen(true);
+    }
+  };
+
+  const handleCloseDetailPanel = () => {
+    setDetailPanelOpen(false);
+    setFileQuery(null);
+  };
+
+  const handleCreateFolder = async () => {
+    const folderName = window.prompt('새 폴더 이름을 입력하세요.', '새 폴더');
+    if (folderName === null) {
+      return;
+    }
+
+    try {
+      setIsCreatingFolder(true);
+      await createFolder(folderName);
+    } catch (error) {
+      console.error('Failed to create folder', error);
+    } finally {
+      setIsCreatingFolder(false);
     }
   };
 
@@ -674,7 +804,10 @@ const FadditDrive: React.FC = () => {
           }`}
         >
           <div
-            ref={gridSelectionRef}
+            ref={(node) => {
+              gridSelectionRef.current = node;
+              setRootDropRef(node);
+            }}
             onMouseDown={handleGridMarqueeSelect}
             onClick={handleContainerBlankClick}
             className='scrollbar-drive relative h-full overflow-x-hidden overflow-y-auto px-4 py-6 sm:px-6 lg:px-8'
@@ -682,8 +815,16 @@ const FadditDrive: React.FC = () => {
             <div className='mb-8 sm:flex sm:items-center sm:justify-between'>
               <div className='mb-4 sm:mb-0'>
                 <h1 className='text-2xl font-bold text-gray-800 md:text-3xl dark:text-gray-100'>
-                  홈
+                  {pageTitle}
                 </h1>
+                <div className='mt-2 flex flex-wrap items-center gap-2 text-xs font-medium text-gray-500 dark:text-gray-400'>
+                  {breadcrumbParts.map((part, index) => (
+                    <React.Fragment key={`${part}-${index}`}>
+                      {index > 0 && <span>/</span>}
+                      <span>{part}</span>
+                    </React.Fragment>
+                  ))}
+                </div>
               </div>
 
               <div className='grid grid-flow-col justify-start gap-2 sm:auto-cols-max sm:justify-end'>
@@ -734,6 +875,8 @@ const FadditDrive: React.FC = () => {
 
                 <button
                   type='button'
+                  onClick={handleCreateFolder}
+                  disabled={isCreatingFolder}
                   className='btn bg-gray-900 text-gray-100 hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-800 dark:hover:bg-white'
                 >
                   <svg
@@ -764,6 +907,7 @@ const FadditDrive: React.FC = () => {
                           dragSelectionEntries={dragSelection.entries}
                           onToggleSelect={(checked) => applySelection(folder.id, checked)}
                           onPress={(event) => handleFolderPress(folder.id, event)}
+                          onOpen={navigateToFolder}
                         />
                       );
                     })}
@@ -864,7 +1008,7 @@ const FadditDrive: React.FC = () => {
                 <div className='mb-2 flex justify-end'>
                   <button
                     type='button'
-                    onClick={() => setDetailPanelOpen(false)}
+                    onClick={handleCloseDetailPanel}
                     className='rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-200'
                     aria-label='상세 패널 닫기'
                   >
@@ -886,7 +1030,7 @@ const FadditDrive: React.FC = () => {
             ? 'pointer-events-auto opacity-100'
             : 'pointer-events-none opacity-0'
         }`}
-        onClick={() => setDetailPanelOpen(false)}
+        onClick={handleCloseDetailPanel}
       >
         <div
           className={`h-full w-full overflow-y-auto bg-[#f9f9f9] p-4 transition-transform duration-300 sm:p-6 dark:bg-gray-900 ${
@@ -899,7 +1043,7 @@ const FadditDrive: React.FC = () => {
               <div className='mb-2 flex justify-end'>
                 <button
                   type='button'
-                  onClick={() => setDetailPanelOpen(false)}
+                  onClick={handleCloseDetailPanel}
                   className='rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-200'
                   aria-label='상세 패널 닫기'
                 >

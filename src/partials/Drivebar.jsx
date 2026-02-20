@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { useDrive } from '../context/DriveContext';
@@ -19,10 +19,11 @@ import {
 } from 'lucide-react';
 
 // Helper component for droppable sections
-const DragDropSection = ({ id, title, children, className }) => {
+const DragDropSection = ({ id, title, children, className, droppable = true }) => {
   const { setNodeRef, isOver } = useDroppable({
-    id: id,
-    data: { type: 'section', id: id },
+    id,
+    disabled: !droppable,
+    data: { type: 'section', id },
   });
 
   return (
@@ -44,6 +45,11 @@ const SidebarTreeNode = ({
   expandedFolders,
   setExpandedFolders,
   setSidebarExpanded,
+  pointedFolderId,
+  setPointedFolderId,
+  loadFolderChildren,
+  onNavigateFolder,
+  onOpenFile,
 }) => {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: item.id,
@@ -51,38 +57,67 @@ const SidebarTreeNode = ({
       type: 'sidebar-item',
       itemType: item.type,
       itemId: item.id,
+      parentId: item.parentId ?? null,
     },
   });
 
   const { setNodeRef: setDropRef, isOver } = useDroppable({
-    id: item.id,
+    id: `sidebar-folder-${item.id}`,
     disabled: item.type !== 'folder',
     data: {
       type: 'folder',
       id: item.id,
     },
   });
-
   const setCombinedRef = (node) => {
     setNodeRef(node);
     setDropRef(node);
   };
 
   const isOpen = expandedFolders[item.id] ?? false;
+  const isPointed = pointedFolderId === item.id;
 
   useEffect(() => {
     if (item.type === 'folder' && isOver && !isOpen) {
       setExpandedFolders((prev) => ({ ...prev, [item.id]: true }));
-    }
-  }, [isOpen, isOver, item.id, item.type, setExpandedFolders]);
 
-  const toggleFolder = () => {
+      if (item.children === undefined) {
+        loadFolderChildren(item.id).catch((error) => {
+          console.error('Failed to load sidebar folder children', error);
+        });
+      }
+    }
+  }, [isOpen, isOver, item.children, item.id, item.type, loadFolderChildren, setExpandedFolders]);
+
+  const toggleFolder = async () => {
     if (item.type !== 'folder') {
       return;
     }
 
-    setExpandedFolders((prev) => ({ ...prev, [item.id]: !isOpen }));
+    const nextOpen = !isOpen;
+    setExpandedFolders((prev) => ({ ...prev, [item.id]: nextOpen }));
+    if (nextOpen) {
+      await loadFolderChildren(item.id);
+    }
     setSidebarExpanded(true);
+  };
+
+  const handleFolderRowClick = () => {
+    if (item.type !== 'folder') {
+      onOpenFile(item.id, item.parentId ?? null);
+      return;
+    }
+    setPointedFolderId(item.id);
+    onNavigateFolder(item.id);
+  };
+
+  const handleChevronClick = (event) => {
+    event.stopPropagation();
+    if (item.type !== 'folder') {
+      return;
+    }
+    setPointedFolderId(item.id);
+    void toggleFolder();
   };
 
   const nodeStyle = isDragging
@@ -102,16 +137,16 @@ const SidebarTreeNode = ({
         style={nodeStyle}
         {...listeners}
         {...attributes}
-        className={`mb-0.5 rounded-lg py-2 pr-3 transition duration-150 ${
+        className={`mb-0.5 rounded-md py-2 pr-3 transition duration-150 ${
           item.type === 'folder'
-            ? 'cursor-pointer hover:bg-white hover:shadow-sm dark:hover:bg-gray-700/70'
+            ? 'cursor-pointer hover:bg-white/80 dark:hover:bg-gray-700/70'
             : 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40'
-        } ${
+        } ${isPointed && item.type === 'folder' ? 'bg-violet-50 dark:bg-violet-500/15' : ''} ${
           isOver && item.type === 'folder'
-            ? 'bg-gray-100 ring-2 ring-violet-400 dark:bg-gray-700/50'
+            ? 'bg-violet-100/70 outline outline-1 outline-violet-300 dark:bg-violet-500/20 dark:outline-violet-500/60'
             : ''
         }`}
-        onDoubleClick={toggleFolder}
+        onClick={handleFolderRowClick}
       >
         <div
           className='flex items-center justify-between'
@@ -144,26 +179,30 @@ const SidebarTreeNode = ({
             )}
 
             {item.type === 'folder' ? (
+              <span className='ml-4 truncate text-sm font-medium text-gray-800 dark:text-gray-100'>
+                {item.name}
+              </span>
+            ) : (
               <button
                 type='button'
-                className='ml-4 truncate text-sm font-medium text-gray-800 dark:text-gray-100'
-                onClick={toggleFolder}
+                className='ml-4 truncate text-left text-sm font-medium text-gray-500/90 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onOpenFile(item.id, item.parentId ?? null);
+                }}
               >
                 {item.name}
               </button>
-            ) : (
-              <NavLink
-                end
-                to='/'
-                className='ml-4 truncate text-sm font-medium text-gray-500/90 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-              >
-                {item.name}
-              </NavLink>
             )}
           </div>
 
           {item.type === 'folder' && (
-            <div className='ml-2 flex shrink-0'>
+            <button
+              type='button'
+              className='ml-2 flex shrink-0 cursor-pointer rounded p-0.5 text-gray-400 hover:bg-gray-100/80 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-700/60 dark:hover:text-gray-200'
+              onClick={handleChevronClick}
+              aria-label={isOpen ? '폴더 닫기' : '폴더 열기'}
+            >
               {isOpen ? (
                 <ChevronUp
                   width={16}
@@ -179,7 +218,7 @@ const SidebarTreeNode = ({
                   className='text-gray-400 dark:text-gray-500'
                 />
               )}
-            </div>
+            </button>
           )}
         </div>
       </div>
@@ -194,6 +233,11 @@ const SidebarTreeNode = ({
               expandedFolders={expandedFolders}
               setExpandedFolders={setExpandedFolders}
               setSidebarExpanded={setSidebarExpanded}
+              pointedFolderId={pointedFolderId}
+              setPointedFolderId={setPointedFolderId}
+              loadFolderChildren={loadFolderChildren}
+              onNavigateFolder={onNavigateFolder}
+              onOpenFile={onOpenFile}
             />
           ))}
         </ul>
@@ -204,8 +248,15 @@ const SidebarTreeNode = ({
 
 function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default' }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const { pathname } = location;
-  const { workspaces, favorites } = useDrive();
+  const {
+    workspaces,
+    favorites,
+    sidebarAutoOpenFolderId,
+    setSidebarAutoOpenFolderId,
+    loadFolderChildren,
+  } = useDrive();
 
   const trigger = useRef(null);
   const sidebar = useRef(null);
@@ -215,6 +266,12 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default' }) {
     storedSidebarExpanded === null ? false : storedSidebarExpanded === 'true',
   );
   const [expandedFolders, setExpandedFolders] = useState({});
+  const [myWorkspaceOpen, setMyWorkspaceOpen] = useState(true);
+  const [pointedFolderId, setPointedFolderId] = useState('my-workspace');
+  const { setNodeRef: setMyWorkspaceDropRef, isOver: isMyWorkspaceOver } = useDroppable({
+    id: 'my-workspace',
+    data: { type: 'folder', id: 'my-workspace' },
+  });
 
   // close on click outside
   useEffect(() => {
@@ -246,6 +303,41 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default' }) {
       document.querySelector('body').classList.remove('sidebar-expanded');
     }
   }, [sidebarExpanded]);
+
+  useEffect(() => {
+    if (!sidebarAutoOpenFolderId) {
+      return;
+    }
+
+    const applySidebarAutoOpenState = () => {
+      setMyWorkspaceOpen(true);
+      setPointedFolderId(sidebarAutoOpenFolderId);
+      setExpandedFolders((prev) => ({ ...prev, [sidebarAutoOpenFolderId]: true }));
+      setSidebarExpanded(true);
+    };
+
+    applySidebarAutoOpenState();
+
+    loadFolderChildren(sidebarAutoOpenFolderId)
+      .catch((error) => {
+        console.error('Failed to load sidebar folder children', error);
+      })
+      .finally(() => {
+        setSidebarAutoOpenFolderId(null);
+      });
+  }, [sidebarAutoOpenFolderId, loadFolderChildren, setSidebarAutoOpenFolderId]);
+
+  const navigateToFolder = (folderId) => {
+    navigate(`/faddit/drive/${folderId}`);
+  };
+
+  const openFileDetail = (fileId, parentFolderId) => {
+    const pathname = parentFolderId ? `/faddit/drive/${parentFolderId}` : '/faddit/drive';
+    navigate({
+      pathname,
+      search: `?file=${fileId}`,
+    });
+  };
 
   return (
     <div className='min-w-fit'>
@@ -403,18 +495,92 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default' }) {
               </li>
 
               {/* Workspace Section */}
-              <DragDropSection id='section-workspace' title='워크스페이스'>
+              <DragDropSection id='section-workspace' title='워크스페이스' droppable={false}>
                 <ul>
-                  {workspaces.map((item) => (
-                    <SidebarTreeNode
-                      key={item.id}
-                      item={item}
-                      depth={0}
-                      expandedFolders={expandedFolders}
-                      setExpandedFolders={setExpandedFolders}
-                      setSidebarExpanded={setSidebarExpanded}
-                    />
-                  ))}
+                  <li>
+                    <div
+                      ref={setMyWorkspaceDropRef}
+                      className={`mb-0.5 cursor-pointer rounded-md py-2 pr-3 transition duration-150 hover:bg-white/80 dark:hover:bg-gray-700/70 ${
+                        pointedFolderId === 'my-workspace'
+                          ? 'bg-violet-50 dark:bg-violet-500/15'
+                          : isMyWorkspaceOver
+                            ? 'bg-violet-100/70 outline outline-1 outline-violet-300 dark:bg-violet-500/20 dark:outline-violet-500/60'
+                            : ''
+                      }`}
+                      onClick={() => {
+                        setPointedFolderId('my-workspace');
+                        navigate('/faddit/drive');
+                      }}
+                    >
+                      <div className='flex items-center justify-between pl-4'>
+                        <div className='flex min-w-0 items-center'>
+                          {myWorkspaceOpen ? (
+                            <FolderOpen
+                              width={16}
+                              height={16}
+                              strokeWidth={3}
+                              className='text-faddit dark:text-faddit shrink-0'
+                            />
+                          ) : (
+                            <FolderClosed
+                              width={16}
+                              height={16}
+                              strokeWidth={3}
+                              className='shrink-0 text-gray-400 dark:text-gray-500'
+                            />
+                          )}
+                          <span className='ml-4 truncate text-sm font-medium text-gray-800 dark:text-gray-100'>
+                            내 워크스페이스
+                          </span>
+                        </div>
+                        <button
+                          type='button'
+                          className='ml-2 flex shrink-0 cursor-pointer rounded p-0.5 text-gray-400 hover:bg-gray-100/80 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-700/60 dark:hover:text-gray-200'
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setPointedFolderId('my-workspace');
+                            setMyWorkspaceOpen((prev) => !prev);
+                            setSidebarExpanded(true);
+                          }}
+                          aria-label={
+                            myWorkspaceOpen ? '내 워크스페이스 닫기' : '내 워크스페이스 열기'
+                          }
+                        >
+                          {myWorkspaceOpen ? (
+                            <ChevronUp
+                              width={16}
+                              height={16}
+                              strokeWidth={3}
+                              className='text-gray-500 dark:text-gray-300'
+                            />
+                          ) : (
+                            <ChevronDown
+                              width={16}
+                              height={16}
+                              strokeWidth={3}
+                              className='text-gray-500 dark:text-gray-300'
+                            />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </li>
+                  {myWorkspaceOpen &&
+                    workspaces.map((item) => (
+                      <SidebarTreeNode
+                        key={item.id}
+                        item={item}
+                        depth={1}
+                        expandedFolders={expandedFolders}
+                        setExpandedFolders={setExpandedFolders}
+                        setSidebarExpanded={setSidebarExpanded}
+                        pointedFolderId={pointedFolderId}
+                        setPointedFolderId={setPointedFolderId}
+                        loadFolderChildren={loadFolderChildren}
+                        onNavigateFolder={navigateToFolder}
+                        onOpenFile={openFileDetail}
+                      />
+                    ))}
                 </ul>
               </DragDropSection>
 
@@ -429,6 +595,11 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default' }) {
                       expandedFolders={expandedFolders}
                       setExpandedFolders={setExpandedFolders}
                       setSidebarExpanded={setSidebarExpanded}
+                      pointedFolderId={pointedFolderId}
+                      setPointedFolderId={setPointedFolderId}
+                      loadFolderChildren={loadFolderChildren}
+                      onNavigateFolder={navigateToFolder}
+                      onOpenFile={openFileDetail}
                     />
                   ))}
                 </ul>

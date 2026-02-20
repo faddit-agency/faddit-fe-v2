@@ -1,6 +1,14 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useState, ReactNode } from 'react';
+import {
+  createDriveFolder,
+  getDriveAll,
+  getDriveFilePreviewUrl,
+  getDriveStarredAll,
+  updateDriveItems,
+  DriveNode,
+} from '../lib/api/driveApi';
+import ChildClothImage from '../images/faddit/childcloth.png';
 
-// Define the shape of a Drive Item
 export interface DriveItem {
   id: string;
   imageSrc: string;
@@ -19,14 +27,17 @@ export interface DriveFolder {
   shared: boolean;
   updatedAt: string;
   updatedBy: string;
+  parentId: string | null;
+  isStarred: boolean;
 }
 
 export interface SidebarItem {
   id: string;
   type: 'folder' | 'file';
   name: string;
+  parentId?: string | null;
   children?: SidebarItem[];
-  isOpen?: boolean; // For folders
+  isOpen?: boolean;
 }
 
 export interface ActiveDriveDragItem {
@@ -45,15 +56,23 @@ interface DriveContextType {
   setItems: React.Dispatch<React.SetStateAction<DriveItem[]>>;
   driveFolders: DriveFolder[];
   setDriveFolders: React.Dispatch<React.SetStateAction<DriveFolder[]>>;
-  moveItemToFolder: (item: SidebarItem, folderId: string) => boolean;
-  moveSidebarItem: (itemId: string, targetId: string) => void;
   activeDragItem: ActiveDriveDragItem | null;
   setActiveDragItem: (item: ActiveDriveDragItem | null) => void;
   workspaces: SidebarItem[];
-  setWorkspaces: React.Dispatch<React.SetStateAction<SidebarItem[]>>;
   favorites: SidebarItem[];
-  setFavorites: React.Dispatch<React.SetStateAction<SidebarItem[]>>;
-  addFileToSection: (section: 'workspace' | 'favorite', file: SidebarItem) => void;
+  sidebarAutoOpenFolderId: string | null;
+  rootFolderId: string | null;
+  currentFolderId: string | null;
+  currentFolderPath: string;
+  hydrateDrive: (rootFolderId: string) => Promise<void>;
+  refreshDrive: () => Promise<void>;
+  loadFolderView: (folderId: string) => Promise<void>;
+  createFolder: (name: string) => Promise<void>;
+  moveItems: (ids: string[], targetFolderId: string, currentFolderId: string) => Promise<void>;
+  setItemsStarred: (ids: string[], isStarred: boolean) => Promise<void>;
+  getItemParentId: (itemId: string) => string | null;
+  loadFolderChildren: (folderId: string) => Promise<void>;
+  setSidebarAutoOpenFolderId: (folderId: string | null) => void;
 }
 
 const DriveContext = createContext<DriveContextType | undefined>(undefined);
@@ -66,269 +85,321 @@ export const useDrive = () => {
   return context;
 };
 
-// Initial Mock Data
-const initialWorkspaces: SidebarItem[] = Array.from({ length: 3 }).map((_, i) => ({
-  id: `folder-workspace-${i}`,
+const toDriveFolder = (folder: DriveNode): DriveFolder => ({
+  id: folder.fileSystemId,
+  name: folder.name,
+  shared: false,
+  updatedAt: folder.updatedAt || '',
+  updatedBy: '',
+  parentId: folder.parentId,
+  isStarred: folder.isStarred,
+});
+
+const toSidebarFolder = (folder: DriveNode): SidebarItem => ({
+  id: folder.fileSystemId,
   type: 'folder',
-  name: `워크 스페이스 폴더 ${i + 1}`,
-  children: [{ id: `file-workspace-${i}-1`, type: 'file', name: '작지 파일 1' }],
-}));
+  name: folder.name,
+  parentId: folder.parentId,
+  children: [],
+});
 
-const initialFavorites: SidebarItem[] = Array.from({ length: 3 }).map((_, i) => ({
-  id: `folder-favorite-${i}`,
-  type: 'folder',
-  name: `좋아하는 폴더 ${i + 1}`,
-  children: [{ id: `file-favorite-${i}-1`, type: 'file', name: '작지 파일 1' }],
-}));
+const toSidebarFile = (file: DriveNode): SidebarItem => ({
+  id: file.fileSystemId,
+  type: 'file',
+  name: file.name,
+  parentId: file.parentId,
+});
 
-const initialDriveFolders: DriveFolder[] = [
-  {
-    id: 'drive-folder-1',
-    name: '2026 faddit',
-    shared: false,
-    updatedAt: '2026. 2. 8.',
-    updatedBy: '김한재',
-  },
-  {
-    id: 'drive-folder-2',
-    name: 'files',
-    shared: false,
-    updatedAt: '2025. 3. 30.',
-    updatedBy: '최성락',
-  },
-  {
-    id: 'drive-folder-3',
-    name: 'Planning',
-    shared: false,
-    updatedAt: '2025. 3. 30.',
-    updatedBy: '최성락',
-  },
-  {
-    id: 'drive-folder-4',
-    name: 'Templates',
-    shared: true,
-    updatedAt: '2025. 8. 11.',
-    updatedBy: '최성락',
-  },
-];
-
-const SECTION_WORKSPACE_ID = 'section-workspace';
-const SECTION_FAVORITE_ID = 'section-favorite';
-
-const removeItemFromTree = (
-  tree: SidebarItem[],
-  targetId: string,
-): { nextTree: SidebarItem[]; removed: SidebarItem | null } => {
-  let removed: SidebarItem | null = null;
-
-  const nextTree = tree
-    .map((node) => {
-      if (node.id === targetId) {
-        removed = node;
-        return null;
-      }
-
-      if (!node.children?.length) {
-        return node;
-      }
-
-      const result = removeItemFromTree(node.children, targetId);
-      if (!result.removed) {
-        return node;
-      }
-
-      removed = result.removed;
-      return {
-        ...node,
-        children: result.nextTree,
-      };
-    })
-    .filter(Boolean) as SidebarItem[];
-
-  return { nextTree, removed };
-};
-
-const findItemInTree = (tree: SidebarItem[], targetId: string): SidebarItem | null => {
-  for (const node of tree) {
-    if (node.id === targetId) {
-      return node;
-    }
-
-    if (node.children?.length) {
-      const found = findItemInTree(node.children, targetId);
-      if (found) {
-        return found;
-      }
-    }
+const formatBytes = (value?: number) => {
+  if (!value || Number.isNaN(value)) {
+    return '-';
   }
 
-  return null;
-};
-
-const treeContainsId = (node: SidebarItem, targetId: string): boolean => {
-  if (node.id === targetId) {
-    return true;
+  if (value < 1024) {
+    return `${value} B`;
   }
 
-  if (!node.children?.length) {
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let next = value / 1024;
+  let index = 0;
+  while (next >= 1024 && index < units.length - 1) {
+    next /= 1024;
+    index += 1;
+  }
+
+  return `${next.toFixed(next >= 10 ? 0 : 1)} ${units[index]}`;
+};
+
+const toDriveItem = (node: DriveNode, imageSrc: string): DriveItem => ({
+  id: node.fileSystemId,
+  imageSrc,
+  imageAlt: node.name,
+  title: node.name,
+  subtitle: node.mimetype ? `.${node.mimetype}` : 'file',
+  badge: node.tag ? String(node.tag) : '파일',
+  date: node.updatedAt ? String(node.updatedAt).slice(0, 10) : '-',
+  size: formatBytes(node.size),
+});
+
+const isImageFile = (extension?: string) => {
+  if (!extension) {
     return false;
   }
 
-  return node.children.some((child) => treeContainsId(child, targetId));
+  const value = extension.toLowerCase();
+  return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(value);
 };
 
-const insertItemIntoFolder = (
-  tree: SidebarItem[],
-  folderId: string,
-  item: SidebarItem,
-): { nextTree: SidebarItem[]; inserted: boolean } => {
-  let inserted = false;
-
-  const nextTree = tree.map((node) => {
-    if (node.id === folderId && node.type === 'folder') {
-      inserted = true;
-      return {
-        ...node,
-        children: [...(node.children || []), item],
-      };
-    }
-
-    if (!node.children?.length) {
-      return node;
-    }
-
-    const result = insertItemIntoFolder(node.children, folderId, item);
-    if (result.inserted) {
-      inserted = true;
-      return {
-        ...node,
-        children: result.nextTree,
-      };
-    }
-
-    return node;
-  });
-
-  return { nextTree, inserted };
-};
-
-export const DriveProvider = ({
-  children,
-  initialItems,
-}: {
-  children: ReactNode;
-  initialItems?: DriveItem[];
-}) => {
-  const [items, setItems] = useState<DriveItem[]>(initialItems || []);
-  const [driveFolders, setDriveFolders] = useState<DriveFolder[]>(initialDriveFolders);
+export const DriveProvider = ({ children }: { children: ReactNode }) => {
+  const [items, setItems] = useState<DriveItem[]>([]);
+  const [driveFolders, setDriveFolders] = useState<DriveFolder[]>([]);
   const [activeDragItem, setActiveDragItem] = useState<ActiveDriveDragItem | null>(null);
-  const [workspaces, setWorkspaces] = useState<SidebarItem[]>(initialWorkspaces);
-  const [favorites, setFavorites] = useState<SidebarItem[]>(initialFavorites);
+  const [workspaces, setWorkspaces] = useState<SidebarItem[]>([]);
+  const [favorites, setFavorites] = useState<SidebarItem[]>([]);
+  const [sidebarAutoOpenFolderId, setSidebarAutoOpenFolderId] = useState<string | null>(null);
+  const [rootFolderId, setRootFolderId] = useState<string | null>(null);
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [currentFolderPath, setCurrentFolderPath] = useState('');
+  const [itemParentMap, setItemParentMap] = useState<Record<string, string | null>>({});
 
-  const moveItemToFolder = (item: SidebarItem, folderId: string) => {
-    const workspaceInsert = insertItemIntoFolder(workspaces, folderId, item);
-    if (workspaceInsert.inserted) {
-      setWorkspaces(workspaceInsert.nextTree);
-      return true;
-    }
-
-    const favoriteInsert = insertItemIntoFolder(favorites, folderId, item);
-    if (favoriteInsert.inserted) {
-      setFavorites(favoriteInsert.nextTree);
-      return true;
-    }
-
-    return false;
-  };
-
-  const moveSidebarItem = (itemId: string, targetId: string) => {
-    const sourceInWorkspace = findItemInTree(workspaces, itemId);
-    const sourceInFavorite = findItemInTree(favorites, itemId);
-    const movingItem = sourceInWorkspace || sourceInFavorite;
-
-    if (!movingItem) {
-      return;
-    }
-
-    const targetInWorkspace = findItemInTree(workspaces, targetId);
-    const targetInFavorite = findItemInTree(favorites, targetId);
-    const targetFolder = targetInWorkspace || targetInFavorite;
-
-    if (
-      targetId !== SECTION_WORKSPACE_ID &&
-      targetId !== SECTION_FAVORITE_ID &&
-      (!targetFolder || targetFolder.type !== 'folder')
-    ) {
-      return;
-    }
-
-    if (
-      movingItem.type === 'folder' &&
-      targetFolder &&
-      treeContainsId(movingItem, targetFolder.id)
-    ) {
-      return;
-    }
-
-    const workspaceRemoval = removeItemFromTree(workspaces, itemId);
-    const favoriteRemoval = removeItemFromTree(favorites, itemId);
-    const removedItem = workspaceRemoval.removed || favoriteRemoval.removed;
-
-    if (!removedItem) {
-      return;
-    }
-
-    let nextWorkspaces = workspaceRemoval.nextTree;
-    let nextFavorites = favoriteRemoval.nextTree;
-
-    if (targetId === SECTION_WORKSPACE_ID) {
-      nextWorkspaces = [...nextWorkspaces, removedItem];
-    } else if (targetId === SECTION_FAVORITE_ID) {
-      nextFavorites = [...nextFavorites, removedItem];
-    } else {
-      const workspaceInsert = insertItemIntoFolder(nextWorkspaces, targetId, removedItem);
-      if (workspaceInsert.inserted) {
-        nextWorkspaces = workspaceInsert.nextTree;
-      } else {
-        const favoriteInsert = insertItemIntoFolder(nextFavorites, targetId, removedItem);
-        if (!favoriteInsert.inserted) {
-          return;
+  const replaceChildrenInTree = useCallback(
+    (tree: SidebarItem[], folderId: string, children: SidebarItem[]): SidebarItem[] =>
+      tree.map((node) => {
+        if (node.id === folderId && node.type === 'folder') {
+          return {
+            ...node,
+            children,
+          };
         }
-        nextFavorites = favoriteInsert.nextTree;
-      }
-    }
 
-    setWorkspaces(nextWorkspaces);
-    setFavorites(nextFavorites);
-  };
+        if (node.children?.length) {
+          return {
+            ...node,
+            children: replaceChildrenInTree(node.children, folderId, children),
+          };
+        }
 
-  const addFileToSection = (section: 'workspace' | 'favorite', file: SidebarItem) => {
-    if (section === 'workspace') {
-      setWorkspaces((prev) => [...prev, file]);
-    } else {
-      setFavorites((prev) => [...prev, file]);
-    }
-  };
-
-  return (
-    <DriveContext.Provider
-      value={{
-        items,
-        setItems,
-        driveFolders,
-        setDriveFolders,
-        moveItemToFolder,
-        moveSidebarItem,
-        activeDragItem,
-        setActiveDragItem,
-        workspaces,
-        setWorkspaces,
-        favorites,
-        setFavorites,
-        addFileToSection,
-      }}
-    >
-      {children}
-    </DriveContext.Provider>
+        return node;
+      }),
+    [],
   );
+
+  const hydrateDrive = useCallback(async (nextRootFolderId: string) => {
+    if (!nextRootFolderId) {
+      return;
+    }
+
+    const [rootData, starredData] = await Promise.all([
+      getDriveAll(nextRootFolderId),
+      getDriveStarredAll(),
+    ]);
+
+    const rootFolders = rootData.folders.filter((node) => node.type === 'folder');
+    const starredFolders = starredData.folders.filter((node) => node.type === 'folder');
+
+    const nextParentMap: Record<string, string | null> = {};
+    rootFolders.forEach((folder) => {
+      nextParentMap[folder.fileSystemId] = folder.parentId;
+    });
+    starredFolders.forEach((folder) => {
+      if (!(folder.fileSystemId in nextParentMap)) {
+        nextParentMap[folder.fileSystemId] = folder.parentId;
+      }
+    });
+
+    setRootFolderId(nextRootFolderId);
+    rootData.files.forEach((file) => {
+      nextParentMap[file.fileSystemId] = file.parentId;
+    });
+    starredData.files.forEach((file) => {
+      if (!(file.fileSystemId in nextParentMap)) {
+        nextParentMap[file.fileSystemId] = file.parentId;
+      }
+    });
+
+    setItemParentMap(nextParentMap);
+    setWorkspaces([...rootFolders.map(toSidebarFolder), ...rootData.files.map(toSidebarFile)]);
+    setFavorites([...starredFolders.map(toSidebarFolder), ...starredData.files.map(toSidebarFile)]);
+  }, []);
+
+  const loadFolderView = useCallback(async (folderId: string) => {
+    if (!folderId) {
+      return;
+    }
+
+    const folderData = await getDriveAll(folderId);
+    const folders = folderData.folders.filter((node) => node.type === 'folder');
+    const fileItems = await Promise.all(
+      folderData.files.map(async (fileNode) => {
+        if (!isImageFile(fileNode.mimetype)) {
+          return toDriveItem(fileNode, ChildClothImage);
+        }
+
+        try {
+          const previewUrl = await getDriveFilePreviewUrl(fileNode.fileSystemId);
+          return toDriveItem(fileNode, previewUrl || ChildClothImage);
+        } catch {
+          return toDriveItem(fileNode, ChildClothImage);
+        }
+      }),
+    );
+
+    setCurrentFolderId(folderId);
+    setCurrentFolderPath(folderData.path || '');
+    setDriveFolders(folders.map(toDriveFolder));
+    setItems(fileItems);
+    setItemParentMap((prev) => {
+      const next = { ...prev };
+      folders.forEach((folder) => {
+        next[folder.fileSystemId] = folder.parentId;
+      });
+      folderData.files.forEach((file) => {
+        next[file.fileSystemId] = file.parentId;
+      });
+      return next;
+    });
+  }, []);
+
+  const refreshDrive = useCallback(async () => {
+    if (!rootFolderId) {
+      return;
+    }
+
+    await hydrateDrive(rootFolderId);
+    if (currentFolderId) {
+      await loadFolderView(currentFolderId);
+    }
+  }, [currentFolderId, hydrateDrive, loadFolderView, rootFolderId]);
+
+  const loadFolderChildren = useCallback(
+    async (folderId: string) => {
+      const childData = await getDriveAll(folderId);
+      const children = [
+        ...childData.folders.filter((node) => node.type === 'folder').map(toSidebarFolder),
+        ...childData.files.map(toSidebarFile),
+      ];
+
+      setWorkspaces((prev) => replaceChildrenInTree(prev, folderId, children));
+      setFavorites((prev) => replaceChildrenInTree(prev, folderId, children));
+      setItemParentMap((prev) => {
+        const next = { ...prev };
+        childData.folders.forEach((folder) => {
+          next[folder.fileSystemId] = folder.parentId;
+        });
+        childData.files.forEach((file) => {
+          next[file.fileSystemId] = file.parentId;
+        });
+        return next;
+      });
+    },
+    [replaceChildrenInTree],
+  );
+
+  const moveItems = useCallback(
+    async (ids: string[], targetFolderId: string, currentFolderId: string) => {
+      if (!ids.length) {
+        return;
+      }
+
+      await updateDriveItems({
+        id: ids,
+        parentId: targetFolderId,
+        currentId: currentFolderId,
+      });
+      await refreshDrive();
+    },
+    [refreshDrive],
+  );
+
+  const createFolder = useCallback(
+    async (name: string) => {
+      if (!rootFolderId) {
+        throw new Error('rootFolderId is missing');
+      }
+
+      const nextName = name.trim();
+      if (!nextName) {
+        return;
+      }
+
+      await createDriveFolder({
+        parentId: rootFolderId,
+        name: nextName,
+      });
+      await refreshDrive();
+    },
+    [refreshDrive, rootFolderId],
+  );
+
+  const setItemsStarred = useCallback(
+    async (ids: string[], isStarred: boolean) => {
+      if (!ids.length) {
+        return;
+      }
+
+      await updateDriveItems({
+        id: ids,
+        isStarred,
+      });
+      await refreshDrive();
+    },
+    [refreshDrive],
+  );
+
+  const getItemParentId = useCallback(
+    (itemId: string) => {
+      if (itemId in itemParentMap) {
+        return itemParentMap[itemId];
+      }
+      return null;
+    },
+    [itemParentMap],
+  );
+
+  const value = useMemo(
+    () => ({
+      items,
+      setItems,
+      driveFolders,
+      setDriveFolders,
+      activeDragItem,
+      setActiveDragItem,
+      workspaces,
+      favorites,
+      sidebarAutoOpenFolderId,
+      rootFolderId,
+      currentFolderId,
+      currentFolderPath,
+      hydrateDrive,
+      refreshDrive,
+      loadFolderView,
+      createFolder,
+      moveItems,
+      setItemsStarred,
+      getItemParentId,
+      loadFolderChildren,
+      setSidebarAutoOpenFolderId,
+    }),
+    [
+      items,
+      driveFolders,
+      activeDragItem,
+      workspaces,
+      favorites,
+      sidebarAutoOpenFolderId,
+      rootFolderId,
+      currentFolderId,
+      currentFolderPath,
+      hydrateDrive,
+      refreshDrive,
+      loadFolderView,
+      createFolder,
+      moveItems,
+      setItemsStarred,
+      getItemParentId,
+      loadFolderChildren,
+    ],
+  );
+
+  return <DriveContext.Provider value={value}>{children}</DriveContext.Provider>;
 };
