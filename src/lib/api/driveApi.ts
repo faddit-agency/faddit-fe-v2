@@ -14,6 +14,7 @@ export type DriveNode = {
   size?: number;
   mimetype?: string;
   tag?: string;
+  creatorName?: string;
 };
 
 export type DriveAllResponse = {
@@ -35,6 +36,44 @@ export type CreateDriveFolderPayload = {
   name: string;
 };
 
+export type DriveUploadTag =
+  | 'worksheet'
+  | 'schematic'
+  | 'etc'
+  | 'pattern'
+  | 'print'
+  | 'faddit'
+  | 'fabric'
+  | 'label';
+
+export type CreateDriveFilePayload = {
+  parentId: string | null;
+  userId: string;
+  files: File[];
+  tags: DriveUploadTag[];
+};
+
+export type CreateDriveFileResponse = {
+  result: Array<{
+    index: number;
+    success: boolean;
+    storage_path?: string;
+    originalName?: string;
+    result?: {
+      fileSystemId: string;
+      name: string;
+      path: string;
+      type: 'file';
+      storagePath: string;
+      mimetype: string;
+      tag: string;
+      size: number;
+    };
+  }>;
+  storageUsed: number;
+  storageLimit: number;
+};
+
 export const getDriveAll = async (path: string) => {
   const response = await baseHttpClient.get<DriveAllResponse>('/drive/all', {
     params: { path },
@@ -54,6 +93,28 @@ export const updateDriveItems = async (payload: UpdateDriveItemsPayload) => {
 
 export const createDriveFolder = async (payload: CreateDriveFolderPayload) => {
   const response = await baseHttpClient.post('/drive/folder', payload);
+  return response.data;
+};
+
+export const createDriveFile = async (payload: CreateDriveFilePayload) => {
+  const formData = new FormData();
+  payload.files.forEach((file) => {
+    formData.append('files', file);
+  });
+  payload.tags.forEach((tag) => {
+    formData.append('tags', tag);
+  });
+  if (payload.parentId) {
+    formData.append('parentId', payload.parentId);
+  }
+  formData.append('userId', payload.userId);
+
+  const response = await baseHttpClient.post<CreateDriveFileResponse>('/drive/file', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+
   return response.data;
 };
 

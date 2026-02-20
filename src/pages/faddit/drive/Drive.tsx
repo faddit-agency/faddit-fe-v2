@@ -6,9 +6,14 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import DriveItemCard from '../../../components/DriveItemCard';
 import GlobalTooltip from '../../../components/ui/GlobalTooltip';
 import Notification from '../../../components/Notification';
-import ChildCloth from '../../../images/faddit/childcloth.png';
 import { useDrive, DriveItem, DriveFolder } from '../../../context/DriveContext';
 import { useAuthStore } from '../../../store/useAuthStore';
+import { useDriveMaterialStore } from '../../../store/useDriveMaterialStore';
+import AddViewOptionModal from './components/AddViewOptionModal';
+import CreateFolderModal from './components/CreateFolderModal';
+import CreateMaterialModal, { CreateMaterialFormValue } from './components/CreateMaterialModal';
+import { createMaterial } from './materialApi';
+import { createDriveFile, DriveUploadTag } from '../../../lib/api/driveApi';
 
 type ViewMode = 'grid' | 'list';
 
@@ -277,14 +282,24 @@ const FadditDrive: React.FC = () => {
     createFolder,
     loadFolderView,
     currentFolderPath,
+    currentFolderIdPath,
     rootFolderId,
+    currentFolderId,
+    refreshDrive,
   } = useDrive();
   const navigate = useNavigate();
   const { folderId } = useParams<{ folderId?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const rootFolderFromAuth = useAuthStore((state) => state.user?.rootFolder);
+  const userId = useAuthStore((state) => state.user?.userId);
+  const currentUserName = useAuthStore((state) => state.user?.name);
+  const materialsByFileSystemId = useDriveMaterialStore((state) => state.materialsByFileSystemId);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [isCreatingMaterial, setIsCreatingMaterial] = useState(false);
+  const [addViewOptionModalOpen, setAddViewOptionModalOpen] = useState(false);
+  const [createFolderModalOpen, setCreateFolderModalOpen] = useState(false);
+  const [createMaterialModalOpen, setCreateMaterialModalOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activeItemId, setActiveItemId] = useState<string>('');
   const [detailPanelOpen, setDetailPanelOpen] = useState(false);
@@ -312,6 +327,96 @@ const FadditDrive: React.FC = () => {
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const fileIdFromQuery = searchParams.get('file') || '';
 
+  const categoryLabelMap: Record<string, string> = {
+    fabric: '원단',
+    rib_fabric: '시보리원단',
+    label: '라벨',
+    trim: '부자재',
+    worksheet: '작업지시서',
+    schematic: '도식화',
+    pattern: '패턴',
+    print: '프린트',
+    etc: '부자재',
+    faddit: '파일',
+  };
+
+  const attributeLabelMap: Record<string, string> = {
+    type: '타입',
+    material: '소재',
+    size: '규격',
+    size_mm: '규격',
+    thickness: '두께',
+    thickness_mm: '두께',
+    finishing: '마감',
+    print_method: '인쇄 방식',
+    print_artwork: '인쇄물',
+    color_mode: '컬러',
+    pantone_color: '팬톤 컬러',
+    blend_ratio: '혼용률',
+    weave: '조직',
+    pattern_width: '패턴폭',
+    pattern_width_mm: '패턴폭',
+    pattern_width_type: '폭 타입',
+    weight: '중량',
+    weight_gsm: '중량',
+    stretch: '신축성',
+    shrinkage_pct: '수축률',
+    moq: '최소 발주수량',
+    processing_fee: '가공비',
+    price_amount: '단가',
+    price_unit: '단위',
+    rib_spec: '리브 스펙',
+    rib_direction: '리브 방향',
+    gauge_no: '호수',
+    post_processing: '후가공',
+  };
+
+  const getAttributeLabel = (key: string) => {
+    return attributeLabelMap[key] || key.replace(/_/g, ' ');
+  };
+
+  const getCategoryLabel = (fileId: string, fallbackTag?: string) => {
+    const linkedMaterials = materialsByFileSystemId[fileId] || [];
+    const primaryMaterial = linkedMaterials[0];
+    if (primaryMaterial?.category) {
+      return categoryLabelMap[primaryMaterial.category] || primaryMaterial.category;
+    }
+    if (fallbackTag) {
+      return categoryLabelMap[fallbackTag] || fallbackTag;
+    }
+    return '파일';
+  };
+
+  const formatAttributeValue = (value: unknown): string => {
+    if (value === null || value === undefined || value === '') {
+      return '-';
+    }
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+    if (Array.isArray(value)) {
+      return value.map((item) => formatAttributeValue(item)).join(', ');
+    }
+    if (typeof value === 'object') {
+      const objectValue = value as Record<string, unknown>;
+      if (
+        ('width' in objectValue || 'height' in objectValue) &&
+        ('unit' in objectValue || 'width' in objectValue || 'height' in objectValue)
+      ) {
+        const width = objectValue.width ? String(objectValue.width) : '-';
+        const height = objectValue.height ? String(objectValue.height) : '-';
+        const unit = objectValue.unit ? String(objectValue.unit) : '';
+        return `${width} x ${height}${unit ? ` ${unit}` : ''}`;
+      }
+      return Object.entries(objectValue)
+        .map(
+          ([key, nestedValue]) => `${getAttributeLabel(key)}: ${formatAttributeValue(nestedValue)}`,
+        )
+        .join(', ');
+    }
+    return String(value);
+  };
+
   const breadcrumbParts = useMemo(() => {
     if (!currentFolderPath) {
       return ['홈'];
@@ -324,6 +429,16 @@ const FadditDrive: React.FC = () => {
 
     return segments.length > 0 ? segments : ['홈'];
   }, [currentFolderPath]);
+
+  const breadcrumbIds = useMemo(() => {
+    if (!currentFolderIdPath) {
+      return [] as string[];
+    }
+    return currentFolderIdPath
+      .split('/')
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+  }, [currentFolderIdPath]);
 
   const pageTitle = breadcrumbParts[breadcrumbParts.length - 1] || '홈';
 
@@ -566,12 +681,7 @@ const FadditDrive: React.FC = () => {
     setFileQuery(null);
   };
 
-  const handleCreateFolder = async () => {
-    const folderName = window.prompt('새 폴더 이름을 입력하세요.', '새 폴더');
-    if (folderName === null) {
-      return;
-    }
-
+  const handleCreateFolder = async (folderName: string) => {
     try {
       setIsCreatingFolder(true);
       await createFolder(folderName);
@@ -579,6 +689,53 @@ const FadditDrive: React.FC = () => {
       console.error('Failed to create folder', error);
     } finally {
       setIsCreatingFolder(false);
+    }
+  };
+
+  const handleCreateMaterial = async (value: CreateMaterialFormValue) => {
+    if (!userId || !rootFolderId) {
+      return;
+    }
+
+    try {
+      setIsCreatingMaterial(true);
+
+      const parentId = currentFolderId ?? rootFolderId;
+      const tagByCategory: Record<CreateMaterialFormValue['category'], DriveUploadTag> = {
+        fabric: 'fabric',
+        rib_fabric: 'fabric',
+        label: 'label',
+        trim: 'etc',
+      };
+
+      const uploadResult = await createDriveFile({
+        parentId,
+        userId,
+        files: [value.file],
+        tags: [tagByCategory[value.category]],
+      });
+
+      const createdFile = uploadResult.result.find((entry) => entry.success && entry.result);
+      if (!createdFile?.result?.fileSystemId) {
+        throw new Error('File upload failed');
+      }
+
+      await createMaterial({
+        userId,
+        category: value.category,
+        codeInternal: value.codeInternal,
+        vendorName: value.vendorName,
+        itemName: value.itemName,
+        originCountry: value.originCountry,
+        fileSystemId: createdFile.result.fileSystemId,
+        attributes: value.attributes,
+      });
+
+      await refreshDrive();
+    } catch (error) {
+      console.error('Failed to create material', error);
+    } finally {
+      setIsCreatingMaterial(false);
     }
   };
 
@@ -699,98 +856,108 @@ const FadditDrive: React.FC = () => {
     clearSelectionEffects();
   };
 
+  const activeLinkedMaterials = activeItem ? materialsByFileSystemId[activeItem.id] || [] : [];
+  const primaryActiveMaterial = activeLinkedMaterials[0] || null;
+  const activeCategoryLabel = activeItem
+    ? getCategoryLabel(activeItem.id, activeItem.badge)
+    : '파일';
+  const activeAttributeEntries = primaryActiveMaterial
+    ? Object.entries(primaryActiveMaterial.attributes || {})
+    : [];
+
   const detailPanelContent =
     detailPanelOpen && activeItem ? (
       <>
-        <div className='inline-flex rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-600'>
-          {activeItem.badge || '작업지시서'}
-        </div>
-
-        <h2 className='mt-4 text-[32px] leading-tight font-bold text-gray-900 dark:text-gray-100'>
-          {activeItem.title}
-        </h2>
-
-        <div className='mt-6 space-y-3 text-[25px] text-gray-700 dark:text-gray-300'>
-          <div className='flex items-center'>
-            <span className='mr-2 text-gray-400'>↬</span>
-            <span>브랜드 {activeItem.subtitle}</span>
-          </div>
-          <div className='flex items-center'>
-            <span className='mr-2 text-gray-400'>≡</span>
-            <span>{activeItem.size || '37 modules'}</span>
-          </div>
-          <div className='flex items-center'>
-            <span className='mr-2 text-gray-400'>◧</span>
-            <span>Access on mobile and TV</span>
+        <div className='overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xs dark:border-gray-700/60 dark:bg-gray-800'>
+          <img
+            src={activeItem.imageSrc}
+            alt={activeItem.imageAlt}
+            className='h-52 w-full object-cover'
+          />
+          <div className='space-y-3 p-5'>
+            <div className='inline-flex rounded-full bg-violet-100 px-2.5 py-1 text-xs font-semibold text-violet-700 dark:bg-violet-500/20 dark:text-violet-200'>
+              {activeCategoryLabel}
+            </div>
+            <h2 className='text-2xl leading-tight font-bold text-gray-900 dark:text-gray-100'>
+              {activeItem.title}
+            </h2>
+            <p className='text-sm text-gray-500 dark:text-gray-400'>
+              {activeItem.subtitle || 'file'} · {activeItem.size || '-'}
+            </p>
           </div>
         </div>
 
-        <div className='mt-5 -ml-0.5 flex -space-x-3'>
-          <img
-            className='box-content rounded-full border-2 border-white dark:border-gray-800'
-            src={ChildCloth}
-            width='28'
-            height='28'
-            alt='avatar'
-          />
-          <img
-            className='box-content rounded-full border-2 border-white dark:border-gray-800'
-            src={ChildCloth}
-            width='28'
-            height='28'
-            alt='avatar'
-          />
-          <img
-            className='box-content rounded-full border-2 border-white dark:border-gray-800'
-            src={ChildCloth}
-            width='28'
-            height='28'
-            alt='avatar'
-          />
-          <img
-            className='box-content rounded-full border-2 border-white dark:border-gray-800'
-            src={ChildCloth}
-            width='28'
-            height='28'
-            alt='avatar'
-          />
-        </div>
-
-        <div className='mt-16'>
-          <h3 className='mb-2 text-xl font-semibold text-gray-900 dark:text-gray-100'>Receipts</h3>
-          <div className='rounded-xl border border-dashed border-gray-300 bg-gray-50 px-5 py-10 text-center dark:border-gray-700/60 dark:bg-gray-800/40'>
-            <svg
-              className='mx-auto mb-3 h-4 w-4 fill-gray-400'
-              viewBox='0 0 16 16'
-              xmlns='http://www.w3.org/2000/svg'
-            >
-              <path d='M8 4c-.3 0-.5.1-.7.3L1.6 10 3 11.4l4-4V16h2V7.4l4 4 1.4-1.4-5.7-5.7C8.5 4.1 8.3 4 8 4ZM1 2h14V0H1v2Z' />
-            </svg>
-            <p className='text-base text-gray-500 italic'>We accept PNG, JPEG, and PDF files.</p>
+        <div className='mt-5 grid grid-cols-2 gap-3'>
+          <div className='rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700/60 dark:bg-gray-800'>
+            <div className='text-xs text-gray-500 dark:text-gray-400'>생성자</div>
+            <div className='mt-1 text-sm font-medium break-all text-gray-800 dark:text-gray-100'>
+              {activeItem.owner || currentUserName || '알 수 없음'}
+            </div>
+          </div>
+          <div className='rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700/60 dark:bg-gray-800'>
+            <div className='text-xs text-gray-500 dark:text-gray-400'>수정일</div>
+            <div className='mt-1 text-sm font-medium text-gray-800 dark:text-gray-100'>
+              {activeItem.date || '-'}
+            </div>
+          </div>
+          <div className='rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700/60 dark:bg-gray-800'>
+            <div className='text-xs text-gray-500 dark:text-gray-400'>폴더 경로</div>
+            <div className='mt-1 text-sm font-medium break-all text-gray-800 dark:text-gray-100'>
+              {activeItem.sourcePath || '-'}
+            </div>
+          </div>
+          <div className='rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700/60 dark:bg-gray-800'>
+            <div className='text-xs text-gray-500 dark:text-gray-400'>속성 개수</div>
+            <div className='mt-1 text-sm font-medium text-gray-800 dark:text-gray-100'>
+              {activeAttributeEntries.length}
+            </div>
           </div>
         </div>
 
-        <div className='mt-8'>
-          <h3 className='mb-2 text-xl font-semibold text-gray-900 dark:text-gray-100'>Notes</h3>
-          <textarea
-            className='form-textarea min-h-[160px] w-full rounded-xl border-gray-200 bg-white focus:border-gray-300 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-200'
-            placeholder='Write a note...'
-          />
+        <div className='mt-5 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700/60 dark:bg-gray-800'>
+          <h3 className='text-sm font-semibold text-gray-900 dark:text-gray-100'>소재 요약</h3>
+          {primaryActiveMaterial ? (
+            <div className='mt-3 space-y-2 text-sm text-gray-700 dark:text-gray-300'>
+              <div>
+                코드:{' '}
+                <span className='font-medium'>{primaryActiveMaterial.code_internal || '-'}</span>
+              </div>
+              <div>
+                업체명:{' '}
+                <span className='font-medium'>{primaryActiveMaterial.vendor_name || '-'}</span>
+              </div>
+              <div>
+                품명: <span className='font-medium'>{primaryActiveMaterial.item_name || '-'}</span>
+              </div>
+            </div>
+          ) : (
+            <p className='mt-3 text-sm text-gray-500 dark:text-gray-400'>
+              연결된 소재 정보가 없습니다.
+            </p>
+          )}
         </div>
 
-        <div className='mt-8 flex items-center gap-3 pb-6'>
-          <button className='btn w-1/2 border-gray-200 text-gray-800 hover:border-gray-300 dark:border-gray-700/60 dark:text-gray-300 dark:hover:border-gray-600'>
-            <svg className='mr-2 h-4 w-4 rotate-180 fill-current text-gray-400' viewBox='0 0 16 16'>
-              <path d='M8 4c-.3 0-.5.1-.7.3L1.6 10 3 11.4l4-4V16h2V7.4l4 4 1.4-1.4-5.7-5.7C8.5 4.1 8.3 4 8 4ZM1 2h14V0H1v2Z' />
-            </svg>
-            Download
-          </button>
-          <button className='btn w-1/2 border-gray-200 text-red-500 hover:border-gray-300 dark:border-gray-700/60 dark:hover:border-gray-600'>
-            <svg className='mr-2 h-4 w-4 fill-current' viewBox='0 0 16 16'>
-              <path d='M7.001 3h2v4h-2V3Zm1 7a1 1 0 1 1 0-2 1 1 0 0 1 0 2ZM15 16a1 1 0 0 1-.6-.2L10.667 13H1a1 1 0 0 1-1-1V1a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1ZM2 11h9a1 1 0 0 1 .6.2L14 13V2H2v9Z' />
-            </svg>
-            Report
-          </button>
+        <div className='mt-5 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700/60 dark:bg-gray-800'>
+          <h3 className='text-sm font-semibold text-gray-900 dark:text-gray-100'>속성 정보</h3>
+          {activeAttributeEntries.length === 0 ? (
+            <p className='mt-3 text-sm text-gray-500 dark:text-gray-400'>등록된 속성이 없습니다.</p>
+          ) : (
+            <div className='mt-3 space-y-2'>
+              {activeAttributeEntries.map(([key, value]) => (
+                <div
+                  key={key}
+                  className='flex items-start justify-between gap-3 rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-700/60'
+                >
+                  <div className='text-xs font-semibold tracking-wide text-gray-500 dark:text-gray-400'>
+                    {getAttributeLabel(key)}
+                  </div>
+                  <div className='text-right text-sm text-gray-800 dark:text-gray-100'>
+                    {formatAttributeValue(value)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </>
     ) : null;
@@ -800,7 +967,7 @@ const FadditDrive: React.FC = () => {
       <div className='flex h-full'>
         <main
           className={`flex h-full min-w-0 flex-col overflow-hidden border-r border-gray-200 bg-white dark:border-gray-700/60 dark:bg-gray-900 ${
-            detailPanelOpen ? 'lg:w-[70%]' : 'w-full'
+            detailPanelOpen ? 'lg:w-[64%] xl:w-[66%]' : 'w-full'
           }`}
         >
           <div
@@ -817,13 +984,35 @@ const FadditDrive: React.FC = () => {
                 <h1 className='text-2xl font-bold text-gray-800 md:text-3xl dark:text-gray-100'>
                   {pageTitle}
                 </h1>
-                <div className='mt-2 flex flex-wrap items-center gap-2 text-xs font-medium text-gray-500 dark:text-gray-400'>
-                  {breadcrumbParts.map((part, index) => (
-                    <React.Fragment key={`${part}-${index}`}>
-                      {index > 0 && <span>/</span>}
-                      <span>{part}</span>
-                    </React.Fragment>
-                  ))}
+                <div className='mt-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-600 dark:text-gray-300'>
+                  <button
+                    type='button'
+                    onClick={() => navigate('/faddit/drive')}
+                    className='rounded px-1.5 py-0.5 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-100'
+                  >
+                    홈
+                  </button>
+                  {breadcrumbParts
+                    .filter((part) => part !== '홈')
+                    .map((part, index) => {
+                      const breadcrumbId = breadcrumbIds[index];
+                      return (
+                        <React.Fragment key={`${part}-${index}`}>
+                          <span className='text-gray-400'>/</span>
+                          {breadcrumbId ? (
+                            <button
+                              type='button'
+                              onClick={() => navigate(`/faddit/drive/${breadcrumbId}`)}
+                              className='rounded px-1.5 py-0.5 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-100'
+                            >
+                              {part}
+                            </button>
+                          ) : (
+                            <span className='px-1.5'>{part}</span>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
                 </div>
               </div>
 
@@ -875,7 +1064,7 @@ const FadditDrive: React.FC = () => {
 
                 <button
                   type='button'
-                  onClick={handleCreateFolder}
+                  onClick={() => setAddViewOptionModalOpen(true)}
                   disabled={isCreatingFolder}
                   className='btn bg-gray-900 text-gray-100 hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-800 dark:hover:bg-white'
                 >
@@ -913,13 +1102,36 @@ const FadditDrive: React.FC = () => {
                     })}
                   </div>
 
-                  <div className='grid grid-cols-12 gap-6'>
+                  <div className='grid grid-cols-12 gap-5'>
                     {items.map((item) => {
                       const dragSelection = getDragSelection(item.id, 'file', item.title);
+                      const linkedMaterials = materialsByFileSystemId[item.id] || [];
+                      const primaryMaterial = linkedMaterials[0] || null;
+                      const categoryLabel = getCategoryLabel(item.id, item.badge);
+                      const attributesCount = linkedMaterials.reduce((count, material) => {
+                        const attrs = material.attributes || {};
+                        return count + Object.keys(attrs).length;
+                      }, 0);
+                      const summaryText = primaryMaterial
+                        ? [
+                            primaryMaterial.code_internal
+                              ? `코드 ${primaryMaterial.code_internal}`
+                              : '',
+                            primaryMaterial.vendor_name || '',
+                            primaryMaterial.item_name || '',
+                          ]
+                            .filter((value): value is string => Boolean(value))
+                            .join(' · ')
+                        : item.subtitle;
                       return (
                         <DriveItemCard
                           key={item.id}
                           id={item.id}
+                          materialFetchedFromBackend={item.id in materialsByFileSystemId}
+                          materialAttributesCount={attributesCount}
+                          categoryLabel={categoryLabel}
+                          summaryText={summaryText}
+                          creatorName={item.owner || currentUserName}
                           imageSrc={item.imageSrc}
                           imageAlt={item.imageAlt}
                           title={item.title}
@@ -933,7 +1145,11 @@ const FadditDrive: React.FC = () => {
                           onCardClick={handleFileCardClick}
                           dragSelectionIds={dragSelection.ids}
                           dragSelectionEntries={dragSelection.entries}
-                          className='col-span-full sm:col-span-6 xl:col-span-3'
+                          className={
+                            detailPanelOpen
+                              ? 'col-span-full sm:col-span-6 xl:col-span-6 2xl:col-span-4'
+                              : 'col-span-full sm:col-span-6 xl:col-span-4 2xl:col-span-3'
+                          }
                         />
                       );
                     })}
@@ -993,7 +1209,7 @@ const FadditDrive: React.FC = () => {
 
         <aside
           className={`hidden h-full overflow-hidden border-l border-gray-200 bg-[#f9f9f9] transition-all duration-300 ease-out lg:block dark:border-gray-700/60 ${
-            detailPanelOpen && activeItem ? 'w-[30%]' : 'w-0'
+            detailPanelOpen && activeItem ? 'w-[36%] xl:w-[34%]' : 'w-0'
           }`}
         >
           <div
@@ -1098,6 +1314,33 @@ const FadditDrive: React.FC = () => {
           </div>
         </div>
       </Notification>
+
+      <AddViewOptionModal
+        modalOpen={addViewOptionModalOpen}
+        setModalOpen={setAddViewOptionModalOpen}
+        onSelectFolder={() => {
+          setAddViewOptionModalOpen(false);
+          setCreateFolderModalOpen(true);
+        }}
+        onSelectMaterial={() => {
+          setAddViewOptionModalOpen(false);
+          setCreateMaterialModalOpen(true);
+        }}
+      />
+
+      <CreateFolderModal
+        modalOpen={createFolderModalOpen}
+        setModalOpen={setCreateFolderModalOpen}
+        isSubmitting={isCreatingFolder}
+        onSubmit={handleCreateFolder}
+      />
+
+      <CreateMaterialModal
+        modalOpen={createMaterialModalOpen}
+        setModalOpen={setCreateMaterialModalOpen}
+        isSubmitting={isCreatingMaterial}
+        onSubmit={handleCreateMaterial}
+      />
     </div>
   );
 };

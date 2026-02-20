@@ -8,6 +8,9 @@ import {
   DriveNode,
 } from '../lib/api/driveApi';
 import ChildClothImage from '../images/faddit/childcloth.png';
+import { useAuthStore } from '../store/useAuthStore';
+import { getMaterialsByFileSystem } from '../pages/faddit/drive/materialApi';
+import { useDriveMaterialStore } from '../store/useDriveMaterialStore';
 
 export interface DriveItem {
   id: string;
@@ -19,6 +22,9 @@ export interface DriveItem {
   owner?: string;
   date?: string;
   size?: string;
+  parentId?: string | null;
+  sourcePath?: string;
+  stateStoreKey?: string;
 }
 
 export interface DriveFolder {
@@ -64,6 +70,7 @@ interface DriveContextType {
   rootFolderId: string | null;
   currentFolderId: string | null;
   currentFolderPath: string;
+  currentFolderIdPath: string;
   hydrateDrive: (rootFolderId: string) => Promise<void>;
   refreshDrive: () => Promise<void>;
   loadFolderView: (folderId: string) => Promise<void>;
@@ -137,8 +144,12 @@ const toDriveItem = (node: DriveNode, imageSrc: string): DriveItem => ({
   title: node.name,
   subtitle: node.mimetype ? `.${node.mimetype}` : 'file',
   badge: node.tag ? String(node.tag) : '파일',
+  owner: node.creatorName || undefined,
   date: node.updatedAt ? String(node.updatedAt).slice(0, 10) : '-',
   size: formatBytes(node.size),
+  parentId: node.parentId,
+  sourcePath: node.path,
+  stateStoreKey: 'DriveContext.items',
 });
 
 const isImageFile = (extension?: string) => {
@@ -151,6 +162,10 @@ const isImageFile = (extension?: string) => {
 };
 
 export const DriveProvider = ({ children }: { children: ReactNode }) => {
+  const userId = useAuthStore((state) => state.user?.userId);
+  const setMaterialsForFile = useDriveMaterialStore((state) => state.setMaterialsForFile);
+  const clearMaterialsForFiles = useDriveMaterialStore((state) => state.clearMaterialsForFiles);
+
   const [items, setItems] = useState<DriveItem[]>([]);
   const [driveFolders, setDriveFolders] = useState<DriveFolder[]>([]);
   const [activeDragItem, setActiveDragItem] = useState<ActiveDriveDragItem | null>(null);
@@ -160,6 +175,7 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
   const [rootFolderId, setRootFolderId] = useState<string | null>(null);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [currentFolderPath, setCurrentFolderPath] = useState('');
+  const [currentFolderIdPath, setCurrentFolderIdPath] = useState('');
   const [itemParentMap, setItemParentMap] = useState<Record<string, string | null>>({});
 
   const replaceChildrenInTree = useCallback(
@@ -222,43 +238,89 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
     setFavorites([...starredFolders.map(toSidebarFolder), ...starredData.files.map(toSidebarFile)]);
   }, []);
 
-  const loadFolderView = useCallback(async (folderId: string) => {
-    if (!folderId) {
-      return;
-    }
+  const loadFolderView = useCallback(
+    async (folderId: string) => {
+      if (!folderId) {
+        return;
+      }
 
-    const folderData = await getDriveAll(folderId);
-    const folders = folderData.folders.filter((node) => node.type === 'folder');
-    const fileItems = await Promise.all(
-      folderData.files.map(async (fileNode) => {
-        if (!isImageFile(fileNode.mimetype)) {
-          return toDriveItem(fileNode, ChildClothImage);
-        }
+      const folderData = await getDriveAll(folderId);
+      const folders = folderData.folders.filter((node) => node.type === 'folder');
+      const fileItems = await Promise.all(
+        folderData.files.map(async (fileNode) => {
+          console.log('[Drive] fetched file node -> storing to DriveContext.items', {
+            fileSystemId: fileNode.fileSystemId,
+            name: fileNode.name,
+            parentId: fileNode.parentId,
+            path: fileNode.path,
+            mimetype: fileNode.mimetype,
+            tag: fileNode.tag,
+            targetStore: 'DriveContext.items',
+          });
 
-        try {
-          const previewUrl = await getDriveFilePreviewUrl(fileNode.fileSystemId);
-          return toDriveItem(fileNode, previewUrl || ChildClothImage);
-        } catch {
-          return toDriveItem(fileNode, ChildClothImage);
-        }
-      }),
-    );
+          if (!isImageFile(fileNode.mimetype)) {
+            return toDriveItem(fileNode, ChildClothImage);
+          }
 
-    setCurrentFolderId(folderId);
-    setCurrentFolderPath(folderData.path || '');
-    setDriveFolders(folders.map(toDriveFolder));
-    setItems(fileItems);
-    setItemParentMap((prev) => {
-      const next = { ...prev };
-      folders.forEach((folder) => {
-        next[folder.fileSystemId] = folder.parentId;
+          try {
+            const previewUrl = await getDriveFilePreviewUrl(fileNode.fileSystemId);
+            return toDriveItem(fileNode, previewUrl || ChildClothImage);
+          } catch {
+            return toDriveItem(fileNode, ChildClothImage);
+          }
+        }),
+      );
+
+      setCurrentFolderId(folderId);
+      setCurrentFolderPath(folderData.path || '');
+      setCurrentFolderIdPath(folderData.idPath || '');
+      setDriveFolders(folders.map(toDriveFolder));
+      setItems(fileItems);
+      console.log('[Drive] setItems completed', {
+        targetStore: 'DriveContext.items',
+        count: fileItems.length,
+        folderId,
       });
-      folderData.files.forEach((file) => {
-        next[file.fileSystemId] = file.parentId;
+
+      const fileSystemIds = folderData.files.map((file) => file.fileSystemId);
+      if (!userId) {
+        clearMaterialsForFiles(fileSystemIds);
+      } else {
+        await Promise.all(
+          folderData.files.map(async (fileNode) => {
+            try {
+              const materials = await getMaterialsByFileSystem(fileNode.fileSystemId, userId);
+              setMaterialsForFile(fileNode.fileSystemId, materials);
+              console.log('[Drive] fetched material attributes from backend', {
+                fileSystemId: fileNode.fileSystemId,
+                materialCount: materials.length,
+                targetStore: 'useDriveMaterialStore.materialsByFileSystemId',
+              });
+            } catch (error) {
+              setMaterialsForFile(fileNode.fileSystemId, []);
+              console.log('[Drive] material fetch failed for file', {
+                fileSystemId: fileNode.fileSystemId,
+                targetStore: 'useDriveMaterialStore.materialsByFileSystemId',
+                error,
+              });
+            }
+          }),
+        );
+      }
+
+      setItemParentMap((prev) => {
+        const next = { ...prev };
+        folders.forEach((folder) => {
+          next[folder.fileSystemId] = folder.parentId;
+        });
+        folderData.files.forEach((file) => {
+          next[file.fileSystemId] = file.parentId;
+        });
+        return next;
       });
-      return next;
-    });
-  }, []);
+    },
+    [clearMaterialsForFiles, setMaterialsForFile, userId],
+  );
 
   const refreshDrive = useCallback(async () => {
     if (!rootFolderId) {
@@ -317,18 +379,20 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
         throw new Error('rootFolderId is missing');
       }
 
+      const parentFolderId = currentFolderId ?? rootFolderId;
+
       const nextName = name.trim();
       if (!nextName) {
         return;
       }
 
       await createDriveFolder({
-        parentId: rootFolderId,
+        parentId: parentFolderId,
         name: nextName,
       });
       await refreshDrive();
     },
-    [refreshDrive, rootFolderId],
+    [currentFolderId, refreshDrive, rootFolderId],
   );
 
   const setItemsStarred = useCallback(
@@ -370,6 +434,7 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
       rootFolderId,
       currentFolderId,
       currentFolderPath,
+      currentFolderIdPath,
       hydrateDrive,
       refreshDrive,
       loadFolderView,
@@ -390,6 +455,7 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
       rootFolderId,
       currentFolderId,
       currentFolderPath,
+      currentFolderIdPath,
       hydrateDrive,
       refreshDrive,
       loadFolderView,
