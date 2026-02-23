@@ -1,7 +1,16 @@
 import React, { useRef, useEffect } from 'react';
 import Transition from '../utils/Transition';
 
-function ModalFooterBasic({ children, footer, id, title, modalOpen, setModalOpen }) {
+function ModalFooterBasic({
+  children,
+  footer,
+  id,
+  title,
+  modalOpen,
+  setModalOpen,
+  panelClassName,
+  contentClassName,
+}) {
   const modalContent = useRef(null);
 
   // close if the esc key is pressed
@@ -49,7 +58,7 @@ function ModalFooterBasic({ children, footer, id, title, modalOpen, setModalOpen
       >
         <div
           ref={modalContent}
-          className='flex max-h-full w-full max-w-lg flex-col rounded-lg bg-white shadow-lg dark:bg-gray-800'
+          className={`flex max-h-full w-full max-w-lg flex-col rounded-lg bg-white shadow-lg dark:bg-gray-800 ${panelClassName || ''}`}
         >
           {/* Modal header - 고정 */}
           <div className='flex-shrink-0 border-b border-gray-200 px-5 py-3 dark:border-gray-700/60'>
@@ -70,7 +79,7 @@ function ModalFooterBasic({ children, footer, id, title, modalOpen, setModalOpen
             </div>
           </div>
           {/* 스크롤 가능한 컨텐츠 영역 */}
-          <div className='flex-1 overflow-y-auto'>{children}</div>
+          <div className={`flex-1 overflow-y-auto ${contentClassName || ''}`}>{children}</div>
           {/* Modal footer - 고정 */}
           {footer && <div className='flex-shrink-0'>{footer}</div>}
         </div>

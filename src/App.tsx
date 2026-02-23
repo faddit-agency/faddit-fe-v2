@@ -80,6 +80,7 @@ import MainLayout from './layouts/MainLayout';
 
 // Faddit Drive Pages From Jin
 import FadditDrive from './pages/faddit/drive/Drive';
+import DeletedDrive from './pages/faddit/drive/DeletedDrive';
 import DriveLayout from './layouts/DriveLayout';
 import { bootstrapAuthSession } from './lib/api/authApi';
 
@@ -181,6 +182,7 @@ function App() {
         <Route element={<DriveLayout />}>
           <Route path='/faddit/drive' element={<FadditDrive />} />
           <Route path='/faddit/drive/:folderId' element={<FadditDrive />} />
+          <Route path='/faddit/deleted' element={<DeletedDrive />} />
         </Route>
 
         <Route path='*' element={<PageNotFound />} />

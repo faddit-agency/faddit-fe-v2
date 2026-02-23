@@ -12,21 +12,29 @@ export const useDriveMaterialStore = createAppStore<DriveMaterialState>(
   (set) => ({
     materialsByFileSystemId: {},
     setMaterialsForFile: (fileSystemId, materials) => {
-      set((prev) => ({
-        materialsByFileSystemId: {
-          ...prev.materialsByFileSystemId,
-          [fileSystemId]: materials,
-        },
-      }));
+      set(
+        (prev) => ({
+          materialsByFileSystemId: {
+            ...prev.materialsByFileSystemId,
+            [fileSystemId]: materials,
+          },
+        }),
+        false,
+        'drive-material-store/setMaterialsForFile',
+      );
     },
     clearMaterialsForFiles: (fileSystemIds) => {
-      set((prev) => {
-        const next = { ...prev.materialsByFileSystemId };
-        fileSystemIds.forEach((fileSystemId) => {
-          delete next[fileSystemId];
-        });
-        return { materialsByFileSystemId: next };
-      });
+      set(
+        (prev) => {
+          const next = { ...prev.materialsByFileSystemId };
+          fileSystemIds.forEach((fileSystemId) => {
+            delete next[fileSystemId];
+          });
+          return { materialsByFileSystemId: next };
+        },
+        false,
+        'drive-material-store/clearMaterialsForFiles',
+      );
     },
   }),
 );

@@ -45,6 +45,11 @@ export interface DriveItemCardProps {
   categoryLabel?: string;
   summaryText?: string;
   creatorName?: string;
+  isStarred?: boolean;
+  hideHoverTools?: boolean;
+  onMoveToFolder?: (id: string) => void;
+  onAddFavorite?: (id: string, nextStarred: boolean) => void;
+  onEdit?: (id: string) => void;
 }
 
 const PencilIcon = ({ className }: { className?: string }) => (
@@ -368,6 +373,11 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
   categoryLabel,
   summaryText,
   creatorName,
+  isStarred = false,
+  hideHoverTools = false,
+  onMoveToFolder,
+  onAddFavorite,
+  onEdit,
 }) => {
   const idPrefix = useId();
   const checkboxId = id || title;
@@ -395,6 +405,7 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [draggingTagId, setDraggingTagId] = useState<string | null>(null);
+  const [kebabOpen, setKebabOpen] = useState(false);
 
   React.useEffect(() => {
     setSelectedTagIds((prev) => {
@@ -569,23 +580,73 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
           />
           {imageOverlay && <div className='absolute top-0 right-0 mt-4 mr-4'>{imageOverlay}</div>}
           {/* Hover: 연필 / 구분선 / 더보기 */}
-          <div className='absolute top-3 right-3 flex items-center rounded-lg bg-white/90 opacity-0 shadow-sm backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100 dark:bg-gray-800/90'>
-            <button
-              type='button'
-              className='flex h-8 w-8 items-center justify-center rounded-l-lg text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100'
-              aria-label='수정'
-            >
-              <PencilIcon className='h-4 w-4' />
-            </button>
-            <span className='h-4 w-px bg-gray-200 dark:bg-gray-600' aria-hidden />
-            <button
-              type='button'
-              className='flex h-8 w-8 items-center justify-center rounded-r-lg text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100'
-              aria-label='더보기'
-            >
-              <MoreIcon className='h-4 w-4' />
-            </button>
-          </div>
+          {!hideHoverTools ? (
+            <div className='absolute top-3 right-3 flex items-center rounded-lg bg-white/90 opacity-0 shadow-sm backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100 dark:bg-gray-800/90'>
+              <button
+                type='button'
+                className='flex h-8 w-8 items-center justify-center rounded-l-lg text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100'
+                aria-label='수정'
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (id && onEdit) {
+                    onEdit(id);
+                  }
+                }}
+              >
+                <PencilIcon className='h-4 w-4' />
+              </button>
+              <span className='h-4 w-px bg-gray-200 dark:bg-gray-600' aria-hidden />
+              <PopoverPrimitive.Root open={kebabOpen} onOpenChange={setKebabOpen}>
+                <PopoverPrimitive.Trigger asChild>
+                  <button
+                    type='button'
+                    className='flex h-8 w-8 items-center justify-center rounded-r-lg text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100'
+                    aria-label='더보기'
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <MoreIcon className='h-4 w-4' />
+                  </button>
+                </PopoverPrimitive.Trigger>
+                <PopoverPrimitive.Portal>
+                  <PopoverPrimitive.Content
+                    align='end'
+                    side='bottom'
+                    sideOffset={6}
+                    className='z-50 w-36 rounded-lg border border-gray-200 bg-white p-1.5 shadow-lg dark:border-gray-700/60 dark:bg-gray-800'
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      type='button'
+                      className='w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
+                      onClick={() => {
+                        setKebabOpen(false);
+                        if (id && onMoveToFolder) {
+                          onMoveToFolder(id);
+                        }
+                      }}
+                    >
+                      폴더 이동
+                    </button>
+                    <button
+                      type='button'
+                      className='w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
+                      onClick={() => {
+                        setKebabOpen(false);
+                        if (id && onAddFavorite) {
+                          onAddFavorite(id, !isStarred);
+                        }
+                      }}
+                    >
+                      {isStarred ? '즐겨찾기 취소' : '즐겨 찾기'}
+                    </button>
+                  </PopoverPrimitive.Content>
+                </PopoverPrimitive.Portal>
+              </PopoverPrimitive.Root>
+            </div>
+          ) : null}
         </div>
 
         {/* Card Content */}
@@ -736,6 +797,15 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
             <div className='text-xs font-medium text-gray-500 dark:text-gray-400'>
               생성자: {creatorName || '알 수 없음'}
             </div>
+            {isStarred ? (
+              <svg
+                className='h-4 w-4 shrink-0 fill-amber-400'
+                viewBox='0 0 20 20'
+                aria-hidden='true'
+              >
+                <path d='M10 1.5 12.58 6.73l5.77.84-4.17 4.06.98 5.75L10 14.67 4.84 17.38l.99-5.75L1.66 7.57l5.76-.84L10 1.5Z' />
+              </svg>
+            ) : null}
           </div>
         </div>
       </div>

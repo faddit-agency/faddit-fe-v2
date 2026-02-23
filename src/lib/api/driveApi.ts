@@ -15,6 +15,8 @@ export type DriveNode = {
   mimetype?: string;
   tag?: string;
   creatorName?: string;
+  deletedAt?: string;
+  worksheetThumbnail?: string;
 };
 
 export type DriveAllResponse = {
@@ -29,11 +31,22 @@ export type UpdateDriveItemsPayload = {
   parentId?: string;
   currentId?: string;
   isStarred?: boolean;
+  name?: string;
 };
 
 export type CreateDriveFolderPayload = {
   parentId: string;
   name: string;
+};
+
+export type DeleteDriveItemsPayload = {
+  userId: string;
+  ids: string[];
+};
+
+export type RestoreDriveItemsPayload = {
+  userId: string;
+  ids: string[];
 };
 
 export type DriveUploadTag =
@@ -45,6 +58,29 @@ export type DriveUploadTag =
   | 'faddit'
   | 'fabric'
   | 'label';
+
+export type DriveSearchCategory =
+  | 'folder'
+  | 'worksheet'
+  | 'schematic'
+  | 'etc'
+  | 'pattern'
+  | 'print'
+  | 'faddit'
+  | 'fabric'
+  | 'label';
+
+export type DriveSearchParams = {
+  search?: string;
+  page?: number;
+  category?: DriveSearchCategory;
+  categories?: DriveSearchCategory[];
+};
+
+export type DriveSearchResponse = {
+  count: number;
+  data: DriveNode[];
+};
 
 export type CreateDriveFilePayload = {
   parentId: string | null;
@@ -86,6 +122,11 @@ export const getDriveStarredAll = async () => {
   return response.data;
 };
 
+export const getDriveTrashAll = async () => {
+  const response = await baseHttpClient.get<DriveAllResponse>('/drive/trash-all');
+  return response.data;
+};
+
 export const updateDriveItems = async (payload: UpdateDriveItemsPayload) => {
   const response = await baseHttpClient.patch('/drive', payload);
   return response.data;
@@ -94,6 +135,22 @@ export const updateDriveItems = async (payload: UpdateDriveItemsPayload) => {
 export const createDriveFolder = async (payload: CreateDriveFolderPayload) => {
   const response = await baseHttpClient.post('/drive/folder', payload);
   return response.data;
+};
+
+export const deleteDriveItems = async (payload: DeleteDriveItemsPayload) => {
+  await baseHttpClient.delete('/drive', {
+    data: payload,
+  });
+};
+
+export const destroyDriveItems = async (payload: DeleteDriveItemsPayload) => {
+  await baseHttpClient.delete('/drive/destroy', {
+    data: payload,
+  });
+};
+
+export const restoreDriveItems = async (payload: RestoreDriveItemsPayload) => {
+  await baseHttpClient.patch('/drive/restore', payload);
 };
 
 export const createDriveFile = async (payload: CreateDriveFilePayload) => {
@@ -132,4 +189,20 @@ export const getDriveFilePreviewUrl = async (fileSystemId: string) => {
   }
 
   return '';
+};
+
+export const searchDriveItems = async (params: DriveSearchParams) => {
+  const normalizedParams: Record<string, string | number | undefined> = {
+    page: params.page ?? 1,
+    search: params.search?.trim() || undefined,
+    category: params.category,
+    categories:
+      params.categories && params.categories.length > 0 ? params.categories.join(',') : undefined,
+  };
+
+  const response = await baseHttpClient.get<DriveSearchResponse>('/drive/search', {
+    params: normalizedParams,
+  });
+
+  return response.data;
 };

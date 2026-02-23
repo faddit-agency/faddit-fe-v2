@@ -14,6 +14,7 @@ import {
   FolderOpen,
   FolderClosed,
   FileText,
+  Trash2,
   ChevronUp,
   ChevronDown,
 } from 'lucide-react';
@@ -246,10 +247,18 @@ const SidebarTreeNode = ({
   );
 };
 
-function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default' }) {
+function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSearch }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { pathname } = location;
+  const { pathname, search } = location;
+  const sidebarQuery = new URLSearchParams(search);
+  const hasSearchQuery =
+    Boolean((sidebarQuery.get('q') || '').trim()) ||
+    Boolean((sidebarQuery.get('categories') || '').trim()) ||
+    sidebarQuery.get('mode') === 'search';
+  const isSearchActive = pathname.startsWith('/faddit/drive') && hasSearchQuery;
+  const isHomeActive = pathname === '/faddit/drive' && !isSearchActive;
+  const isDeletedActive = pathname === '/faddit/deleted';
   const {
     workspaces,
     favorites,
@@ -396,7 +405,7 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default' }) {
               {/* Home */}
               <li
                 className={`mb-3 rounded-lg bg-linear-to-r py-2 pr-3 pl-4 last:mb-0 ${
-                  pathname === '/faddit/drive'
+                  isHomeActive
                     ? 'from-violet-500/[0.12] to-violet-500/[0.04] dark:from-violet-500/[0.24]'
                     : ''
                 }`}
@@ -405,15 +414,13 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default' }) {
                   end
                   to='/faddit/drive'
                   className={`block truncate text-gray-800 transition duration-150 dark:text-gray-100 ${
-                    pathname === '/faddit/drive' ? '' : 'hover:text-gray-900 dark:hover:text-white'
+                    isHomeActive ? '' : 'hover:text-gray-900 dark:hover:text-white'
                   }`}
                 >
                   <div className='flex items-center'>
                     <House
                       className={`shrink-0 ${
-                        pathname === '/faddit/drive'
-                          ? 'text-violet-500'
-                          : 'text-gray-500 dark:text-gray-500'
+                        isHomeActive ? 'text-violet-500' : 'text-gray-400 dark:text-gray-400'
                       }`}
                       width='18'
                       height='18'
@@ -428,24 +435,20 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default' }) {
               {/* Search */}
               <li
                 className={`mb-3 rounded-lg bg-linear-to-r py-2 pr-3 pl-4 last:mb-0 ${
-                  pathname === '/faddit/search'
+                  isSearchActive
                     ? 'from-violet-500/[0.12] to-violet-500/[0.04] dark:from-violet-500/[0.24]'
                     : ''
                 }`}
               >
-                <NavLink
-                  end
-                  to='/faddit/search'
-                  className={`block truncate text-gray-800 transition duration-150 dark:text-gray-100 ${
-                    pathname === '/faddit/search' ? '' : 'hover:text-gray-900 dark:hover:text-white'
-                  }`}
+                <button
+                  type='button'
+                  onClick={onOpenSearch}
+                  className='block w-full cursor-pointer truncate text-left text-gray-800 transition duration-150 hover:text-gray-900 dark:text-gray-100 dark:hover:text-white'
                 >
                   <div className='flex items-center'>
                     <Search
                       className={`shrink-0 ${
-                        pathname === '/faddit/search'
-                          ? 'text-violet-500'
-                          : 'text-gray-400 dark:text-gray-400'
+                        isSearchActive ? 'text-violet-500' : 'text-gray-400 dark:text-gray-400'
                       }`}
                       width='18'
                       height='18'
@@ -455,7 +458,7 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default' }) {
                       검색
                     </span>
                   </div>
-                </NavLink>
+                </button>
               </li>
               {/* 수신함 */}
               <li
@@ -490,6 +493,35 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default' }) {
                         4
                       </span>
                     </div>
+                  </div>
+                </NavLink>
+              </li>
+
+              <li
+                className={`mb-3 rounded-lg bg-linear-to-r py-2 pr-3 pl-4 last:mb-0 ${
+                  isDeletedActive
+                    ? 'from-violet-500/[0.12] to-violet-500/[0.04] dark:from-violet-500/[0.24]'
+                    : ''
+                }`}
+              >
+                <NavLink
+                  to='/faddit/deleted'
+                  className={`block truncate text-gray-800 transition duration-150 dark:text-gray-100 ${
+                    isDeletedActive ? '' : 'hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  <div className='flex items-center'>
+                    <Trash2
+                      className={`shrink-0 ${
+                        isDeletedActive ? 'text-violet-500' : 'text-gray-400 dark:text-gray-400'
+                      }`}
+                      width='18'
+                      height='18'
+                      strokeWidth={3}
+                    />
+                    <span className='lg:sidebar-expanded:opacity-100 ml-3 text-sm font-bold duration-200 lg:opacity-0 2xl:opacity-100'>
+                      휴지통
+                    </span>
                   </div>
                 </NavLink>
               </li>
