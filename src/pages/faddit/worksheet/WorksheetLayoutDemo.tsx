@@ -3,6 +3,7 @@ import { Rows3, X, ChevronLeft, ArrowRight, LayoutGrid, Package } from 'lucide-r
 import { useNavigate } from 'react-router-dom';
 import WorksheetTopBar from './WorksheetTopBar';
 import WorksheetSizeSpecView from './WorksheetSizeSpecView';
+import WorksheetNoticeEditor from './WorksheetNoticeEditor';
 
 type DragState =
   | { type: 'sidebar'; startX: number; startWidth: number }
@@ -461,7 +462,13 @@ export default function WorksheetLayoutDemo() {
                         <div key={`col-${colIndex}-row-${rowIndex}`} className='h-full min-h-0'>
                           <Panel
                             {...panelData}
-                            body={panelData.title === 'Size Spec' ? <WorksheetSizeSpecView /> : undefined}
+                            body={
+                              panelData.title === 'Size Spec' ? (
+                                <WorksheetSizeSpecView />
+                              ) : panelData.title === '작업 시 주의사항' ? (
+                                <WorksheetNoticeEditor />
+                              ) : undefined
+                            }
                             isResizable={canResizeCell}
                             onResizeHandleEnter={() => {
                               setHoveredHandle(cellHandleId);
