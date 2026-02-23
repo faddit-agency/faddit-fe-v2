@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useImmer } from 'use-immer';
 import { Plus, Trash2, GripHorizontal, GripVertical } from 'lucide-react';
 import {
@@ -9,6 +9,18 @@ import {
 } from './WorksheetActionButtons';
 
 export type SizeSpecDisplayUnit = 'cm' | 'inch';
+
+type WorksheetSizeSpecViewProps = {
+  displayUnit?: SizeSpecDisplayUnit;
+  initialState?: SizeSpec;
+  showRowHeader?: boolean;
+  enableUnitConversion?: boolean;
+  showAddColumnButton?: boolean;
+  fillWidth?: boolean;
+  showColumnActions?: boolean;
+  showRowDeleteButton?: boolean;
+  showTotals?: boolean;
+};
 
 interface SizeSpec {
   headers: string[];
@@ -74,6 +86,7 @@ const ROW_HEADER_EXPANDED_PADDING = 32;
 const DATA_COL_COMPACT_WIDTH = 68;
 const DATA_COL_EXPANDED_WIDTH = 78;
 const ACTION_COL_WIDTH = 32;
+const ROW_ACTION_COL_WIDTH = 40;
 const DATA_HEADER_COMPACT_PADDING = 14;
 const DATA_HEADER_EXPANDED_PADDING = 22;
 
@@ -92,8 +105,8 @@ function formatNumber(value: number, fractionDigits: number): string {
     .replace(/(\.\d*?[1-9])0+$/, '$1');
 }
 
-function toDisplayValue(raw: string, colIndex: number, unit: SizeSpecDisplayUnit): string {
-  if (colIndex === 0) return raw;
+function toDisplayValue(raw: string, shouldConvert: boolean, unit: SizeSpecDisplayUnit): string {
+  if (!shouldConvert) return raw;
   const trimmed = raw.trim();
   if (!isNumericLike(trimmed)) return raw;
   const cmValue = Number(trimmed);
@@ -101,8 +114,8 @@ function toDisplayValue(raw: string, colIndex: number, unit: SizeSpecDisplayUnit
   return formatNumber(cmValue / 2.54, 0);
 }
 
-function fromDisplayValue(raw: string, colIndex: number, unit: SizeSpecDisplayUnit): string {
-  if (colIndex === 0) return raw;
+function fromDisplayValue(raw: string, shouldConvert: boolean, unit: SizeSpecDisplayUnit): string {
+  if (!shouldConvert) return raw;
   const trimmed = raw.trim();
   if (!isNumericLike(trimmed)) return raw;
   const displayValue = Number(trimmed);
@@ -112,21 +125,64 @@ function fromDisplayValue(raw: string, colIndex: number, unit: SizeSpecDisplayUn
 
 export default function WorksheetSizeSpecView({
   displayUnit = 'cm',
-}: {
-  displayUnit?: SizeSpecDisplayUnit;
-}) {
-  const [spec, updateSpec] = useImmer<SizeSpec>(INITIAL_STATE);
+  initialState = INITIAL_STATE,
+  showRowHeader = true,
+  enableUnitConversion = true,
+  showAddColumnButton = true,
+  fillWidth = false,
+  showColumnActions = true,
+  showRowDeleteButton = true,
+  showTotals = false,
+}: WorksheetSizeSpecViewProps) {
+  const [spec, updateSpec] = useImmer<SizeSpec>({
+    headers: [...initialState.headers],
+    rows: initialState.rows.map((row) => [...row]),
+  });
   const [cellDrafts, setCellDrafts] = useState<Record<string, string>>({});
   const [dragItem, setDragItem] = useState<DragItem>(null);
   const [dragOver, setDragOver] = useState<DragOver>(null);
   const [dropFlash, setDropFlash] = useState<DropFlash>(null);
-  const [rowHeaderHoverCount, setRowHeaderHoverCount] = useState(0);
+  const [rowHeaderHovered, setRowHeaderHovered] = useState(false);
   const [hoveredDataCol, setHoveredDataCol] = useState<number | null>(null);
 
-  const rowHeaderExpanded = rowHeaderHoverCount > 0 || dragItem?.type === 'row';
+  const rowHeaderExpanded = rowHeaderHovered || dragItem?.type === 'row';
   const rowHeaderPadding = rowHeaderExpanded
     ? ROW_HEADER_EXPANDED_PADDING
     : ROW_HEADER_COMPACT_PADDING;
+  const dataHeaderStart = showRowHeader ? 1 : 0;
+  const showRowActionRail = !showRowHeader;
+  const showTrailingActionColumn = showAddColumnButton;
+
+  const shouldConvertColumn = useCallback(
+    (colIndex: number) => enableUnitConversion && showRowHeader && colIndex > 0,
+    [enableUnitConversion, showRowHeader],
+  );
+
+  const parseToNumber = useCallback((value: string) => {
+    if (!isNumericLike(value)) return 0;
+    return Number(value);
+  }, []);
+
+  const rowTotals = useMemo(() => {
+    if (!showTotals) return [] as number[];
+    return spec.rows.map((row) =>
+      row.slice(dataHeaderStart).reduce((sum, item) => sum + parseToNumber(item.trim()), 0),
+    );
+  }, [showTotals, spec.rows, dataHeaderStart, parseToNumber]);
+
+  const columnTotals = useMemo(() => {
+    if (!showTotals) return [] as number[];
+    const width = Math.max(0, spec.headers.length - dataHeaderStart);
+    return Array.from({ length: width }).map((_, idx) => {
+      const colIndex = idx + dataHeaderStart;
+      return spec.rows.reduce((sum, row) => sum + parseToNumber((row[colIndex] ?? '').trim()), 0);
+    });
+  }, [showTotals, spec.headers.length, spec.rows, dataHeaderStart, parseToNumber]);
+
+  const grandTotal = useMemo(
+    () => (showTotals ? rowTotals.reduce((sum, item) => sum + item, 0) : 0),
+    [showTotals, rowTotals],
+  );
 
   const getDataColWidth = useCallback(
     (colIndex: number) => {
@@ -225,10 +281,13 @@ export default function WorksheetSizeSpecView({
       const key = cellKey(rowIndex, colIndex);
       setCellDrafts((prev) => {
         if (prev[key] !== undefined) return prev;
-        return { ...prev, [key]: toDisplayValue(rawBaseValue, colIndex, displayUnit) };
+        return {
+          ...prev,
+          [key]: toDisplayValue(rawBaseValue, shouldConvertColumn(colIndex), displayUnit),
+        };
       });
     },
-    [cellKey, displayUnit],
+    [cellKey, displayUnit, shouldConvertColumn],
   );
 
   const handleCellCommit = useCallback(
@@ -237,7 +296,11 @@ export default function WorksheetSizeSpecView({
       const draftValue = cellDrafts[key];
       if (draftValue === undefined) return;
       updateSpec((draft) => {
-        draft.rows[rowIndex][colIndex] = fromDisplayValue(draftValue, colIndex, displayUnit);
+        draft.rows[rowIndex][colIndex] = fromDisplayValue(
+          draftValue,
+          shouldConvertColumn(colIndex),
+          displayUnit,
+        );
       });
       setCellDrafts((prev) => {
         const next = { ...prev };
@@ -245,7 +308,7 @@ export default function WorksheetSizeSpecView({
         return next;
       });
     },
-    [cellDrafts, cellKey, displayUnit, updateSpec],
+    [cellDrafts, cellKey, displayUnit, shouldConvertColumn, updateSpec],
   );
 
   const addRow = useCallback(() => {
@@ -266,6 +329,7 @@ export default function WorksheetSizeSpecView({
       updateSpec((draft) => {
         draft.rows.splice(rowIndex, 1);
       });
+      setRowHeaderHovered(false);
     },
     [updateSpec],
   );
@@ -355,27 +419,34 @@ export default function WorksheetSizeSpecView({
           <div className='pointer-events-none absolute inset-0 z-40 rounded-lg border border-slate-200' />
           <table
             className='border-collapse border-spacing-0 bg-white text-sm'
-            style={{ width: 'max-content', tableLayout: 'fixed' }}
+            style={{ width: fillWidth ? '100%' : 'max-content', tableLayout: 'fixed' }}
           >
             <colgroup>
-              <col />
-              <col span={Math.max(0, spec.headers.length - 1)} />
-              <col style={{ width: `${ACTION_COL_WIDTH}px` }} />
+              {showRowHeader && <col />}
+              {showRowActionRail && <col style={{ width: `${ROW_ACTION_COL_WIDTH}px` }} />}
+              <col span={Math.max(0, spec.headers.length - dataHeaderStart)} />
+              {showTotals && <col />}
+              {showTrailingActionColumn && <col style={{ width: `${ACTION_COL_WIDTH}px` }} />}
             </colgroup>
             <thead>
               <tr>
-              <th
-                className='relative sticky top-0 left-0 z-30 border-y border-r border-l border-slate-200 bg-gray-50 p-0'
-                style={{
-                  width: `${rowHeaderExpanded ? ROW_HEADER_EXPANDED_WIDTH : ROW_HEADER_COMPACT_WIDTH}px`,
-                  minWidth: `${ROW_HEADER_COMPACT_WIDTH}px`,
-                  transition: 'width 240ms ease',
-                }}
-              >
-                <div className='h-[33px] bg-gray-50' />
-              </th>
-              {spec.headers.slice(1).map((header, visibleIndex) => {
-                const colIndex = visibleIndex + 1;
+              {showRowHeader && (
+                <th
+                  className='relative sticky top-0 left-0 z-30 border-y border-r border-l border-slate-200 bg-gray-50 p-0'
+                  style={{
+                    width: `${rowHeaderExpanded ? ROW_HEADER_EXPANDED_WIDTH : ROW_HEADER_COMPACT_WIDTH}px`,
+                    minWidth: `${ROW_HEADER_COMPACT_WIDTH}px`,
+                    transition: 'width 240ms ease',
+                  }}
+                >
+                  <div className='h-[33px] bg-gray-50' />
+                </th>
+              )}
+              {showRowActionRail && (
+                <th className='relative sticky top-0 z-20 border-y border-r border-slate-200 bg-gray-50 p-0' />
+              )}
+              {spec.headers.slice(dataHeaderStart).map((header, visibleIndex) => {
+                const colIndex = visibleIndex + dataHeaderStart;
                 const isDragOver = dragOver?.type === 'column' && dragOver.index === colIndex;
                 const isDragged = dragItem?.type === 'column' && dragItem.index === colIndex;
                 const xShift = getColumnShift(colIndex);
@@ -383,12 +454,16 @@ export default function WorksheetSizeSpecView({
                   <th
                     key={colIndex}
                     className='relative sticky top-0 z-20 border-y border-r border-slate-200 bg-gray-50 p-0'
-                    style={{
-                      width: `${getDataColWidth(colIndex)}px`,
-                      minWidth: `${getDataColWidth(colIndex)}px`,
-                      maxWidth: `${getDataColWidth(colIndex)}px`,
-                      transition: 'width 240ms ease, min-width 240ms ease, max-width 240ms ease',
-                    }}
+                    style={
+                      fillWidth
+                        ? undefined
+                        : {
+                            width: `${getDataColWidth(colIndex)}px`,
+                            minWidth: `${getDataColWidth(colIndex)}px`,
+                            maxWidth: `${getDataColWidth(colIndex)}px`,
+                            transition: 'width 240ms ease, min-width 240ms ease, max-width 240ms ease',
+                          }
+                    }
                     onMouseEnter={() => setHoveredDataCol(colIndex)}
                     onMouseLeave={() =>
                       setHoveredDataCol((prev) => (prev === colIndex ? null : prev))
@@ -432,38 +507,54 @@ export default function WorksheetSizeSpecView({
                               : getMotionStyle(xShift, 0, isDragged, isDragOver && !isDragged).boxShadow,
                         }}
                       />
-                      <button
-                        type='button'
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, 'column', colIndex)}
-                        onDragEnd={handleDragEnd}
-                        className={`${LEFT_ACTION_REVEAL_CLASS} cursor-grab active:cursor-grabbing ${MOVE_ACTION_BUTTON_CLASS}`}
-                        title='열 이동'
-                      >
-                        <GripHorizontal size={12} strokeWidth={2.2} />
-                      </button>
-                      <button
-                        type='button'
-                        onClick={() => deleteColumn(colIndex)}
-                        className={`${RIGHT_ACTION_REVEAL_CLASS} cursor-pointer ${DELETE_ACTION_BUTTON_CLASS}`}
-                        title='열 삭제'
-                      >
-                        <Trash2 size={11} strokeWidth={2.1} />
-                      </button>
+                      {showColumnActions && (
+                        <>
+                          <button
+                            type='button'
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, 'column', colIndex)}
+                            onDragEnd={handleDragEnd}
+                            className={`${LEFT_ACTION_REVEAL_CLASS} cursor-grab active:cursor-grabbing ${MOVE_ACTION_BUTTON_CLASS}`}
+                            title='열 이동'
+                          >
+                            <GripHorizontal size={12} strokeWidth={2.2} />
+                          </button>
+                          <button
+                            type='button'
+                            onClick={() => deleteColumn(colIndex)}
+                            className={`${RIGHT_ACTION_REVEAL_CLASS} cursor-pointer ${DELETE_ACTION_BUTTON_CLASS}`}
+                            title='열 삭제'
+                          >
+                            <Trash2 size={11} strokeWidth={2.1} />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </th>
                 );
               })}
-              <th className='relative sticky top-0 z-20 w-8 border-y border-r border-slate-200 bg-gray-50 p-0'>
-                <button
-                  type='button'
-                  onClick={addColumn}
-                  title='열 추가'
-                  className='flex h-[33px] w-full cursor-pointer items-center justify-center bg-gray-50 p-1 text-slate-400 transition-colors hover:text-slate-600'
-                >
-                  <Plus size={12} />
-                </button>
-              </th>
+              {showTotals && (
+                <th className='relative sticky top-0 z-20 border-y border-r border-slate-300 bg-slate-200 p-0'>
+                  <div className='flex h-[33px] items-center justify-center px-2 text-[11px] font-semibold text-slate-700'>
+                    Total
+                  </div>
+                </th>
+              )}
+              {showAddColumnButton && (
+                <th className='relative sticky top-0 z-20 w-8 border-y border-r border-slate-200 bg-gray-50 p-0'>
+                  <button
+                    type='button'
+                    onClick={addColumn}
+                    title='열 추가'
+                    className='flex h-[33px] w-full cursor-pointer items-center justify-center bg-gray-50 p-1 text-slate-400 transition-colors hover:text-slate-600'
+                  >
+                    <Plus size={12} />
+                  </button>
+                </th>
+              )}
+              {!showAddColumnButton && showTrailingActionColumn && (
+                <th className='relative sticky top-0 z-20 w-8 border-y border-r border-slate-200 bg-gray-50 p-0' />
+              )}
             </tr>
           </thead>
           <tbody>
@@ -472,82 +563,133 @@ export default function WorksheetSizeSpecView({
               const isDraggedRow = dragItem?.type === 'row' && dragItem.index === rowIndex;
               const rowShift = getRowShift(rowIndex);
               return (
-                <tr key={rowIndex}>
-                  <td
-                    className='sticky left-0 z-10 border border-slate-200 bg-white p-0'
-                    style={{
-                      width: `${rowHeaderExpanded ? ROW_HEADER_EXPANDED_WIDTH : ROW_HEADER_COMPACT_WIDTH}px`,
-                      minWidth: `${ROW_HEADER_COMPACT_WIDTH}px`,
-                      transition: 'width 240ms ease',
-                    }}
-                    onDragOver={(e) => {
-                      if (dragItem?.type !== 'row') return;
-                      e.preventDefault();
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const side = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-                      setRowDragOver(rowIndex, side);
-                    }}
-                    onDrop={(e) => {
-                      if (dragItem?.type !== 'row') return;
-                      e.preventDefault();
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const side = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-                      handleRowDrop(rowIndex, side);
-                    }}
-                  >
-                    <div
-                      className='group relative'
-                      onMouseEnter={() => setRowHeaderHoverCount((v) => v + 1)}
-                      onMouseLeave={() => setRowHeaderHoverCount((v) => Math.max(0, v - 1))}
+                <tr
+                  key={rowIndex}
+                  className='group/row'
+                  onDragOver={(e) => {
+                    if (showRowHeader || dragItem?.type !== 'row') return;
+                    e.preventDefault();
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const side = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+                    setRowDragOver(rowIndex, side);
+                  }}
+                  onDrop={(e) => {
+                    if (showRowHeader || dragItem?.type !== 'row') return;
+                    e.preventDefault();
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const side = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+                    handleRowDrop(rowIndex, side);
+                  }}
+                >
+                  {showRowHeader && (
+                    <td
+                      className='sticky left-0 z-10 border border-slate-200 bg-white p-0'
+                      style={{
+                        width: `${rowHeaderExpanded ? ROW_HEADER_EXPANDED_WIDTH : ROW_HEADER_COMPACT_WIDTH}px`,
+                        minWidth: `${ROW_HEADER_COMPACT_WIDTH}px`,
+                        transition: 'width 240ms ease',
+                      }}
+                      onDragOver={(e) => {
+                        if (dragItem?.type !== 'row') return;
+                        e.preventDefault();
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const side = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+                        setRowDragOver(rowIndex, side);
+                      }}
+                      onDrop={(e) => {
+                        if (dragItem?.type !== 'row') return;
+                        e.preventDefault();
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const side = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+                        handleRowDrop(rowIndex, side);
+                      }}
                     >
-                      {isDragOver && !isDraggedRow && (
-                        <div
-                          className='pointer-events-none absolute right-0 left-0 z-20 h-0.5 rounded-full bg-blue-500 shadow-[0_0_0_1px_rgba(59,130,246,0.15),0_0_10px_rgba(59,130,246,0.35)]'
-                          style={{ top: dragOver?.type === 'row' && dragOver.side === 'after' ? '100%' : 0 }}
+                      <div
+                        className='group relative'
+                        onMouseEnter={() => setRowHeaderHovered(true)}
+                        onMouseLeave={() => setRowHeaderHovered(false)}
+                      >
+                        {isDragOver && !isDraggedRow && (
+                          <div
+                            className='pointer-events-none absolute right-0 left-0 z-20 h-0.5 rounded-full bg-blue-500 shadow-[0_0_0_1px_rgba(59,130,246,0.15),0_0_10px_rgba(59,130,246,0.35)]'
+                            style={{ top: dragOver?.type === 'row' && dragOver.side === 'after' ? '100%' : 0 }}
+                          />
+                        )}
+                        <input
+                          value={
+                            cellDrafts[cellKey(rowIndex, 0)] ??
+                            toDisplayValue(row[0], shouldConvertColumn(0), displayUnit)
+                          }
+                          onFocus={() => handleCellFocus(rowIndex, 0, row[0])}
+                          onChange={(e) => handleCellDraftChange(rowIndex, 0, e.target.value)}
+                          onBlur={() => handleCellCommit(rowIndex, 0)}
+                          className={`relative z-0 w-full border-0 py-1.5 text-left text-xs font-medium text-slate-600 outline-none focus:bg-blue-50 ${isDragOver ? 'bg-blue-50/50' : 'bg-gray-50'}`}
+                          style={{
+                            ...getMotionStyle(0, rowShift, isDraggedRow, isDragOver && !isDraggedRow),
+                            paddingLeft: `${rowHeaderPadding}px`,
+                            paddingRight: `${rowHeaderPadding}px`,
+                            transition:
+                              'padding-left 240ms ease, padding-right 240ms ease, background-color 200ms ease, transform 220ms cubic-bezier(0.2, 0.9, 0.25, 1), box-shadow 180ms ease, opacity 180ms ease',
+                            boxShadow:
+                              dropFlash?.type === 'row' && dropFlash.index === rowIndex
+                                ? 'inset 0 0 0 1px rgba(59,130,246,0.45), inset 0 0 24px rgba(59,130,246,0.14)'
+                                : getMotionStyle(0, rowShift, isDraggedRow, isDragOver && !isDraggedRow)
+                                    .boxShadow,
+                          }}
                         />
-                      )}
-                      <input
-                        value={cellDrafts[cellKey(rowIndex, 0)] ?? toDisplayValue(row[0], 0, displayUnit)}
-                        onFocus={() => handleCellFocus(rowIndex, 0, row[0])}
-                        onChange={(e) => handleCellDraftChange(rowIndex, 0, e.target.value)}
-                        onBlur={() => handleCellCommit(rowIndex, 0)}
-                        className={`relative z-0 w-full border-0 py-1.5 text-left text-xs font-medium text-slate-600 outline-none focus:bg-blue-50 ${isDragOver ? 'bg-blue-50/50' : 'bg-gray-50'}`}
-                        style={{
-                          ...getMotionStyle(0, rowShift, isDraggedRow, isDragOver && !isDraggedRow),
-                          paddingLeft: `${rowHeaderPadding}px`,
-                          paddingRight: `${rowHeaderPadding}px`,
-                          transition:
-                            'padding-left 240ms ease, padding-right 240ms ease, background-color 200ms ease, transform 220ms cubic-bezier(0.2, 0.9, 0.25, 1), box-shadow 180ms ease, opacity 180ms ease',
-                          boxShadow:
-                            dropFlash?.type === 'row' && dropFlash.index === rowIndex
-                              ? 'inset 0 0 0 1px rgba(59,130,246,0.45), inset 0 0 24px rgba(59,130,246,0.14)'
-                              : getMotionStyle(0, rowShift, isDraggedRow, isDragOver && !isDraggedRow)
-                                  .boxShadow,
-                        }}
-                      />
-                      <button
-                        type='button'
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, 'row', rowIndex)}
-                        onDragEnd={handleDragEnd}
-                        className={`${LEFT_ACTION_REVEAL_CLASS} cursor-grab active:cursor-grabbing ${MOVE_ACTION_BUTTON_CLASS}`}
-                        title='행 이동'
-                      >
-                        <GripVertical size={12} strokeWidth={2.2} />
-                      </button>
-                      <button
-                        type='button'
-                        onClick={() => deleteRow(rowIndex)}
-                        className={`${RIGHT_ACTION_REVEAL_CLASS} cursor-pointer ${DELETE_ACTION_BUTTON_CLASS}`}
-                        title='행 삭제'
-                      >
-                        <Trash2 size={11} strokeWidth={2.1} />
-                      </button>
-                    </div>
-                  </td>
+                        <button
+                          type='button'
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, 'row', rowIndex)}
+                          onDragEnd={handleDragEnd}
+                          className={`${LEFT_ACTION_REVEAL_CLASS} cursor-grab active:cursor-grabbing ${MOVE_ACTION_BUTTON_CLASS}`}
+                          title='행 이동'
+                        >
+                          <GripVertical size={12} strokeWidth={2.2} />
+                        </button>
+                        {showRowDeleteButton && (
+                          <button
+                            type='button'
+                            onClick={() => deleteRow(rowIndex)}
+                            className={`${RIGHT_ACTION_REVEAL_CLASS} cursor-pointer ${DELETE_ACTION_BUTTON_CLASS}`}
+                            title='행 삭제'
+                          >
+                            <Trash2 size={11} strokeWidth={2.1} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  )}
 
-                  {row.slice(1).map((cell, visibleColIndex) => {
-                    const colIndex = visibleColIndex + 1;
+                  {showRowActionRail && (
+                    <td className='border border-slate-200 bg-white p-0'>
+                      <div className='flex h-full items-center justify-center gap-1'>
+                        <button
+                          type='button'
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, 'row', rowIndex)}
+                          onDragEnd={handleDragEnd}
+                          className='flex h-5 w-5 cursor-grab items-center justify-center rounded-md border border-slate-200 bg-white/95 text-slate-400 opacity-0 transition-all duration-200 ease-out group-hover/row:opacity-100 hover:border-slate-300 hover:text-slate-700 active:cursor-grabbing'
+                          title='행 이동'
+                        >
+                          <GripVertical size={13} strokeWidth={2.2} />
+                        </button>
+                        {showRowDeleteButton && (
+                          <button
+                            type='button'
+                            onClick={() => deleteRow(rowIndex)}
+                            className='flex h-5 w-5 cursor-pointer items-center justify-center rounded-md border border-red-200 bg-white/95 text-red-400 opacity-0 transition-all duration-200 ease-out group-hover/row:opacity-100 hover:border-red-300 hover:bg-red-50 hover:text-red-500'
+                            title='행 삭제'
+                          >
+                            <Trash2 size={13} strokeWidth={2.1} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  )}
+
+                  {row.slice(dataHeaderStart).map((cell, visibleColIndex) => {
+                    const colIndex = visibleColIndex + dataHeaderStart;
                     const isDraggedColumn = dragItem?.type === 'column' && dragItem.index === colIndex;
                     const isColumnDropTarget =
                       dragOver?.type === 'column' && dragOver.index === colIndex && !isDraggedColumn;
@@ -556,17 +698,21 @@ export default function WorksheetSizeSpecView({
                       <td
                         key={colIndex}
                         className='border border-slate-200 p-0'
-                        style={{
-                          width: `${getDataColWidth(colIndex)}px`,
-                          minWidth: `${getDataColWidth(colIndex)}px`,
-                          maxWidth: `${getDataColWidth(colIndex)}px`,
-                          transition: 'width 240ms ease, min-width 240ms ease, max-width 240ms ease',
-                        }}
+                        style={
+                          fillWidth
+                            ? undefined
+                            : {
+                                width: `${getDataColWidth(colIndex)}px`,
+                                minWidth: `${getDataColWidth(colIndex)}px`,
+                                maxWidth: `${getDataColWidth(colIndex)}px`,
+                                transition: 'width 240ms ease, min-width 240ms ease, max-width 240ms ease',
+                              }
+                        }
                       >
                         <input
                           value={
                             cellDrafts[cellKey(rowIndex, colIndex)] ??
-                            toDisplayValue(cell, colIndex, displayUnit)
+                            toDisplayValue(cell, shouldConvertColumn(colIndex), displayUnit)
                           }
                           onFocus={() => handleCellFocus(rowIndex, colIndex, cell)}
                           onChange={(e) => handleCellDraftChange(rowIndex, colIndex, e.target.value)}
@@ -594,33 +740,90 @@ export default function WorksheetSizeSpecView({
                       </td>
                     );
                   })}
-                  <td className='w-8 border border-slate-200 bg-white p-0' />
+                  {showTotals && (
+                    <td className='border border-slate-300 bg-slate-100 p-0'>
+                      <div className='flex h-full w-full items-center justify-center px-2 py-1.5 text-xs font-semibold text-slate-700'>
+                        {formatNumber(rowTotals[rowIndex] ?? 0, 0)}
+                      </div>
+                    </td>
+                  )}
+                  {showTrailingActionColumn && <td className='w-8 border border-slate-200 bg-white p-0' />}
                 </tr>
               );
             })}
+            {showTotals && (
+              <tr>
+                {showRowHeader ? (
+                  <td className='sticky left-0 z-10 border border-slate-200 bg-slate-100 p-0'>
+                    <div className='flex h-[33px] items-center px-3 text-xs font-semibold text-slate-700'>
+                      Total
+                    </div>
+                  </td>
+                ) : (
+                  showRowActionRail && <td className='border border-slate-200 bg-slate-100 p-0' />
+                )}
+
+                {columnTotals.map((sum, idx) => (
+                  <td key={`total-col-${idx}`} className='border border-slate-200 bg-slate-50 p-0'>
+                    <div className='flex h-[33px] items-center justify-center px-2 text-xs font-semibold text-slate-700'>
+                      {formatNumber(sum, 0)}
+                    </div>
+                  </td>
+                ))}
+
+                <td className='border border-slate-300 bg-slate-200 p-0'>
+                  <div className='flex h-[33px] items-center justify-center px-2 text-xs font-semibold text-slate-800'>
+                    {formatNumber(grandTotal, 0)}
+                  </div>
+                </td>
+
+                {showTrailingActionColumn && <td className='w-8 border border-slate-200 bg-white p-0' />}
+              </tr>
+            )}
             <tr style={{ height: '33px' }}>
-              <td
-                className='sticky left-0 z-10 border border-slate-200 bg-gray-50 p-0'
-                style={{
-                  width: `${rowHeaderExpanded ? ROW_HEADER_EXPANDED_WIDTH : ROW_HEADER_COMPACT_WIDTH}px`,
-                  minWidth: `${ROW_HEADER_COMPACT_WIDTH}px`,
-                  transition: 'width 240ms ease',
-                }}
-              >
-                <button
-                  type='button'
-                  onClick={addRow}
-                  title='행 추가'
-                  className='flex h-full w-full cursor-pointer items-center justify-center bg-gray-50 p-1 text-slate-400 transition-colors hover:text-slate-600'
+              {showRowHeader ? (
+                <td
+                  className='sticky left-0 z-10 border border-slate-200 bg-gray-50 p-0'
+                  style={{
+                    width: `${rowHeaderExpanded ? ROW_HEADER_EXPANDED_WIDTH : ROW_HEADER_COMPACT_WIDTH}px`,
+                    minWidth: `${ROW_HEADER_COMPACT_WIDTH}px`,
+                    transition: 'width 240ms ease',
+                  }}
                 >
-                  <Plus size={12} />
-                </button>
-              </td>
-              <td
-                colSpan={Math.max(1, spec.headers.length - 1)}
-                className='border border-slate-200 bg-white p-0'
-              />
-              <td className='w-8 border border-slate-200 bg-white p-0' />
+                  <button
+                    type='button'
+                    onClick={addRow}
+                    title='행 추가'
+                    className='flex h-full w-full cursor-pointer items-center justify-center bg-gray-50 p-1 text-slate-400 transition-colors hover:text-slate-600'
+                  >
+                    <Plus size={12} />
+                  </button>
+                </td>
+              ) : (
+                <>
+                  {showRowActionRail && (
+                    <td className='border border-slate-200 bg-gray-50 p-0'>
+                      <button
+                        type='button'
+                        onClick={addRow}
+                        title='행 추가'
+                        className='flex h-full w-full cursor-pointer items-center justify-center text-slate-400 transition-colors hover:text-slate-600'
+                      >
+                        <Plus size={12} />
+                      </button>
+                    </td>
+                  )}
+                  <td colSpan={Math.max(1, spec.headers.length)} className='border border-slate-200 bg-white p-0' />
+                </>
+              )}
+              {showRowHeader && (
+                <td
+                  colSpan={Math.max(1, spec.headers.length - 1)}
+                  className='border border-slate-200 bg-white p-0'
+                />
+              )}
+              {showTotals && <td className='border border-slate-200 bg-white p-0' />}
+              {showTrailingActionColumn && <td className='w-8 border border-slate-200 bg-white p-0' />}
             </tr>
           </tbody>
           </table>

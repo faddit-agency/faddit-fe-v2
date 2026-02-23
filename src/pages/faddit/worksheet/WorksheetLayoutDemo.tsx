@@ -1,10 +1,12 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Rows3, X, ChevronLeft, ArrowRight, LayoutGrid, Package } from 'lucide-react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import WorksheetTopBar from './WorksheetTopBar';
 import WorksheetSizeSpecView from './WorksheetSizeSpecView';
 import type { SizeSpecDisplayUnit } from './WorksheetSizeSpecView';
 import WorksheetNoticeEditor from './WorksheetNoticeEditor';
+import WorksheetFabricInfoView from './WorksheetFabricInfoView';
+import WorksheetTemplateSidebar from './WorksheetTemplateSidebar';
 import DropdownButton from '../../../components/atoms/DropdownButton';
 
 type DragState =
@@ -59,6 +61,33 @@ const SIZE_UNIT_OPTIONS = [
   { id: 2, period: 'inch/단면' },
 ];
 
+const LABEL_SHEET_STATE = {
+  headers: ['품명', '컬러', '규격', '수량'],
+  rows: [
+    ['브랜드 라벨', 'Black', '직조 / 넥 중앙', '1EA'],
+    ['사이즈 라벨', 'White', '인쇄 / 브랜드 라벨 하단', '1EA'],
+    ['케어 라벨', 'White', '세탁 기호 / 좌측 옆선', '1EA'],
+  ],
+};
+
+const TRIM_SHEET_STATE = {
+  headers: ['품명', '컬러', '규격', '수량'],
+  rows: [
+    ['지퍼', 'Black', 'YKK #3', '1EA'],
+    ['단추', 'Navy', '18L', '6EA'],
+    ['심지', 'White', 'Non-woven', '0.4M'],
+  ],
+};
+
+const COLOR_SIZE_QTY_STATE = {
+  headers: ['컬러', 'XS', 'S', 'M', 'L', 'XL'],
+  rows: [
+    ['Black', '12', '18', '24', '18', '10'],
+    ['White', '8', '14', '20', '16', '9'],
+    ['Navy', '10', '16', '22', '17', '11'],
+  ],
+};
+
 function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, v));
 }
@@ -85,116 +114,6 @@ function getHandleGlow(isHovered: boolean, isActive: boolean): string {
   if (isActive) return '0 0 0 1px rgba(37, 99, 235, 0.35), 0 0 14px rgba(37, 99, 235, 0.2)';
   if (isHovered) return '0 0 0 1px rgba(100, 116, 139, 0.22), 0 0 10px rgba(100, 116, 139, 0.14)';
   return 'none';
-}
-
-const CATEGORY_ROW1 = ['전체', '남성', '여성', '아동'] as const;
-const CATEGORY_ROW2 = ['반팔', '긴팔', '긴바지', '원피스', '반바지'] as const;
-const MOCK_TEMPLATES = [0, 1, 2, 3, 4, 5];
-const MOCK_RECOMMENDED = [0, 1, 2, 3];
-
-type SidebarTab = 'template' | 'item';
-
-function TemplateSidebar() {
-  const [tab, setTab] = useState<SidebarTab>('template');
-  const [cat1, setCat1] = useState('전체');
-  const [cat2, setCat2] = useState('');
-  const [query, setQuery] = useState('');
-
-  return (
-    <div className='flex h-full flex-col overflow-hidden'>
-      <div className='flex gap-1 px-2 pt-2'>
-        <button
-          type='button'
-          onClick={() => setTab('template')}
-          className={`flex flex-col items-center gap-0.5 rounded px-2 py-1.5 transition-colors ${tab === 'template' ? 'bg-violet-100 text-violet-600' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'}`}
-        >
-          <LayoutGrid size={15} strokeWidth={1.8} />
-          <span className='text-[10px] leading-none font-medium'>템플릿</span>
-        </button>
-        <button
-          type='button'
-          onClick={() => setTab('item')}
-          className={`flex flex-col items-center gap-0.5 rounded px-2 py-1.5 transition-colors ${tab === 'item' ? 'bg-violet-100 text-violet-600' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'}`}
-        >
-          <Package size={15} strokeWidth={1.8} />
-          <span className='text-[10px] leading-none font-medium'>요소</span>
-        </button>
-      </div>
-
-      <div className='px-2 pt-2 pb-1'>
-        <div className='flex items-center gap-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-1.5 focus-within:border-gray-300 focus-within:bg-white'>
-          <input
-            className='min-w-0 flex-1 bg-transparent text-xs text-gray-700 outline-none placeholder:text-gray-400'
-            placeholder='템플릿 검색 (예: 카라가 있는 티셔츠)'
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <button
-            type='button'
-            className='shrink-0 rounded p-0.5 text-gray-400 transition-colors hover:text-gray-600'
-          >
-            <ArrowRight size={13} strokeWidth={2} />
-          </button>
-        </div>
-      </div>
-
-      <div className='min-h-0 flex-1 overflow-y-auto px-2 pb-2'>
-        <p className='mt-1 mb-1.5 text-xs font-semibold text-gray-700'>추천 템플릿</p>
-        <div className='mb-3 grid grid-cols-2 gap-1.5'>
-          {MOCK_RECOMMENDED.map((i) => (
-            <div
-              key={i}
-              className='aspect-[4/3] cursor-pointer rounded-md border border-gray-200 bg-[#f6f6f7] transition-colors hover:border-gray-300'
-            />
-          ))}
-        </div>
-
-        <p className='mb-1.5 text-xs font-semibold text-gray-700'>템플릿</p>
-        <div className='mb-1.5 flex flex-wrap gap-1'>
-          {CATEGORY_ROW1.map((c) => (
-            <button
-              key={c}
-              type='button'
-              onClick={() => setCat1(c)}
-              className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${cat1 === c ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-            >
-              {c}
-            </button>
-          ))}
-        </div>
-        <div className='mb-3 flex flex-wrap gap-1'>
-          {CATEGORY_ROW2.map((c) => (
-            <button
-              key={c}
-              type='button'
-              onClick={() => setCat2((prev) => (prev === c ? '' : c))}
-              className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${cat2 === c ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-            >
-              {c}
-            </button>
-          ))}
-        </div>
-        <div className='grid grid-cols-2 gap-1.5'>
-          {MOCK_TEMPLATES.map((i) => (
-            <div key={i} className='group cursor-pointer'>
-              <div className='mb-1 aspect-[4/3] rounded-md border border-gray-200 bg-[#f6f6f7] transition-colors group-hover:border-violet-300' />
-              <p className='truncate text-[10px] text-gray-500'>템플릿 {i + 1}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className='border-t border-gray-100 px-2 py-1.5'>
-        <button
-          type='button'
-          className='flex items-center gap-0 rounded px-1 py-0.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600'
-        >
-          <ChevronLeft size={13} strokeWidth={2} />
-          <ChevronLeft size={13} strokeWidth={2} className='-ml-2' />
-        </button>
-      </div>
-    </div>
-  );
 }
 
 function Panel({
@@ -276,6 +195,8 @@ function Panel({
 export default function WorksheetLayoutDemo() {
   const navigate = useNavigate();
   const boardRef = useRef<HTMLDivElement>(null);
+  const colRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const [sidebarWidth, setSidebarWidth] = useState(290);
   const [colWidths, setColWidths] = useState([42, 30, 28]);
@@ -288,16 +209,8 @@ export default function WorksheetLayoutDemo() {
   const [hoveredHandle, setHoveredHandle] = useState<string | null>(null);
   const [sizeSpecUnit, setSizeSpecUnit] = useState<SizeSpecDisplayUnit>('cm');
   const sizeSpecUnitLabel = sizeSpecUnit === 'inch' ? 'inch/단면' : 'cm/단면';
-
-  const colOffsets = useMemo(() => {
-    const offsets: number[] = [];
-    let acc = 0;
-    colWidths.forEach((w) => {
-      offsets.push(acc);
-      acc += w;
-    });
-    return offsets;
-  }, [colWidths]);
+  const [colBoundaryLefts, setColBoundaryLefts] = useState<number[]>([]);
+  const [rowBoundaryTops, setRowBoundaryTops] = useState<Record<number, number[]>>({});
 
   useEffect(() => {
     if (!dragState) return;
@@ -398,6 +311,54 @@ export default function WorksheetLayoutDemo() {
     };
   }, [dragState]);
 
+  useLayoutEffect(() => {
+    const recalcHandlePositions = () => {
+      const boardEl = boardRef.current;
+      if (!boardEl) return;
+      const boardRect = boardEl.getBoundingClientRect();
+
+      const nextColLefts: number[] = [];
+      colWidths.slice(0, -1).forEach((_, colIndex) => {
+        const colEl = colRefs.current[colIndex];
+        if (!colEl) return;
+        const colRect = colEl.getBoundingClientRect();
+        nextColLefts.push(colRect.right - boardRect.left);
+      });
+
+      const nextRowTops: Record<number, number[]> = {};
+      colWidths.forEach((_, colIndex) => {
+        const colEl = colRefs.current[colIndex];
+        if (!colEl) return;
+        const colRect = colEl.getBoundingClientRect();
+        const tops: number[] = [];
+        rowHeights[colIndex].slice(0, -1).forEach((_, rowIndex) => {
+          const key = `${colIndex}-${rowIndex}`;
+          const rowEl = rowRefs.current[key];
+          if (!rowEl) return;
+          const rowRect = rowEl.getBoundingClientRect();
+          tops.push(rowRect.bottom - colRect.top);
+        });
+        nextRowTops[colIndex] = tops;
+      });
+
+      setColBoundaryLefts(nextColLefts);
+      setRowBoundaryTops(nextRowTops);
+    };
+
+    recalcHandlePositions();
+
+    const boardEl = boardRef.current;
+    if (!boardEl) return;
+    const observer = new ResizeObserver(recalcHandlePositions);
+    observer.observe(boardEl);
+    window.addEventListener('resize', recalcHandlePositions);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', recalcHandlePositions);
+    };
+  }, [colWidths, rowHeights, sidebarWidth]);
+
   useEffect(() => {
     if (!dragState) {
       document.body.style.cursor = '';
@@ -426,7 +387,7 @@ export default function WorksheetLayoutDemo() {
         style={{ gridTemplateColumns: `${sidebarWidth}px 1fr` }}
       >
         <aside className='relative col-start-1 row-start-1 h-full min-h-0 overflow-hidden rounded-lg border border-gray-200 bg-white'>
-          <TemplateSidebar />
+          <WorksheetTemplateSidebar />
         </aside>
 
         <div
@@ -462,7 +423,13 @@ export default function WorksheetLayoutDemo() {
             {colWidths.map((_, colIndex) => {
               const rows = rowHeights[colIndex];
               return (
-                <div key={`col-${colIndex}`} className='relative h-full min-h-0'>
+                <div
+                  key={`col-${colIndex}`}
+                  ref={(el) => {
+                    colRefs.current[colIndex] = el;
+                  }}
+                  className='relative h-full min-h-0'
+                >
                   <div
                     className='grid h-full min-h-0 gap-2'
                     style={{ gridTemplateRows: rows.map((h) => `${h}fr`).join(' ') }}
@@ -473,12 +440,46 @@ export default function WorksheetLayoutDemo() {
                         colIndex < colWidths.length - 1 && rowIndex < rows.length - 1;
                       const cellHandleId = `cell-${colIndex}-${rowIndex}`;
                       return (
-                        <div key={`col-${colIndex}-row-${rowIndex}`} className='h-full min-h-0'>
+                        <div
+                          key={`col-${colIndex}-row-${rowIndex}`}
+                          ref={(el) => {
+                            rowRefs.current[`${colIndex}-${rowIndex}`] = el;
+                          }}
+                          className='h-full min-h-0'
+                        >
                           <Panel
                             {...panelData}
                             body={
                               panelData.title === 'Size Spec' ? (
                                 <WorksheetSizeSpecView displayUnit={sizeSpecUnit} />
+                              ) : panelData.title === '라벨' ? (
+                                <WorksheetSizeSpecView
+                                  showRowHeader={false}
+                                  enableUnitConversion={false}
+                                  showAddColumnButton={false}
+                                  showColumnActions={false}
+                                  showRowDeleteButton
+                                  fillWidth
+                                  initialState={LABEL_SHEET_STATE}
+                                />
+                              ) : panelData.title === '부자재' ? (
+                                <WorksheetSizeSpecView
+                                  showRowHeader={false}
+                                  enableUnitConversion={false}
+                                  showAddColumnButton={false}
+                                  showColumnActions={false}
+                                  showRowDeleteButton
+                                  fillWidth
+                                  initialState={TRIM_SHEET_STATE}
+                                />
+                              ) : panelData.title === '색상/사이즈 별 수량' ? (
+                                <WorksheetSizeSpecView
+                                  enableUnitConversion={false}
+                                  showTotals
+                                  initialState={COLOR_SIZE_QTY_STATE}
+                                />
+                              ) : panelData.title === '원단 정보' ? (
+                                <WorksheetFabricInfoView />
                               ) : panelData.title === '작업 시 주의사항' ? (
                                 <WorksheetNoticeEditor />
                               ) : undefined
@@ -545,9 +546,7 @@ export default function WorksheetLayoutDemo() {
                       dragState.columnIndex === colIndex &&
                       dragState.rowIndex === rowIndex;
                     const rowHovered = hoveredHandle === rowHandleId;
-                    const boundaryTop = rows
-                      .slice(0, rowIndex + 1)
-                      .reduce((sum, item) => sum + item, 0);
+                    const boundaryTop = rowBoundaryTops[colIndex]?.[rowIndex];
                     return (
                       <div
                         key={`row-handle-${colIndex}-${rowIndex}`}
@@ -571,7 +570,7 @@ export default function WorksheetLayoutDemo() {
                         }}
                         className='pointer-events-auto absolute right-0 left-0 z-[120] h-5 -translate-y-1/2 cursor-row-resize'
                         style={{
-                          top: `${boundaryTop}%`,
+                          top: boundaryTop !== undefined ? `${boundaryTop}px` : undefined,
                         }}
                       >
                         <div
@@ -595,7 +594,7 @@ export default function WorksheetLayoutDemo() {
               const colHandleId = `col-${colIndex}`;
               const colActive = dragState?.type === 'column' && dragState.index === colIndex;
               const colHovered = hoveredHandle === colHandleId;
-              const left = colOffsets[colIndex] + colWidths[colIndex];
+              const left = colBoundaryLefts[colIndex];
               return (
                 <div
                   key={`col-handle-${colIndex}`}
@@ -618,7 +617,7 @@ export default function WorksheetLayoutDemo() {
                   }}
                   className='pointer-events-auto absolute top-0 bottom-0 z-[120] w-6 -translate-x-1/2 cursor-col-resize'
                   style={{
-                    left: `${left}%`,
+                    left: left !== undefined ? `${left}px` : undefined,
                   }}
                 >
                   <div
