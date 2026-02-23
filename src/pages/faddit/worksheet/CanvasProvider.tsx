@@ -56,6 +56,10 @@ interface CanvasCtx {
   setFontSize: (size: number) => void;
   fontFamily: string;
   setFontFamily: (font: string) => void;
+  fontWeight: string;
+  setFontWeight: (weight: string) => void;
+  cornerRadius: number;
+  setCornerRadius: (radius: number) => void;
   selectedType: string | null;
   showGrid: boolean;
   toggleGrid: () => void;
@@ -76,6 +80,9 @@ interface CanvasCtx {
   activeLayerId: string | null;
   selectLayer: (id: string) => void;
   deleteSelected: () => void;
+  duplicateSelected: () => void;
+  copySelected: () => void;
+  pasteClipboard: () => void;
   groupSelected: () => void;
   ungroupSelected: () => void;
 }
@@ -95,6 +102,24 @@ const LAYER_NAME_MAP: Record<string, string> = {
 };
 
 type ObjWithData = FabricObject & { data?: { id?: string; name?: string } };
+
+function isArrowObject(obj: FabricObject): boolean {
+  const data = (obj as ObjWithData).data;
+  return data?.id?.startsWith('arrow-') ?? false;
+}
+
+function applyCornerRoundness(obj: FabricObject, radius: number): void {
+  if (obj.type === 'rect') {
+    obj.set({ rx: radius, ry: radius });
+    return;
+  }
+  if (obj.type === 'line' || obj.type === 'triangle' || obj.type === 'path' || isArrowObject(obj)) {
+    obj.set({
+      strokeLineCap: radius > 0 ? 'round' : 'butt',
+      strokeLineJoin: radius > 0 ? 'round' : 'miter',
+    });
+  }
+}
 
 function getObjPreviewColor(obj: FabricObject): string {
   const fill = obj.get('fill');
@@ -175,6 +200,8 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
   const historyRef = useRef<string[]>([]);
   const historyIdxRef = useRef<number>(-1);
   const expandedIdsRef = useRef<Set<string>>(new Set());
+  const clipboardRef = useRef<FabricObject[]>([]);
+  const pasteCountRef = useRef<number>(0);
 
   const [activeTool, setActiveTool] = useState<ToolType>('select');
   const [strokeColor, setStrokeColorState] = useState('#000000');
@@ -182,6 +209,8 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
   const [strokeWidth, setStrokeWidthState] = useState(2);
   const [fontSize, setFontSizeState] = useState(20);
   const [fontFamily, setFontFamilyState] = useState('Arial');
+  const [fontWeight, setFontWeightState] = useState('normal');
+  const [cornerRadius, setCornerRadiusState] = useState(0);
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
   const [showGrid, setShowGrid] = useState(false);
@@ -242,6 +271,12 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
     if (obj instanceof IText) {
       setFontSizeState(obj.fontSize ?? 20);
       setFontFamilyState(obj.fontFamily ?? 'Arial');
+      setFontWeightState((obj.fontWeight as string) ?? 'normal');
+    }
+    if (obj.type === 'rect') {
+      setCornerRadiusState(((obj as unknown as { rx?: number }).rx ?? 0) as number);
+    } else {
+      setCornerRadiusState(0);
     }
     setActiveLayerId((obj as ObjWithData).data?.id ?? null);
   }, []);
@@ -252,6 +287,20 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
       saveHistory();
       refreshLayers();
       c.on('object:added', refreshLayers);
+      c.on('object:added', (e) => {
+        const obj = e.target;
+        if (!obj) return;
+        if (obj.type !== 'i-text' && obj.type !== 'image') {
+          obj.set({ strokeUniform: true });
+        }
+      });
+      c.on('object:scaling', (e) => {
+        const obj = e.target;
+        if (!obj) return;
+        if (obj.type !== 'i-text' && obj.type !== 'image') {
+          obj.set({ strokeUniform: true });
+        }
+      });
       c.on('object:removed', refreshLayers);
       c.on('object:modified', refreshLayers);
       c.on('selection:created', (e) => syncSelectionProps(e.selected?.[0] ?? null));
@@ -319,6 +368,32 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
       canvasRef.current?.renderAll();
     }
   }, []);
+
+  const setFontWeight = useCallback(
+    (weight: string) => {
+      setFontWeightState(weight);
+      const obj = canvasRef.current?.getActiveObject();
+      if (obj instanceof IText) {
+        obj.set('fontWeight', weight);
+        canvasRef.current?.renderAll();
+        saveHistory();
+      }
+    },
+    [saveHistory],
+  );
+
+  const setCornerRadius = useCallback(
+    (radius: number) => {
+      setCornerRadiusState(radius);
+      const obj = canvasRef.current?.getActiveObject();
+      if (!obj) return;
+      applyCornerRoundness(obj, radius);
+      obj.setCoords();
+      canvasRef.current?.renderAll();
+      saveHistory();
+    },
+    [saveHistory],
+  );
 
   const undo = useCallback(() => {
     const canvas = canvasRef.current;
@@ -481,6 +556,133 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
     saveHistory();
   }, [refreshLayers, saveHistory]);
 
+  const cloneObjects = useCallback(async (objects: FabricObject[]): Promise<FabricObject[]> => {
+    const clones = await Promise.all(
+      objects.map(async (obj) => {
+        try {
+          return await obj.clone();
+        } catch {
+          return null;
+        }
+      }),
+    );
+    return clones.filter((obj): obj is FabricObject => !!obj);
+  }, []);
+
+  const copySelected = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const active = canvas.getActiveObject();
+    if (!active) return;
+
+    const source = active instanceof ActiveSelection ? active.getObjects() : [active];
+    const run = async () => {
+      const clones = await cloneObjects(source);
+      if (clones.length === 0) return;
+      clipboardRef.current = clones;
+      pasteCountRef.current = 0;
+    };
+
+    void run();
+  }, [cloneObjects]);
+
+  const pasteClipboard = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    if (clipboardRef.current.length === 0) return;
+
+    const run = async () => {
+      const base = clipboardRef.current;
+      const clones = await cloneObjects(base);
+      if (clones.length === 0) return;
+
+      pasteCountRef.current += 1;
+      const offset = 20 * pasteCountRef.current;
+
+      clones.forEach((obj, index) => {
+        const left = (obj.left ?? 0) + offset;
+        const top = (obj.top ?? 0) + offset;
+        obj.set({ left, top, strokeUniform: obj.type !== 'i-text' && obj.type !== 'image' });
+
+        const data = (obj as ObjWithData).data;
+        if (data) {
+          (obj as ObjWithData).data = {
+            id: `${data.id ?? 'obj'}-paste-${Date.now()}-${index}`,
+            name: `${data.name ?? '요소'} 붙여넣기`,
+          };
+        }
+        obj.setCoords();
+        canvas.add(obj);
+      });
+
+      if (clones.length > 1) {
+        canvas.setActiveObject(new ActiveSelection(clones, { canvas }));
+      } else {
+        canvas.setActiveObject(clones[0]);
+      }
+
+      canvas.renderAll();
+      refreshLayers();
+      saveHistory();
+    };
+
+    void run();
+  }, [cloneObjects, refreshLayers, saveHistory]);
+
+  const duplicateSelected = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const active = canvas.getActiveObject();
+    if (!active) return;
+
+    const duplicateSingle = async (obj: FabricObject): Promise<FabricObject | null> => {
+      try {
+        const cloned = await obj.clone();
+        if (!cloned) return null;
+        const left = (obj.left ?? 0) + 20;
+        const top = (obj.top ?? 0) + 20;
+        cloned.set({ left, top });
+        const data = (obj as ObjWithData).data;
+        if (data) {
+          (cloned as ObjWithData).data = {
+            id: `${data.id ?? 'obj'}-dup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            name: `${data.name ?? '요소'} 복제`,
+          };
+        }
+        cloned.setCoords();
+        canvas.add(cloned);
+        return cloned;
+      } catch {
+        return null;
+      }
+    };
+
+    const run = async () => {
+      if (active instanceof ActiveSelection) {
+        const objects = active.getObjects();
+        canvas.discardActiveObject();
+        const clones = (await Promise.all(objects.map((obj) => duplicateSingle(obj)))).filter(
+          (obj): obj is FabricObject => !!obj,
+        );
+        if (clones.length > 1) {
+          canvas.setActiveObject(new ActiveSelection(clones, { canvas }));
+        } else if (clones.length === 1) {
+          canvas.setActiveObject(clones[0]);
+        }
+      } else {
+        const clone = await duplicateSingle(active);
+        if (clone) {
+          canvas.setActiveObject(clone);
+        }
+      }
+      canvas.renderAll();
+      refreshLayers();
+      saveHistory();
+    };
+
+    void run();
+  }, [refreshLayers, saveHistory]);
+
   const groupSelected = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -507,22 +709,10 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
     if (!canvas) return;
     const active = canvas.getActiveObject();
     if (!(active instanceof Group)) return;
-    const objs = active.getObjects();
+    const objs = active.removeAll();
     canvas.remove(active);
     const ungrouped: FabricObject[] = [];
     objs.forEach((obj) => {
-      const matrix = active.calcTransformMatrix();
-      const point = obj.getRelativeCenterPoint();
-      const transformed = point.transform(matrix);
-      obj.set({
-        left: transformed.x,
-        top: transformed.y,
-        scaleX: (obj.scaleX ?? 1) * (active.scaleX ?? 1),
-        scaleY: (obj.scaleY ?? 1) * (active.scaleY ?? 1),
-        angle: (obj.angle ?? 0) + (active.angle ?? 0),
-        originX: 'center',
-        originY: 'center',
-      });
       obj.setCoords();
       canvas.add(obj);
       ungrouped.push(obj);
@@ -639,6 +829,10 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
         setFontSize,
         fontFamily,
         setFontFamily,
+        fontWeight,
+        setFontWeight,
+        cornerRadius,
+        setCornerRadius,
         selectedType,
         showGrid,
         toggleGrid,
@@ -659,6 +853,9 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
         activeLayerId,
         selectLayer,
         deleteSelected,
+        duplicateSelected,
+        copySelected,
+        pasteClipboard,
         groupSelected,
         ungroupSelected,
       }}

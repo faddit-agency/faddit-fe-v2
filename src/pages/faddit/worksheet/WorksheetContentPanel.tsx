@@ -1,9 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Minus, PenLine, Plus, Scissors, Table } from 'lucide-react';
+import { GripHorizontal, Minus, PenLine, Plus, Scissors, Table, Trash2 } from 'lucide-react';
 import ToggleButton from '../../../components/atoms/ToggleButton';
 import WorksheetSketchView from './WorksheetSketchView';
 import WorksheetPatternView from './WorksheetPatternView';
 import WorksheetSizeSpecView from './WorksheetSizeSpecView';
+import {
+  DELETE_ACTION_BUTTON_CLASS,
+  LEFT_ACTION_REVEAL_CLASS,
+  MOVE_ACTION_BUTTON_CLASS,
+  RIGHT_ACTION_REVEAL_CLASS,
+} from './WorksheetActionButtons';
 
 type PageType = 'sketch' | 'pattern' | 'size-spec';
 
@@ -61,6 +67,8 @@ export default function WorksheetContentPanel() {
   const [pageToggle, setPageToggle] = useState(true);
   const [zoom, setZoom] = useState(100);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [dragPageId, setDragPageId] = useState<string | null>(null);
+  const [dragOverPageId, setDragOverPageId] = useState<string | null>(null);
   const addMenuRef = useRef<HTMLDivElement>(null);
 
   const selectedPage = pages.find((p) => p.id === selectedId) ?? pages[0];
@@ -86,6 +94,45 @@ export default function WorksheetContentPanel() {
     },
     [pages],
   );
+
+  const handleDeletePage = useCallback(
+    (pageId: string) => {
+      if (pages.length <= 1) return;
+      const nextPages = pages.filter((p) => p.id !== pageId);
+      setPages(nextPages);
+      if (selectedId === pageId && nextPages.length > 0) {
+        setSelectedId(nextPages[0].id);
+      }
+    },
+    [pages, selectedId],
+  );
+
+  const handlePageDragStart = useCallback((pageId: string) => {
+    setDragPageId(pageId);
+  }, []);
+
+  const handlePageDrop = useCallback(
+    (targetId: string) => {
+      if (!dragPageId || dragPageId === targetId) return;
+      setPages((prev) => {
+        const from = prev.findIndex((p) => p.id === dragPageId);
+        const to = prev.findIndex((p) => p.id === targetId);
+        if (from < 0 || to < 0) return prev;
+        const next = [...prev];
+        const [moved] = next.splice(from, 1);
+        next.splice(to, 0, moved);
+        return next;
+      });
+      setDragPageId(null);
+      setDragOverPageId(null);
+    },
+    [dragPageId],
+  );
+
+  const handlePageDragEnd = useCallback(() => {
+    setDragPageId(null);
+    setDragOverPageId(null);
+  }, []);
 
   return (
     <section className='flex h-full min-w-0 flex-1 flex-col gap-2'>
@@ -117,28 +164,70 @@ export default function WorksheetContentPanel() {
             {pages.map((page, idx) => {
               const meta = PAGE_TYPE_META[page.type];
               const Icon = meta.icon;
+              const isDragged = dragPageId === page.id;
+              const isDragOver = dragOverPageId === page.id;
               return (
-                <button
+                <div
                   key={page.id}
-                  type='button'
-                  onClick={() => setSelectedId(page.id)}
-                  className={`relative flex shrink-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg bg-white transition-colors ${
-                    selectedId === page.id
-                      ? 'border-2 border-gray-700'
-                      : 'border border-gray-200 hover:border-gray-300'
-                  }`}
-                  style={{ width: THUMB_W, height: THUMB_H }}
+                  className='group relative'
+                  onDragOver={(e) => {
+                    if (!dragPageId) return;
+                    e.preventDefault();
+                    setDragOverPageId(page.id);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    handlePageDrop(page.id);
+                  }}
+                  onDragLeave={() => {
+                    setDragOverPageId((prev) => (prev === page.id ? null : prev));
+                  }}
                 >
-                  <span className='absolute top-1 right-1.5 text-[10px] text-gray-400'>
-                    {idx + 1}
-                  </span>
-                  <div
-                    className={`flex h-8 w-8 items-center justify-center rounded-full ${meta.bgColor}`}
+                  <button
+                    type='button'
+                    onClick={() => setSelectedId(page.id)}
+                    className={`relative flex shrink-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg bg-white transition-all ${
+                      selectedId === page.id
+                        ? 'border-2 border-gray-700'
+                        : 'border border-gray-200 hover:border-gray-300'
+                    } ${isDragged ? 'opacity-55' : ''} ${isDragOver ? 'ring-2 ring-blue-200' : ''}`}
+                    style={{ width: THUMB_W, height: THUMB_H }}
                   >
-                    <Icon size={14} className={meta.iconColor} />
-                  </div>
-                  <span className='text-xs text-gray-700'>{page.label}</span>
-                </button>
+                    <span className='absolute top-1 right-1.5 text-[10px] text-gray-400'>
+                      {idx + 1}
+                    </span>
+                    <div
+                      className={`flex h-8 w-8 items-center justify-center rounded-full ${meta.bgColor}`}
+                    >
+                      <Icon size={14} className={meta.iconColor} />
+                    </div>
+                    <span className='text-xs text-gray-700'>{page.label}</span>
+                  </button>
+
+                  <button
+                    type='button'
+                    draggable
+                    onDragStart={() => handlePageDragStart(page.id)}
+                    onDragEnd={handlePageDragEnd}
+                    onClick={(e) => e.stopPropagation()}
+                    className={`${LEFT_ACTION_REVEAL_CLASS} cursor-grab active:cursor-grabbing ${MOVE_ACTION_BUTTON_CLASS}`}
+                    title='페이지 이동'
+                  >
+                    <GripHorizontal size={12} strokeWidth={2.2} />
+                  </button>
+
+                  <button
+                    type='button'
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeletePage(page.id);
+                    }}
+                    className={`${RIGHT_ACTION_REVEAL_CLASS} cursor-pointer ${DELETE_ACTION_BUTTON_CLASS}`}
+                    title='페이지 삭제'
+                  >
+                    <Trash2 size={11} strokeWidth={2.1} />
+                  </button>
+                </div>
               );
             })}
 

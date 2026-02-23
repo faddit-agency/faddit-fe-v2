@@ -10,10 +10,14 @@ export default function DropdownButton({
   options,
   value,
   onChange,
+  size = 'default',
+  className = '',
 }: {
   options: Option[];
   value: string;
   onChange: (value: string) => void;
+  size?: 'default' | 'compact';
+  className?: string;
 }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(
@@ -57,7 +61,11 @@ export default function DropdownButton({
     <div className='relative w-full'>
       <button
         ref={trigger}
-        className='btn w-full justify-between border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-800 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-gray-600 dark:hover:text-gray-100'
+        className={`${
+          size === 'compact'
+            ? 'flex h-6 w-full items-center justify-between rounded-md border border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-700 transition-colors hover:border-gray-300'
+            : 'btn w-full justify-between border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-800 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-gray-600 dark:hover:text-gray-100'
+        } ${className}`}
         aria-label='Select date range'
         aria-haspopup='true'
         onClick={() => setDropdownOpen(!dropdownOpen)}
@@ -67,7 +75,7 @@ export default function DropdownButton({
           <span>{displayText}</span>
         </span>
         <svg
-          className='ml-1 shrink-0 fill-current text-gray-400 dark:text-gray-500'
+          className={`ml-1 shrink-0 fill-current text-gray-400 transition-transform duration-200 ease-out dark:text-gray-500 ${dropdownOpen ? 'rotate-180' : 'rotate-0'}`}
           width='11'
           height='7'
           viewBox='0 0 11 7'
@@ -79,7 +87,7 @@ export default function DropdownButton({
         appear={false}
         show={dropdownOpen}
         tag='div'
-        className='absolute top-full left-0 z-10 mt-1 w-full min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white py-1.5 shadow-lg dark:border-gray-700/60 dark:bg-gray-800'
+        className={`absolute top-full left-0 z-[320] mt-1 w-full min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white ${size === 'compact' ? 'py-1' : 'py-1.5'} shadow-lg dark:border-gray-700/60 dark:bg-gray-800`}
         enter='transition ease-out duration-100 transform'
         enterStart='opacity-0 -translate-y-2'
         enterEnd='opacity-100 translate-y-0'
@@ -87,13 +95,16 @@ export default function DropdownButton({
         leaveStart='opacity-100'
         leaveEnd='opacity-0'
       >
-        <div ref={dropdown} className='text-sm font-medium text-gray-600 dark:text-gray-300'>
+        <div
+          ref={dropdown}
+          className={`${size === 'compact' ? 'text-[11px]' : 'text-sm'} font-medium text-gray-600 dark:text-gray-300`}
+        >
           {options.map((option) => {
             return (
               <button
                 key={option.id}
                 tabIndex={0}
-                className={`flex w-full cursor-pointer items-center px-3 py-1 hover:bg-gray-50 dark:hover:bg-gray-700/20 ${option.id === selectedId && 'text-violet-500'}`}
+                className={`flex w-full cursor-pointer items-center ${size === 'compact' ? 'px-2 py-0.5' : 'px-3 py-1'} hover:bg-gray-50 dark:hover:bg-gray-700/20 ${option.id === selectedId && 'text-violet-500'}`}
                 onClick={(e) => {
                   e.stopPropagation();
                   const nextId = option.id;
