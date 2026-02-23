@@ -69,9 +69,15 @@ const ROW_HEADER_COMPACT_WIDTH = 120;
 const ROW_HEADER_EXPANDED_WIDTH = 132;
 const ROW_HEADER_COMPACT_PADDING = 12;
 const ROW_HEADER_EXPANDED_PADDING = 32;
-const DATA_COL_COMPACT_WIDTH = 64;
+const DATA_COL_COMPACT_WIDTH = 68;
 const DATA_COL_EXPANDED_WIDTH = 78;
 const ACTION_COL_WIDTH = 32;
+const DATA_HEADER_COMPACT_PADDING = 14;
+const DATA_HEADER_EXPANDED_PADDING = 22;
+
+function distributedShift(distance: number, near: number, far: number): number {
+  return Math.max(far, near - (distance - 1) * 2);
+}
 
 export default function WorksheetSizeSpecView() {
   const [spec, updateSpec] = useImmer<SizeSpec>(INITIAL_STATE);
@@ -111,8 +117,14 @@ export default function WorksheetSizeSpecView() {
       const from = dragItem.index;
       const insertIndex = dragOver.side === 'before' ? dragOver.index : dragOver.index + 1;
       if (colIndex === from) return 0;
-      if (from < insertIndex && colIndex > from && colIndex < insertIndex) return -10;
-      if (from > insertIndex && colIndex >= insertIndex && colIndex < from) return 10;
+      if (from < insertIndex && colIndex > from && colIndex < insertIndex) {
+        const distance = insertIndex - colIndex;
+        return -distributedShift(distance, 12, 6);
+      }
+      if (from > insertIndex && colIndex >= insertIndex && colIndex < from) {
+        const distance = colIndex - insertIndex + 1;
+        return distributedShift(distance, 12, 6);
+      }
       return 0;
     },
     [dragItem, dragOver],
@@ -126,8 +138,14 @@ export default function WorksheetSizeSpecView() {
       const from = dragItem.index;
       const insertIndex = dragOver.side === 'before' ? dragOver.index : dragOver.index + 1;
       if (rowIndex === from) return 0;
-      if (from < insertIndex && rowIndex > from && rowIndex < insertIndex) return -7;
-      if (from > insertIndex && rowIndex >= insertIndex && rowIndex < from) return 7;
+      if (from < insertIndex && rowIndex > from && rowIndex < insertIndex) {
+        const distance = insertIndex - rowIndex;
+        return -distributedShift(distance, 9, 4);
+      }
+      if (from > insertIndex && rowIndex >= insertIndex && rowIndex < from) {
+        const distance = rowIndex - insertIndex + 1;
+        return distributedShift(distance, 9, 4);
+      }
       return 0;
     },
     [dragItem, dragOver],
@@ -135,8 +153,8 @@ export default function WorksheetSizeSpecView() {
 
   const getMotionStyle = useCallback(
     (xShift: number, yShift: number, isDragged: boolean, isTarget: boolean) => ({
-      transform: `translate(${xShift}px, ${yShift}px)`,
-      opacity: isDragged ? 0.52 : 1,
+      transform: `translate(${xShift}px, ${yShift}px) scale(${isDragged ? 0.985 : 1})`,
+      opacity: isDragged ? 0.6 : 1,
       boxShadow: isTarget ? '0 0 0 1px rgba(59,130,246,0.25), 0 8px 20px rgba(59,130,246,0.14)' : 'none',
       transition: REORDER_TRANSITION,
     }),
@@ -247,6 +265,20 @@ export default function WorksheetSizeSpecView() {
     [dragItem, updateSpec],
   );
 
+  const setColumnDragOver = useCallback((index: number, side: 'before' | 'after') => {
+    setDragOver((prev) => {
+      if (prev?.type === 'column' && prev.index === index && prev.side === side) return prev;
+      return { type: 'column', index, side };
+    });
+  }, []);
+
+  const setRowDragOver = useCallback((index: number, side: 'before' | 'after') => {
+    setDragOver((prev) => {
+      if (prev?.type === 'row' && prev.index === index && prev.side === side) return prev;
+      return { type: 'row', index, side };
+    });
+  }, []);
+
   return (
     <div className='flex h-full flex-col overflow-hidden'>
       <div className='flex-1 overflow-auto p-4'>
@@ -297,7 +329,7 @@ export default function WorksheetSizeSpecView() {
                       e.preventDefault();
                       const rect = e.currentTarget.getBoundingClientRect();
                       const side = e.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
-                      setDragOver({ type: 'column', index: colIndex, side });
+                      setColumnDragOver(colIndex, side);
                     }}
                     onDrop={(e) => {
                       if (dragItem?.type !== 'column') return;
@@ -306,16 +338,11 @@ export default function WorksheetSizeSpecView() {
                       const side = e.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
                       handleColumnDrop(colIndex, side);
                     }}
-                    onDragLeave={() => {
-                      setDragOver((prev) =>
-                        prev?.type === 'column' && prev.index === colIndex ? null : prev,
-                      );
-                    }}
                   >
                     <div className='group relative'>
                       {isDragOver && !isDragged && (
                         <div
-                          className='pointer-events-none absolute top-0 bottom-0 z-20 w-0.5 animate-pulse rounded-full bg-blue-500 shadow-[0_0_0_1px_rgba(59,130,246,0.15),0_0_10px_rgba(59,130,246,0.35)]'
+                          className='pointer-events-none absolute top-0 bottom-0 z-20 w-0.5 rounded-full bg-blue-500 shadow-[0_0_0_1px_rgba(59,130,246,0.15),0_0_10px_rgba(59,130,246,0.35)]'
                           style={{ left: dragOver?.type === 'column' && dragOver.side === 'after' ? '100%' : 0 }}
                         />
                       )}
@@ -326,8 +353,8 @@ export default function WorksheetSizeSpecView() {
                         className={`relative z-0 w-full border-0 py-1.5 text-center text-xs font-semibold text-slate-600 outline-none focus:bg-blue-50 ${isDragOver ? 'bg-blue-50/50' : 'bg-transparent'}`}
                         style={{
                           ...getMotionStyle(xShift, 0, isDragged, isDragOver && !isDragged),
-                          paddingLeft: `${hoveredDataCol === colIndex ? 28 : 20}px`,
-                          paddingRight: `${hoveredDataCol === colIndex ? 28 : 20}px`,
+                          paddingLeft: `${hoveredDataCol === colIndex ? DATA_HEADER_EXPANDED_PADDING : DATA_HEADER_COMPACT_PADDING}px`,
+                          paddingRight: `${hoveredDataCol === colIndex ? DATA_HEADER_EXPANDED_PADDING : DATA_HEADER_COMPACT_PADDING}px`,
                           transition:
                             'padding-left 220ms ease, padding-right 220ms ease, transform 220ms cubic-bezier(0.2, 0.9, 0.25, 1), box-shadow 180ms ease, opacity 180ms ease',
                           boxShadow:
@@ -389,7 +416,7 @@ export default function WorksheetSizeSpecView() {
                       e.preventDefault();
                       const rect = e.currentTarget.getBoundingClientRect();
                       const side = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-                      setDragOver({ type: 'row', index: rowIndex, side });
+                      setRowDragOver(rowIndex, side);
                     }}
                     onDrop={(e) => {
                       if (dragItem?.type !== 'row') return;
@@ -397,11 +424,6 @@ export default function WorksheetSizeSpecView() {
                       const rect = e.currentTarget.getBoundingClientRect();
                       const side = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
                       handleRowDrop(rowIndex, side);
-                    }}
-                    onDragLeave={() => {
-                      setDragOver((prev) =>
-                        prev?.type === 'row' && prev.index === rowIndex ? null : prev,
-                      );
                     }}
                   >
                     <div
@@ -411,7 +433,7 @@ export default function WorksheetSizeSpecView() {
                     >
                       {isDragOver && !isDraggedRow && (
                         <div
-                          className='pointer-events-none absolute right-0 left-0 z-20 h-0.5 animate-pulse rounded-full bg-blue-500 shadow-[0_0_0_1px_rgba(59,130,246,0.15),0_0_10px_rgba(59,130,246,0.35)]'
+                          className='pointer-events-none absolute right-0 left-0 z-20 h-0.5 rounded-full bg-blue-500 shadow-[0_0_0_1px_rgba(59,130,246,0.15),0_0_10px_rgba(59,130,246,0.35)]'
                           style={{ top: dragOver?.type === 'row' && dragOver.side === 'after' ? '100%' : 0 }}
                         />
                       )}
