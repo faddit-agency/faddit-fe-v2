@@ -3,7 +3,9 @@ import { Rows3, X, ChevronLeft, ArrowRight, LayoutGrid, Package } from 'lucide-r
 import { useNavigate } from 'react-router-dom';
 import WorksheetTopBar from './WorksheetTopBar';
 import WorksheetSizeSpecView from './WorksheetSizeSpecView';
+import type { SizeSpecDisplayUnit } from './WorksheetSizeSpecView';
 import WorksheetNoticeEditor from './WorksheetNoticeEditor';
+import DropdownButton from '../../../components/atoms/DropdownButton';
 
 type DragState =
   | { type: 'sidebar'; startX: number; startWidth: number }
@@ -50,6 +52,11 @@ const PANEL_DATA: PanelSpec[][] = [
     { title: '색상/사이즈 별 수량', content: '발주 수량 및 합계' },
     { title: '원단 정보', content: '원단 / 혼용률 / 폭 / 요척' },
   ],
+];
+
+const SIZE_UNIT_OPTIONS = [
+  { id: 1, period: 'cm/단면' },
+  { id: 2, period: 'inch/단면' },
 ];
 
 function clamp(v: number, min: number, max: number) {
@@ -200,6 +207,7 @@ function Panel({
   resizeHandleHovered,
   resizeHandleActive,
   body,
+  headerExtra,
 }: PanelSpec & {
   onResizeStart?: (e: React.MouseEvent) => void;
   isResizable?: boolean;
@@ -208,11 +216,15 @@ function Panel({
   resizeHandleHovered?: boolean;
   resizeHandleActive?: boolean;
   body?: React.ReactNode;
+  headerExtra?: React.ReactNode;
 }) {
   return (
     <section className='relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-md border border-gray-200 bg-white'>
-      <header className='flex items-center justify-between border-b border-gray-200 px-3 py-2'>
-        <h3 className='text-[13px] font-semibold text-gray-700'>{title}</h3>
+      <header className='relative z-[260] flex items-center justify-between border-b border-gray-200 px-3 py-2'>
+        <div className='flex min-w-0 items-center gap-2'>
+          <h3 className='text-[13px] font-semibold text-gray-700'>{title}</h3>
+          {headerExtra}
+        </div>
         <button
           type='button'
           className='rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700'
@@ -274,6 +286,8 @@ export default function WorksheetLayoutDemo() {
   ]);
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [hoveredHandle, setHoveredHandle] = useState<string | null>(null);
+  const [sizeSpecUnit, setSizeSpecUnit] = useState<SizeSpecDisplayUnit>('cm');
+  const sizeSpecUnitLabel = sizeSpecUnit === 'inch' ? 'inch/단면' : 'cm/단면';
 
   const colOffsets = useMemo(() => {
     const offsets: number[] = [];
@@ -464,9 +478,27 @@ export default function WorksheetLayoutDemo() {
                             {...panelData}
                             body={
                               panelData.title === 'Size Spec' ? (
-                                <WorksheetSizeSpecView />
+                                <WorksheetSizeSpecView displayUnit={sizeSpecUnit} />
                               ) : panelData.title === '작업 시 주의사항' ? (
                                 <WorksheetNoticeEditor />
+                              ) : undefined
+                            }
+                            headerExtra={
+                              panelData.title === 'Size Spec' ? (
+                                <div className='min-w-[104px]'>
+                                  <DropdownButton
+                                    options={SIZE_UNIT_OPTIONS}
+                                    value={sizeSpecUnitLabel}
+                                    size='compact'
+                                    onChange={(next) =>
+                                      setSizeSpecUnit(
+                                        next.startsWith('inch')
+                                          ? ('inch' as SizeSpecDisplayUnit)
+                                          : ('cm' as SizeSpecDisplayUnit),
+                                      )
+                                    }
+                                  />
+                                </div>
                               ) : undefined
                             }
                             isResizable={canResizeCell}

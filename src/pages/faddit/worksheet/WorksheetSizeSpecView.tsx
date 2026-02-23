@@ -8,6 +8,8 @@ import {
   RIGHT_ACTION_REVEAL_CLASS,
 } from './WorksheetActionButtons';
 
+export type SizeSpecDisplayUnit = 'cm' | 'inch';
+
 interface SizeSpec {
   headers: string[];
   rows: string[][];
@@ -79,8 +81,42 @@ function distributedShift(distance: number, near: number, far: number): number {
   return Math.max(far, near - (distance - 1) * 2);
 }
 
-export default function WorksheetSizeSpecView() {
+function isNumericLike(value: string): boolean {
+  return /^-?\d+(\.\d+)?$/.test(value.trim());
+}
+
+function formatNumber(value: number, fractionDigits: number): string {
+  return value
+    .toFixed(fractionDigits)
+    .replace(/\.0+$/, '')
+    .replace(/(\.\d*?[1-9])0+$/, '$1');
+}
+
+function toDisplayValue(raw: string, colIndex: number, unit: SizeSpecDisplayUnit): string {
+  if (colIndex === 0) return raw;
+  const trimmed = raw.trim();
+  if (!isNumericLike(trimmed)) return raw;
+  const cmValue = Number(trimmed);
+  if (unit === 'cm') return formatNumber(cmValue, 0);
+  return formatNumber(cmValue / 2.54, 0);
+}
+
+function fromDisplayValue(raw: string, colIndex: number, unit: SizeSpecDisplayUnit): string {
+  if (colIndex === 0) return raw;
+  const trimmed = raw.trim();
+  if (!isNumericLike(trimmed)) return raw;
+  const displayValue = Number(trimmed);
+  if (unit === 'cm') return formatNumber(displayValue, 3);
+  return formatNumber(displayValue * 2.54, 3);
+}
+
+export default function WorksheetSizeSpecView({
+  displayUnit = 'cm',
+}: {
+  displayUnit?: SizeSpecDisplayUnit;
+}) {
   const [spec, updateSpec] = useImmer<SizeSpec>(INITIAL_STATE);
+  const [cellDrafts, setCellDrafts] = useState<Record<string, string>>({});
   const [dragItem, setDragItem] = useState<DragItem>(null);
   const [dragOver, setDragOver] = useState<DragOver>(null);
   const [dropFlash, setDropFlash] = useState<DropFlash>(null);
@@ -108,6 +144,10 @@ export default function WorksheetSizeSpecView() {
     const timer = window.setTimeout(() => setDropFlash(null), 320);
     return () => window.clearTimeout(timer);
   }, [dropFlash]);
+
+  useEffect(() => {
+    setCellDrafts({});
+  }, [displayUnit]);
 
   const getColumnShift = useCallback(
     (colIndex: number) => {
@@ -170,13 +210,42 @@ export default function WorksheetSizeSpecView() {
     [updateSpec],
   );
 
-  const handleCellChange = useCallback(
+  const cellKey = useCallback((rowIndex: number, colIndex: number) => `${rowIndex}:${colIndex}`, []);
+
+  const handleCellDraftChange = useCallback(
     (rowIndex: number, colIndex: number, value: string) => {
-      updateSpec((draft) => {
-        draft.rows[rowIndex][colIndex] = value;
+      const key = cellKey(rowIndex, colIndex);
+      setCellDrafts((prev) => ({ ...prev, [key]: value }));
+    },
+    [cellKey],
+  );
+
+  const handleCellFocus = useCallback(
+    (rowIndex: number, colIndex: number, rawBaseValue: string) => {
+      const key = cellKey(rowIndex, colIndex);
+      setCellDrafts((prev) => {
+        if (prev[key] !== undefined) return prev;
+        return { ...prev, [key]: toDisplayValue(rawBaseValue, colIndex, displayUnit) };
       });
     },
-    [updateSpec],
+    [cellKey, displayUnit],
+  );
+
+  const handleCellCommit = useCallback(
+    (rowIndex: number, colIndex: number) => {
+      const key = cellKey(rowIndex, colIndex);
+      const draftValue = cellDrafts[key];
+      if (draftValue === undefined) return;
+      updateSpec((draft) => {
+        draft.rows[rowIndex][colIndex] = fromDisplayValue(draftValue, colIndex, displayUnit);
+      });
+      setCellDrafts((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    },
+    [cellDrafts, cellKey, displayUnit, updateSpec],
   );
 
   const addRow = useCallback(() => {
@@ -438,8 +507,10 @@ export default function WorksheetSizeSpecView() {
                         />
                       )}
                       <input
-                        value={row[0]}
-                        onChange={(e) => handleCellChange(rowIndex, 0, e.target.value)}
+                        value={cellDrafts[cellKey(rowIndex, 0)] ?? toDisplayValue(row[0], 0, displayUnit)}
+                        onFocus={() => handleCellFocus(rowIndex, 0, row[0])}
+                        onChange={(e) => handleCellDraftChange(rowIndex, 0, e.target.value)}
+                        onBlur={() => handleCellCommit(rowIndex, 0)}
                         className={`relative z-0 w-full border-0 py-1.5 text-left text-xs font-medium text-slate-600 outline-none focus:bg-blue-50 ${isDragOver ? 'bg-blue-50/50' : 'bg-gray-50'}`}
                         style={{
                           ...getMotionStyle(0, rowShift, isDraggedRow, isDragOver && !isDraggedRow),
@@ -493,8 +564,13 @@ export default function WorksheetSizeSpecView() {
                         }}
                       >
                         <input
-                          value={cell}
-                          onChange={(e) => handleCellChange(rowIndex, colIndex, e.target.value)}
+                          value={
+                            cellDrafts[cellKey(rowIndex, colIndex)] ??
+                            toDisplayValue(cell, colIndex, displayUnit)
+                          }
+                          onFocus={() => handleCellFocus(rowIndex, colIndex, cell)}
+                          onChange={(e) => handleCellDraftChange(rowIndex, colIndex, e.target.value)}
+                          onBlur={() => handleCellCommit(rowIndex, colIndex)}
                           className='w-full border-0 bg-transparent px-1.5 py-1.5 text-center text-xs text-slate-700 outline-none focus:bg-blue-50'
                           style={{
                             ...getMotionStyle(
