@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Rows3, X, ChevronLeft, ArrowRight, LayoutGrid, Package } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import WorksheetTopBar from './WorksheetTopBar';
+import WorksheetSizeSpecView from './WorksheetSizeSpecView';
 
 type DragState =
   | { type: 'sidebar'; startX: number; startWidth: number }
@@ -196,6 +198,7 @@ function Panel({
   onResizeHandleLeave,
   resizeHandleHovered,
   resizeHandleActive,
+  body,
 }: PanelSpec & {
   onResizeStart?: (e: React.MouseEvent) => void;
   isResizable?: boolean;
@@ -203,6 +206,7 @@ function Panel({
   onResizeHandleLeave?: () => void;
   resizeHandleHovered?: boolean;
   resizeHandleActive?: boolean;
+  body?: React.ReactNode;
 }) {
   return (
     <section className='relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-md border border-gray-200 bg-white'>
@@ -215,9 +219,13 @@ function Panel({
           <X size={13} strokeWidth={2} />
         </button>
       </header>
-      <div className='flex-1 bg-[#f6f6f7] px-3 py-2'>
-        <p className='text-xs text-gray-500'>{content}</p>
-      </div>
+      {body ? (
+        <div className='min-h-0 flex-1 overflow-hidden'>{body}</div>
+      ) : (
+        <div className='flex-1 bg-[#f6f6f7] px-3 py-2'>
+          <p className='text-xs text-gray-500'>{content}</p>
+        </div>
+      )}
       {isResizable && onResizeStart && (
         <div
           className='absolute right-0.5 bottom-0.5 z-[220] flex h-5 w-5 cursor-nwse-resize items-center justify-center rounded transition-all duration-150 ease-out'
@@ -394,18 +402,10 @@ export default function WorksheetLayoutDemo() {
 
   return (
     <div className='flex h-screen w-screen flex-col gap-2 overflow-hidden bg-[#f9f9f9] p-2'>
-      <header className='flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2'>
-        <h1 className='text-sm font-semibold text-gray-700'>Worksheet Layout</h1>
-        <button
-          type='button'
-          onClick={() => navigate('/faddit/worksheet/edit')}
-          className='inline-flex items-center gap-1.5 rounded-md bg-gray-900 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-gray-700'
-        >
-          Edit Mode
-          <Rows3 size={14} strokeWidth={1.8} />
-        </button>
-      </header>
+      {/* Top Bar */}
+      <WorksheetTopBar sidebarOpen={true} onToggleSidebar={() => {}} />
 
+      {/* Main Content */}
       <section
         className='relative grid min-h-0 flex-1 gap-2'
         style={{ gridTemplateColumns: `${sidebarWidth}px 1fr` }}
@@ -453,13 +453,15 @@ export default function WorksheetLayoutDemo() {
                     style={{ gridTemplateRows: rows.map((h) => `${h}fr`).join(' ') }}
                   >
                     {rows.map((_, rowIndex) => {
+                      const panelData = PANEL_DATA[colIndex][rowIndex];
                       const canResizeCell =
                         colIndex < colWidths.length - 1 && rowIndex < rows.length - 1;
                       const cellHandleId = `cell-${colIndex}-${rowIndex}`;
                       return (
                         <div key={`col-${colIndex}-row-${rowIndex}`} className='h-full min-h-0'>
                           <Panel
-                            {...PANEL_DATA[colIndex][rowIndex]}
+                            {...panelData}
+                            body={panelData.title === 'Size Spec' ? <WorksheetSizeSpecView /> : undefined}
                             isResizable={canResizeCell}
                             onResizeHandleEnter={() => {
                               setHoveredHandle(cellHandleId);
