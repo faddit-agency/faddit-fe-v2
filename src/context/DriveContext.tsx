@@ -47,6 +47,7 @@ export interface SidebarItem {
   name: string;
   parentId?: string | null;
   children?: SidebarItem[];
+  childrenLoaded?: boolean;
   isOpen?: boolean;
 }
 
@@ -114,6 +115,7 @@ const toSidebarFolder = (folder: DriveNode): SidebarItem => ({
   name: folder.name,
   parentId: folder.parentId,
   children: [],
+  childrenLoaded: false,
 });
 
 const toSidebarFile = (file: DriveNode): SidebarItem => ({
@@ -122,6 +124,126 @@ const toSidebarFile = (file: DriveNode): SidebarItem => ({
   name: file.name,
   parentId: file.parentId,
 });
+
+const mergeSidebarNodesPreservingLoadedDescendants = (
+  previousNodes: SidebarItem[] = [],
+  nextNodes: SidebarItem[],
+): SidebarItem[] => {
+  const previousById = new Map(previousNodes.map((item) => [item.id, item]));
+
+  return nextNodes.map((nextNode) => {
+    if (nextNode.type !== 'folder') {
+      return nextNode;
+    }
+
+    const previous = previousById.get(nextNode.id);
+    if (!previous || previous.type !== 'folder') {
+      return nextNode;
+    }
+
+    const mergedChildren = mergeSidebarNodesPreservingLoadedDescendants(
+      previous.children || [],
+      nextNode.children || [],
+    );
+
+    return {
+      ...nextNode,
+      children: mergedChildren.length > 0 ? mergedChildren : previous.children || [],
+      childrenLoaded:
+        Boolean(nextNode.childrenLoaded) ||
+        Boolean(previous.childrenLoaded) ||
+        mergedChildren.length > 0,
+    };
+  });
+};
+
+const extractNodesFromSidebarTree = (
+  tree: SidebarItem[],
+  removeIds: Set<string>,
+): { tree: SidebarItem[]; extracted: SidebarItem[] } => {
+  const extracted: SidebarItem[] = [];
+
+  const walk = (nodes: SidebarItem[]): SidebarItem[] => {
+    const next: SidebarItem[] = [];
+
+    nodes.forEach((node) => {
+      if (removeIds.has(node.id)) {
+        extracted.push(node);
+        return;
+      }
+
+      if (node.children?.length) {
+        next.push({
+          ...node,
+          children: walk(node.children),
+        });
+        return;
+      }
+
+      next.push(node);
+    });
+
+    return next;
+  };
+
+  return {
+    tree: walk(tree),
+    extracted,
+  };
+};
+
+const insertNodesIntoSidebarFolder = (
+  tree: SidebarItem[],
+  folderId: string,
+  nodesToInsert: SidebarItem[],
+): SidebarItem[] => {
+  if (nodesToInsert.length === 0) {
+    return tree;
+  }
+
+  const withUpdatedParent = nodesToInsert.map((node) => ({
+    ...node,
+    parentId: folderId,
+  }));
+
+  return tree.map((node) => {
+    if (node.type === 'folder' && node.id === folderId) {
+      return {
+        ...node,
+        children: [...(node.children || []), ...withUpdatedParent],
+        childrenLoaded: true,
+      };
+    }
+
+    if (node.children?.length) {
+      return {
+        ...node,
+        children: insertNodesIntoSidebarFolder(node.children, folderId, withUpdatedParent),
+      };
+    }
+
+    return node;
+  });
+};
+
+const moveNodesWithRootSupport = (
+  tree: SidebarItem[],
+  movingIds: Set<string>,
+  targetFolderId: string,
+  rootFolderId: string | null,
+): SidebarItem[] => {
+  const { tree: withoutMoved, extracted } = extractNodesFromSidebarTree(tree, movingIds);
+  if (!rootFolderId || targetFolderId !== rootFolderId) {
+    return insertNodesIntoSidebarFolder(withoutMoved, targetFolderId, extracted);
+  }
+
+  const rootInserted = extracted.map((node) => ({
+    ...node,
+    parentId: rootFolderId,
+  }));
+
+  return [...withoutMoved, ...rootInserted];
+};
 
 const formatBytes = (value?: number) => {
   if (!value || Number.isNaN(value)) {
@@ -215,12 +337,13 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
   );
 
   const replaceChildrenInTree = useCallback(
-    (tree: SidebarItem[], folderId: string, children: SidebarItem[]): SidebarItem[] =>
-      tree.map((node) => {
+    (tree: SidebarItem[], folderId: string, children: SidebarItem[]): SidebarItem[] => {
+      return tree.map((node) => {
         if (node.id === folderId && node.type === 'folder') {
           return {
             ...node,
-            children,
+            children: mergeSidebarNodesPreservingLoadedDescendants(node.children || [], children),
+            childrenLoaded: true,
           };
         }
 
@@ -232,7 +355,8 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
         }
 
         return node;
-      }),
+      });
+    },
     [],
   );
 
@@ -269,9 +393,18 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
       }
     });
 
-    setItemParentMap(nextParentMap);
-    setWorkspaces([...rootFolders.map(toSidebarFolder), ...rootData.files.map(toSidebarFile)]);
-    setFavorites([...starredFolders.map(toSidebarFolder), ...starredData.files.map(toSidebarFile)]);
+    setItemParentMap((prev) => ({ ...prev, ...nextParentMap }));
+
+    const nextWorkspaceNodes = [...rootFolders.map(toSidebarFolder), ...rootData.files.map(toSidebarFile)];
+    const nextFavoriteNodes = [
+      ...starredFolders.map(toSidebarFolder),
+      ...starredData.files.map(toSidebarFile),
+    ];
+
+    setWorkspaces((prev) =>
+      mergeSidebarNodesPreservingLoadedDescendants(prev, nextWorkspaceNodes),
+    );
+    setFavorites((prev) => mergeSidebarNodesPreservingLoadedDescendants(prev, nextFavoriteNodes));
   }, []);
 
   const loadFolderView = useCallback(
@@ -409,19 +542,52 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
   );
 
   const moveItems = useCallback(
-    async (ids: string[], targetFolderId: string, currentFolderId: string) => {
+    async (ids: string[], targetFolderId: string, sourceFolderId: string) => {
       if (!ids.length) {
         return;
       }
 
+      const movingIds = new Set(ids);
+
+      setWorkspaces((prev) => moveNodesWithRootSupport(prev, movingIds, targetFolderId, rootFolderId));
+      setFavorites((prev) => moveNodesWithRootSupport(prev, movingIds, targetFolderId, rootFolderId));
+
       await updateDriveItems({
         id: ids,
         parentId: targetFolderId,
-        currentId: currentFolderId,
+        currentId: sourceFolderId,
       });
+
+      setItemParentMap((prev) => {
+        const next = { ...prev };
+        ids.forEach((id) => {
+          next[id] = targetFolderId;
+        });
+        return next;
+      });
+
       await refreshDrive();
+
+      const sidebarFoldersToRefresh = new Set<string>();
+      if (rootFolderId && sourceFolderId !== rootFolderId) {
+        sidebarFoldersToRefresh.add(sourceFolderId);
+      }
+      if (rootFolderId && targetFolderId !== rootFolderId) {
+        sidebarFoldersToRefresh.add(targetFolderId);
+      }
+
+      for (const folderId of sidebarFoldersToRefresh) {
+        try {
+          await loadFolderChildren(folderId);
+        } catch (error) {
+          console.error('Failed to refresh sidebar folder children after move', {
+            folderId,
+            error,
+          });
+        }
+      }
     },
-    [refreshDrive],
+    [loadFolderChildren, refreshDrive, rootFolderId],
   );
 
   const createFolder = useCallback(
