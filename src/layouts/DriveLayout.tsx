@@ -16,6 +16,7 @@ import Drivebar from '../partials/Drivebar';
 import Header from '../partials/Header';
 import { DriveProvider, useDrive } from '../context/DriveContext';
 import { useAuthStore } from '../store/useAuthStore';
+import DriveSearchModal from '../pages/faddit/drive/components/DriveSearchModal';
 
 const getPointerCoordinates = (event: Event | null) => {
   if (!event) {
@@ -60,6 +61,7 @@ const cursorTopLeftModifier: Modifier = ({ transform, activeNodeRect, activatorE
 // Inner component to use the context
 const DriveLayoutContent: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [searchModalOpen, setSearchModalOpen] = useState(false);
   const {
     activeDragItem,
     setActiveDragItem,
@@ -303,16 +305,26 @@ const DriveLayoutContent: React.FC = () => {
       onDragEnd={handleDragEnd}
     >
       <div className='flex h-[100dvh] overflow-hidden'>
-        <Drivebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
+        <Drivebar
+          sidebarOpen={sidebarOpen}
+          setSidebarOpen={setSidebarOpen}
+          onOpenSearch={() => setSearchModalOpen(true)}
+        />
 
         <div className='relative flex flex-1 flex-col overflow-hidden'>
-          <Header sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
+          <Header
+            sidebarOpen={sidebarOpen}
+            setSidebarOpen={setSidebarOpen}
+            onOpenSearch={() => setSearchModalOpen(true)}
+            searchModalOpen={searchModalOpen}
+          />
 
           <main className='grow'>
             <Outlet />
           </main>
         </div>
       </div>
+      <DriveSearchModal modalOpen={searchModalOpen} setModalOpen={setSearchModalOpen} />
       <DragOverlay modifiers={[cursorTopLeftModifier]}>
         {activeDragItem ? (
           <div className='pointer-events-none w-[200px] rounded-xl border-2 border-violet-500 bg-white opacity-90 shadow-2xl dark:bg-gray-800'>

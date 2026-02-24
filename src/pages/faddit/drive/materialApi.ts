@@ -48,6 +48,20 @@ export type MaterialItem = {
   vendor_name?: string | null;
   item_name?: string | null;
   origin_country?: string | null;
+  image_url?: string | null;
+};
+
+export type UpdateMaterialPayload = {
+  userId: string;
+  category?: MaterialCategory;
+  subtype?: string;
+  codeInternal?: string;
+  vendorName?: string;
+  itemName?: string;
+  originCountry?: string;
+  fileSystemId?: string;
+  imageUrl?: string;
+  attributes?: Record<string, unknown>;
 };
 
 export const getMaterialFieldDefs = async (category: MaterialCategory) => {
@@ -68,5 +82,10 @@ export const getMaterialsByFileSystem = async (fileSystemId: string, userId: str
     url: `/drive/material/by-file/${fileSystemId}`,
     data: { userId },
   });
+  return response.data;
+};
+
+export const updateMaterial = async (materialId: string, payload: UpdateMaterialPayload) => {
+  const response = await baseHttpClient.patch(`/drive/material/${materialId}`, payload);
   return response.data;
 };

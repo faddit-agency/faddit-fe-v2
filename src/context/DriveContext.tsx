@@ -1,9 +1,11 @@
 import React, { createContext, useCallback, useContext, useMemo, useState, ReactNode } from 'react';
 import {
   createDriveFolder,
+  deleteDriveItems,
   getDriveAll,
   getDriveFilePreviewUrl,
   getDriveStarredAll,
+  restoreDriveItems,
   updateDriveItems,
   DriveNode,
 } from '../lib/api/driveApi';
@@ -11,6 +13,7 @@ import ChildClothImage from '../images/faddit/childcloth.png';
 import { useAuthStore } from '../store/useAuthStore';
 import { getMaterialsByFileSystem } from '../pages/faddit/drive/materialApi';
 import { useDriveMaterialStore } from '../store/useDriveMaterialStore';
+import { useDriveViewStore } from '../store/useDriveViewStore';
 
 export interface DriveItem {
   id: string;
@@ -19,6 +22,7 @@ export interface DriveItem {
   title: string;
   subtitle: string;
   badge: string;
+  isStarred?: boolean;
   owner?: string;
   date?: string;
   size?: string;
@@ -75,6 +79,8 @@ interface DriveContextType {
   refreshDrive: () => Promise<void>;
   loadFolderView: (folderId: string) => Promise<void>;
   createFolder: (name: string) => Promise<void>;
+  deleteItems: (ids: string[]) => Promise<void>;
+  restoreItems: (ids: string[]) => Promise<void>;
   moveItems: (ids: string[], targetFolderId: string, currentFolderId: string) => Promise<void>;
   setItemsStarred: (ids: string[], isStarred: boolean) => Promise<void>;
   getItemParentId: (itemId: string) => string | null;
@@ -144,6 +150,7 @@ const toDriveItem = (node: DriveNode, imageSrc: string): DriveItem => ({
   title: node.name,
   subtitle: node.mimetype ? `.${node.mimetype}` : 'file',
   badge: node.tag ? String(node.tag) : '파일',
+  isStarred: node.isStarred,
   owner: node.creatorName || undefined,
   date: node.updatedAt ? String(node.updatedAt).slice(0, 10) : '-',
   size: formatBytes(node.size),
@@ -165,6 +172,7 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
   const userId = useAuthStore((state) => state.user?.userId);
   const setMaterialsForFile = useDriveMaterialStore((state) => state.setMaterialsForFile);
   const clearMaterialsForFiles = useDriveMaterialStore((state) => state.clearMaterialsForFiles);
+  const setDriveView = useDriveViewStore((state) => state.setDriveView);
 
   const [items, setItems] = useState<DriveItem[]>([]);
   const [driveFolders, setDriveFolders] = useState<DriveFolder[]>([]);
@@ -177,6 +185,34 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
   const [currentFolderPath, setCurrentFolderPath] = useState('');
   const [currentFolderIdPath, setCurrentFolderIdPath] = useState('');
   const [itemParentMap, setItemParentMap] = useState<Record<string, string | null>>({});
+
+  const pruneSidebarTree = useCallback(
+    (
+      tree: SidebarItem[],
+      removeSet: Set<string>,
+    ): { tree: SidebarItem[]; removedIds: Set<string> } => {
+      const removedIds = new Set<string>();
+
+      const walk = (nodes: SidebarItem[]): SidebarItem[] => {
+        const next: SidebarItem[] = [];
+
+        nodes.forEach((node) => {
+          if (removeSet.has(node.id)) {
+            removedIds.add(node.id);
+            return;
+          }
+
+          const children = node.children ? walk(node.children) : undefined;
+          next.push(children ? { ...node, children } : node);
+        });
+
+        return next;
+      };
+
+      return { tree: walk(tree), removedIds };
+    },
+    [],
+  );
 
   const replaceChildrenInTree = useCallback(
     (tree: SidebarItem[], folderId: string, children: SidebarItem[]): SidebarItem[] =>
@@ -276,6 +312,21 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
       setCurrentFolderIdPath(folderData.idPath || '');
       setDriveFolders(folders.map(toDriveFolder));
       setItems(fileItems);
+      setDriveView({
+        currentFolderId: folderId,
+        currentFolderPath: folderData.path || '',
+        currentFolderIdPath: folderData.idPath || '',
+        folders: folders.map((folderNode) => ({
+          id: folderNode.fileSystemId,
+          name: folderNode.name,
+          parentId: folderNode.parentId,
+        })),
+        files: fileItems.map((item) => ({
+          id: item.id,
+          title: item.title,
+          parentId: item.parentId,
+        })),
+      });
       console.log('[Drive] setItems completed', {
         targetStore: 'DriveContext.items',
         count: fileItems.length,
@@ -319,7 +370,7 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
         return next;
       });
     },
-    [clearMaterialsForFiles, setMaterialsForFile, userId],
+    [clearMaterialsForFiles, setDriveView, setMaterialsForFile, userId],
   );
 
   const refreshDrive = useCallback(async () => {
@@ -395,6 +446,123 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
     [currentFolderId, refreshDrive, rootFolderId],
   );
 
+  const deleteItems = useCallback(
+    async (ids: string[]) => {
+      if (!ids.length || !userId) {
+        return;
+      }
+
+      const removeSet = new Set(ids);
+      const prevState = {
+        items,
+        driveFolders,
+        workspaces,
+        favorites,
+        itemParentMap,
+      };
+
+      const allRemovedIds = new Set<string>(Array.from(removeSet));
+
+      let changed = true;
+      while (changed) {
+        changed = false;
+        Object.entries(itemParentMap).forEach(([id, parentId]) => {
+          if (allRemovedIds.has(id)) {
+            return;
+          }
+          if (parentId && allRemovedIds.has(parentId)) {
+            allRemovedIds.add(id);
+            changed = true;
+          }
+        });
+      }
+
+      const workspacePruned = pruneSidebarTree(workspaces, allRemovedIds);
+      const favoritePruned = pruneSidebarTree(favorites, allRemovedIds);
+
+      const nextItems = items.filter((item) => !allRemovedIds.has(item.id));
+      const nextFolders = driveFolders.filter((folder) => !allRemovedIds.has(folder.id));
+      const nextParentMap: Record<string, string | null> = {};
+      Object.entries(itemParentMap).forEach(([id, parentId]) => {
+        if (!allRemovedIds.has(id)) {
+          nextParentMap[id] = parentId;
+        }
+      });
+
+      setItems(nextItems);
+      setDriveFolders(nextFolders);
+      setWorkspaces(workspacePruned.tree);
+      setFavorites(favoritePruned.tree);
+      setItemParentMap(nextParentMap);
+      setDriveView({
+        currentFolderId,
+        currentFolderPath,
+        currentFolderIdPath,
+        folders: nextFolders.map((folderNode) => ({
+          id: folderNode.id,
+          name: folderNode.name,
+          parentId: folderNode.parentId,
+        })),
+        files: nextItems.map((item) => ({
+          id: item.id,
+          title: item.title,
+          parentId: item.parentId,
+        })),
+      });
+
+      try {
+        await deleteDriveItems({ userId, ids });
+      } catch (error) {
+        setItems(prevState.items);
+        setDriveFolders(prevState.driveFolders);
+        setWorkspaces(prevState.workspaces);
+        setFavorites(prevState.favorites);
+        setItemParentMap(prevState.itemParentMap);
+        setDriveView({
+          currentFolderId,
+          currentFolderPath,
+          currentFolderIdPath,
+          folders: prevState.driveFolders.map((folderNode) => ({
+            id: folderNode.id,
+            name: folderNode.name,
+            parentId: folderNode.parentId,
+          })),
+          files: prevState.items.map((item) => ({
+            id: item.id,
+            title: item.title,
+            parentId: item.parentId,
+          })),
+        });
+        throw error;
+      }
+    },
+    [
+      currentFolderId,
+      currentFolderIdPath,
+      currentFolderPath,
+      driveFolders,
+      favorites,
+      itemParentMap,
+      items,
+      pruneSidebarTree,
+      setDriveView,
+      userId,
+      workspaces,
+    ],
+  );
+
+  const restoreItems = useCallback(
+    async (ids: string[]) => {
+      if (!ids.length || !userId) {
+        return;
+      }
+
+      await restoreDriveItems({ userId, ids });
+      await refreshDrive();
+    },
+    [refreshDrive, userId],
+  );
+
   const setItemsStarred = useCallback(
     async (ids: string[], isStarred: boolean) => {
       if (!ids.length) {
@@ -439,6 +607,8 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
       refreshDrive,
       loadFolderView,
       createFolder,
+      deleteItems,
+      restoreItems,
       moveItems,
       setItemsStarred,
       getItemParentId,
@@ -460,6 +630,8 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
       refreshDrive,
       loadFolderView,
       createFolder,
+      deleteItems,
+      restoreItems,
       moveItems,
       setItemsStarred,
       getItemParentId,
