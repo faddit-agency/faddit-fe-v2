@@ -35,7 +35,7 @@ const TOOL_ITEMS: {
   { key: 'comment', label: '코멘트', icon: MessageSquare },
 ];
 
-const CONTENT_PANEL_WIDTH = 206;
+const CONTENT_PANEL_WIDTH = 230;
 const GAP_X = 12;
 const WORKSHEET_MODULE_DRAG_TYPE = 'application/x-faddit-worksheet-card';
 
@@ -239,7 +239,9 @@ export default function WorksheetTemplateSidebar({
                   >
                     <span
                       className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
-                        visible ? 'border-gray-700 bg-gray-700 text-white' : 'border-gray-300 bg-white'
+                        visible
+                          ? 'border-gray-700 bg-gray-700 text-white'
+                          : 'border-gray-300 bg-white'
                       }`}
                     >
                       {visible && <Check size={10} strokeWidth={3} />}
@@ -411,16 +413,14 @@ export default function WorksheetTemplateSidebar({
             style={{ width: contentOpen ? CONTENT_PANEL_WIDTH + GAP_X : 0 }}
           >
             <div
-              className='flex min-h-0 min-w-[206px] flex-1 flex-col gap-y-3 pl-3 transition-opacity duration-300 ease-in-out'
-              style={{ opacity: contentOpen ? 1 : 0 }}
+              className='flex min-h-0 flex-1 flex-col gap-y-3 pl-3 transition-opacity duration-300 ease-in-out'
+              style={{ opacity: contentOpen ? 1 : 0, minWidth: CONTENT_PANEL_WIDTH }}
             >
               {tabContent}
             </div>
           </div>
         ) : (
-          <div className='flex min-h-0 min-w-0 flex-1 flex-col gap-y-3 pl-3'>
-            {tabContent}
-          </div>
+          <div className='flex min-h-0 min-w-0 flex-1 flex-col gap-y-3 pl-3'>{tabContent}</div>
         )}
       </div>
     </div>

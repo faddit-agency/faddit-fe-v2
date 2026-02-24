@@ -8,24 +8,168 @@ import type {
   TabLayoutsMap,
   SizeSpecDisplayUnit,
 } from './worksheetV2Types';
-import { CARD_DEFINITIONS } from './worksheetV2Constants';
+import { CARD_DEFINITIONS, GRID_CONFIG } from './worksheetV2Constants';
+
+const WORKSHEET_TABS: MenuTab[] = ['diagram', 'basic', 'size', 'cost'];
+const GRID_FILL_ROWS = GRID_CONFIG.cols;
+
+type TileRect = {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
+function sortByGridPosition(a: LayoutItem, b: LayoutItem) {
+  if (a.y !== b.y) {
+    return a.y - b.y;
+  }
+
+  if (a.x !== b.x) {
+    return a.x - b.x;
+  }
+
+  return a.i.localeCompare(b.i);
+}
+
+function normalizeTabLayoutToFill(
+  tab: MenuTab,
+  layout: LayoutItem[],
+  cardVisibilityById: Record<string, boolean>,
+  customCardsForTab: CardDefinition[],
+): LayoutItem[] {
+  const definitions = [...CARD_DEFINITIONS[tab], ...customCardsForTab];
+  if (definitions.length === 0) {
+    return [];
+  }
+
+  const visibleIds = definitions
+    .filter((def) => cardVisibilityById[def.id] !== false)
+    .map((def) => def.id);
+
+  if (visibleIds.length === 0) {
+    return [];
+  }
+
+  const visibleIdSet = new Set<string>(visibleIds);
+  const orderedLayoutIds = layout
+    .filter((item) => visibleIdSet.has(item.i))
+    .sort(sortByGridPosition)
+    .map((item) => item.i)
+    .filter((id, index, array) => array.indexOf(id) === index);
+
+  const seen = new Set(orderedLayoutIds);
+  const orderedIds = [...orderedLayoutIds, ...visibleIds.filter((id) => !seen.has(id))];
+  if (orderedIds.length === 0) {
+    return [];
+  }
+
+  const tiles: TileRect[] = [
+    {
+      id: orderedIds[0],
+      x: 0,
+      y: 0,
+      w: GRID_CONFIG.cols,
+      h: GRID_FILL_ROWS,
+    },
+  ];
+
+  for (const nextId of orderedIds.slice(1)) {
+    let targetIndex = 0;
+    let maxArea = -1;
+
+    tiles.forEach((tile, index) => {
+      const area = tile.w * tile.h;
+      if (area > maxArea) {
+        maxArea = area;
+        targetIndex = index;
+      }
+    });
+
+    const targetTile = tiles[targetIndex];
+    const preferVertical = targetTile.w >= targetTile.h;
+
+    const splitVertically = () => {
+      if (targetTile.w <= 1) return null;
+
+      const firstWidth = Math.ceil(targetTile.w / 2);
+      const secondWidth = targetTile.w - firstWidth;
+      if (secondWidth <= 0) return null;
+
+      return {
+        keep: { ...targetTile, w: firstWidth },
+        append: {
+          id: nextId,
+          x: targetTile.x + firstWidth,
+          y: targetTile.y,
+          w: secondWidth,
+          h: targetTile.h,
+        },
+      };
+    };
+
+    const splitHorizontally = () => {
+      if (targetTile.h <= 1) return null;
+
+      const firstHeight = Math.ceil(targetTile.h / 2);
+      const secondHeight = targetTile.h - firstHeight;
+      if (secondHeight <= 0) return null;
+
+      return {
+        keep: { ...targetTile, h: firstHeight },
+        append: {
+          id: nextId,
+          x: targetTile.x,
+          y: targetTile.y + firstHeight,
+          w: targetTile.w,
+          h: secondHeight,
+        },
+      };
+    };
+
+    const splitResult =
+      (preferVertical ? splitVertically() : splitHorizontally()) ||
+      (preferVertical ? splitHorizontally() : splitVertically());
+
+    if (!splitResult) {
+      continue;
+    }
+
+    tiles.splice(targetIndex, 1, splitResult.keep, splitResult.append);
+  }
+
+  return tiles.map((tile) => ({
+    i: tile.id,
+    x: tile.x,
+    y: tile.y,
+    w: tile.w,
+    h: tile.h,
+    minW: 1,
+    minH: 1,
+  }));
+}
 
 function buildInitialLayouts(): TabLayoutsMap {
-  const tabs: MenuTab[] = ['diagram', 'basic', 'size', 'cost'];
   const layouts = {} as TabLayoutsMap;
-  for (const tab of tabs) {
-    layouts[tab] = CARD_DEFINITIONS[tab].map((def) => ({
-      i: def.id,
-      ...def.defaultLayout,
-    }));
+  for (const tab of WORKSHEET_TABS) {
+    const tabVisibility: Record<string, boolean> = {};
+    const initialLayout = CARD_DEFINITIONS[tab].map((def) => {
+      tabVisibility[def.id] = true;
+      return {
+        i: def.id,
+        ...def.defaultLayout,
+      };
+    });
+
+    layouts[tab] = normalizeTabLayoutToFill(tab, initialLayout, tabVisibility, []);
   }
   return layouts;
 }
 
 function buildInitialVisibility(): CardVisibilityMap {
-  const tabs: MenuTab[] = ['diagram', 'basic', 'size', 'cost'];
   const vis = {} as CardVisibilityMap;
-  for (const tab of tabs) {
+  for (const tab of WORKSHEET_TABS) {
     vis[tab] = {};
     for (const def of CARD_DEFINITIONS[tab]) {
       vis[tab][def.id] = true;
@@ -97,49 +241,75 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
             [tab]: { ...state.cardVisibility[tab], [cardId]: !current },
           };
 
-          let nextLayouts = state.tabLayouts;
+          let nextTabLayout = state.tabLayouts[tab];
           if (current) {
-            nextLayouts = {
-              ...state.tabLayouts,
-              [tab]: state.tabLayouts[tab].filter((l) => l.i !== cardId),
-            };
+            nextTabLayout = state.tabLayouts[tab].filter((l) => l.i !== cardId);
           } else {
             const def = [...CARD_DEFINITIONS[tab], ...state.customCards[tab]].find((d) => d.id === cardId);
             if (def) {
-              nextLayouts = {
-                ...state.tabLayouts,
-                [tab]: [...state.tabLayouts[tab], { i: def.id, ...def.defaultLayout, y: Infinity }],
-              };
+              nextTabLayout = [...state.tabLayouts[tab], { i: def.id, ...def.defaultLayout, y: Infinity }];
             }
           }
 
-          return { cardVisibility: nextVis, tabLayouts: nextLayouts };
+          const normalizedTabLayout = normalizeTabLayoutToFill(
+            tab,
+            nextTabLayout,
+            nextVis[tab],
+            state.customCards[tab],
+          );
+
+          return {
+            cardVisibility: nextVis,
+            tabLayouts: {
+              ...state.tabLayouts,
+              [tab]: normalizedTabLayout,
+            },
+          };
         }),
 
       removeCard: (tab, cardId) =>
-        set((state) => ({
-          cardVisibility: {
-            ...state.cardVisibility,
-            [tab]: { ...state.cardVisibility[tab], [cardId]: false },
-          },
-          tabLayouts: {
-            ...state.tabLayouts,
-            [tab]: state.tabLayouts[tab].filter((l) => l.i !== cardId),
-          },
-        })),
+        set((state) => {
+          const nextTabVisibility = { ...state.cardVisibility[tab], [cardId]: false };
+          const nextTabLayout = state.tabLayouts[tab].filter((layoutItem) => layoutItem.i !== cardId);
+
+          return {
+            cardVisibility: {
+              ...state.cardVisibility,
+              [tab]: nextTabVisibility,
+            },
+            tabLayouts: {
+              ...state.tabLayouts,
+              [tab]: normalizeTabLayoutToFill(
+                tab,
+                nextTabLayout,
+                nextTabVisibility,
+                state.customCards[tab],
+              ),
+            },
+          };
+        }),
 
       restoreCard: (tab, cardId) =>
         set((state) => {
           const def = [...CARD_DEFINITIONS[tab], ...state.customCards[tab]].find((d) => d.id === cardId);
           if (!def) return state;
+
+          const nextTabVisibility = { ...state.cardVisibility[tab], [cardId]: true };
+          const nextTabLayout = [...state.tabLayouts[tab], { i: def.id, ...def.defaultLayout, y: Infinity }];
+
           return {
             cardVisibility: {
               ...state.cardVisibility,
-              [tab]: { ...state.cardVisibility[tab], [cardId]: true },
+              [tab]: nextTabVisibility,
             },
             tabLayouts: {
               ...state.tabLayouts,
-              [tab]: [...state.tabLayouts[tab], { i: def.id, ...def.defaultLayout, y: Infinity }],
+              [tab]: normalizeTabLayoutToFill(
+                tab,
+                nextTabLayout,
+                nextTabVisibility,
+                state.customCards[tab],
+              ),
             },
           };
         }),
@@ -152,25 +322,33 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
           const w = position.w ?? def.defaultLayout.w;
           const h = position.h ?? def.defaultLayout.h;
 
+          const nextTabVisibility = { ...state.cardVisibility[tab], [cardId]: true };
+          const nextTabLayout = [
+            ...state.tabLayouts[tab].filter((layout) => layout.i !== cardId),
+            {
+              i: cardId,
+              x: position.x,
+              y: position.y,
+              w,
+              h,
+              minW: def.defaultLayout.minW,
+              minH: def.defaultLayout.minH,
+            },
+          ];
+
           return {
             cardVisibility: {
               ...state.cardVisibility,
-              [tab]: { ...state.cardVisibility[tab], [cardId]: true },
+              [tab]: nextTabVisibility,
             },
             tabLayouts: {
               ...state.tabLayouts,
-              [tab]: [
-                ...state.tabLayouts[tab].filter((layout) => layout.i !== cardId),
-                {
-                  i: cardId,
-                  x: position.x,
-                  y: position.y,
-                  w,
-                  h,
-                  minW: def.defaultLayout.minW,
-                  minH: def.defaultLayout.minH,
-                },
-              ],
+              [tab]: normalizeTabLayoutToFill(
+                tab,
+                nextTabLayout,
+                nextTabVisibility,
+                state.customCards[tab],
+              ),
             },
           };
         }),
@@ -188,18 +366,27 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
             isDefault: false,
           };
 
+          const nextCustomCardsForTab = [...state.customCards[tab], newCard];
+          const nextTabVisibility = { ...state.cardVisibility[tab], [cardId]: true };
+          const nextTabLayout = [...state.tabLayouts[tab], { i: newCard.id, ...newCard.defaultLayout }];
+
           return {
             customCards: {
               ...state.customCards,
-              [tab]: [...state.customCards[tab], newCard],
+              [tab]: nextCustomCardsForTab,
             },
             cardVisibility: {
               ...state.cardVisibility,
-              [tab]: { ...state.cardVisibility[tab], [cardId]: true },
+              [tab]: nextTabVisibility,
             },
             tabLayouts: {
               ...state.tabLayouts,
-              [tab]: [...state.tabLayouts[tab], { i: newCard.id, ...newCard.defaultLayout }],
+              [tab]: normalizeTabLayoutToFill(
+                tab,
+                nextTabLayout,
+                nextTabVisibility,
+                nextCustomCardsForTab,
+              ),
             },
             customCardContent: {
               ...state.customCardContent,
@@ -251,21 +438,29 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
           const nextContent = { ...state.customCardContent };
           delete nextContent[cardId];
 
-          const nextVisibility = { ...state.cardVisibility[tab] };
-          delete nextVisibility[cardId];
+          const nextTabVisibility = { ...state.cardVisibility[tab] };
+          delete nextTabVisibility[cardId];
+
+          const nextCustomCardsForTab = state.customCards[tab].filter((card) => card.id !== cardId);
+          const nextTabLayout = state.tabLayouts[tab].filter((layout) => layout.i !== cardId);
 
           return {
             customCards: {
               ...state.customCards,
-              [tab]: state.customCards[tab].filter((card) => card.id !== cardId),
+              [tab]: nextCustomCardsForTab,
             },
             cardVisibility: {
               ...state.cardVisibility,
-              [tab]: nextVisibility,
+              [tab]: nextTabVisibility,
             },
             tabLayouts: {
               ...state.tabLayouts,
-              [tab]: state.tabLayouts[tab].filter((layout) => layout.i !== cardId),
+              [tab]: normalizeTabLayoutToFill(
+                tab,
+                nextTabLayout,
+                nextTabVisibility,
+                nextCustomCardsForTab,
+              ),
             },
             customCardContent: nextContent,
           };
@@ -300,12 +495,27 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
             sizeSpecUnit?: SizeSpecDisplayUnit;
           };
 
-          set((state) => ({
-            activeTab: parsed.activeTab ?? state.activeTab,
-            tabLayouts: parsed.tabLayouts ?? state.tabLayouts,
-            cardVisibility: parsed.cardVisibility ?? state.cardVisibility,
-            sizeSpecUnit: parsed.sizeSpecUnit ?? state.sizeSpecUnit,
-          }));
+          set((state) => {
+            const nextCardVisibility = parsed.cardVisibility ?? state.cardVisibility;
+            const nextTabLayouts = parsed.tabLayouts ?? state.tabLayouts;
+            const normalizedLayouts = {} as TabLayoutsMap;
+
+            for (const tab of WORKSHEET_TABS) {
+              normalizedLayouts[tab] = normalizeTabLayoutToFill(
+                tab,
+                nextTabLayouts[tab] ?? [],
+                nextCardVisibility[tab] ?? {},
+                state.customCards[tab],
+              );
+            }
+
+            return {
+              activeTab: parsed.activeTab ?? state.activeTab,
+              tabLayouts: normalizedLayouts,
+              cardVisibility: nextCardVisibility,
+              sizeSpecUnit: parsed.sizeSpecUnit ?? state.sizeSpecUnit,
+            };
+          });
         } catch {
           return;
         }

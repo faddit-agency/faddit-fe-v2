@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import ReactGridLayout, { useContainerWidth } from 'react-grid-layout';
 import type { Layout } from 'react-grid-layout';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -214,6 +214,8 @@ export default function WorksheetV2GridContent() {
   const setDraggingCardId = useWorksheetV2Store((s) => s.setDraggingCardId);
 
   const [isInteracting, setIsInteracting] = useState(false);
+  const [pendingLayout, setPendingLayout] = useState<Layout | null>(null);
+  const [containerHeight, setContainerHeight] = useState(0);
   const [dropPreview, setDropPreview] = useState<{
     cardId: string;
     x: number;
@@ -236,12 +238,77 @@ export default function WorksheetV2GridContent() {
     [currentLayout, visMap],
   );
 
+  const usedRows = useMemo(() => {
+    if (visibleLayout.length === 0) {
+      return 1;
+    }
+
+    return Math.max(1, ...visibleLayout.map((item) => item.y + item.h));
+  }, [visibleLayout]);
+
+  const gridRowHeight = useMemo(() => {
+    const innerHeight = Math.max(0, containerHeight - 12);
+    const marginY = GRID_CONFIG.margin[1];
+    const totalMargins = Math.max(0, usedRows - 1) * marginY;
+    const availableHeight = innerHeight - totalMargins;
+
+    if (availableHeight <= 0) {
+      return GRID_CONFIG.rowHeight;
+    }
+
+    return Math.max(12, availableHeight / usedRows);
+  }, [containerHeight, usedRows]);
+
+  const gridMetrics = useMemo(() => {
+    const [marginX, marginY] = GRID_CONFIG.margin;
+    const gridWidth = Math.max(0, width - 12);
+    const colWidth = (gridWidth - marginX * (GRID_CONFIG.cols - 1)) / GRID_CONFIG.cols;
+
+    return {
+      marginX,
+      marginY,
+      colWidth,
+      rowHeight: gridRowHeight,
+    };
+  }, [width, gridRowHeight]);
+
   const handleLayoutChange = useCallback(
     (newLayout: Layout) => {
-      updateLayout(activeTab, [...newLayout]);
+      setPendingLayout([...newLayout]);
+
+      if (!isInteracting) {
+        updateLayout(activeTab, [...newLayout]);
+      }
     },
-    [activeTab, updateLayout],
+    [activeTab, isInteracting, updateLayout],
   );
+
+  useEffect(() => {
+    setPendingLayout(null);
+  }, [activeTab]);
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) {
+      return;
+    }
+
+    const updateContainerHeight = () => {
+      setContainerHeight(element.clientHeight);
+    };
+
+    updateContainerHeight();
+
+    const observer = new ResizeObserver(() => {
+      updateContainerHeight();
+    });
+
+    observer.observe(element);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [containerRef]);
 
   const resolveDraggedCardId = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
@@ -267,9 +334,7 @@ export default function WorksheetV2GridContent() {
       }
 
       const cols = GRID_CONFIG.cols;
-      const [marginX, marginY] = GRID_CONFIG.margin;
-      const gridWidth = Math.max(0, width - 12);
-      const colWidth = (gridWidth - marginX * (cols - 1)) / cols;
+      const { colWidth, marginX, marginY, rowHeight } = gridMetrics;
       if (colWidth <= 0) {
         return null;
       }
@@ -282,11 +347,11 @@ export default function WorksheetV2GridContent() {
       const h = card.defaultLayout.h;
 
       const x = Math.max(0, Math.min(cols - w, Math.floor(relX / (colWidth + marginX))));
-      const y = Math.max(0, Math.floor(relY / (GRID_CONFIG.rowHeight + marginY)));
+      const y = Math.max(0, Math.floor(relY / (rowHeight + marginY)));
 
       return { cardId, x, y, w, h };
     },
-    [mounted, width, tabCards],
+    [gridMetrics, mounted, tabCards],
   );
 
   const gridChildren = useMemo(
@@ -319,7 +384,7 @@ export default function WorksheetV2GridContent() {
   return (
     <div
       ref={containerRef}
-      className='relative min-h-0 flex-1 overflow-y-auto rounded-lg bg-[#ebebec] p-1.5'
+      className='relative min-h-0 flex-1 overflow-hidden rounded-lg bg-[#ebebec] p-1.5'
       onDragOver={(event) => {
         const draggedCardId = resolveDraggedCardId(event);
         if (!draggedCardId) {
@@ -365,13 +430,12 @@ export default function WorksheetV2GridContent() {
         <div
           className='pointer-events-none absolute z-[210] rounded-md border-2 border-dashed border-blue-400 bg-blue-100/45'
           style={{
-            left: 6 + dropPreview.x * ((width - 12 - GRID_CONFIG.margin[0] * (GRID_CONFIG.cols - 1)) / GRID_CONFIG.cols + GRID_CONFIG.margin[0]),
-            top: 6 + dropPreview.y * (GRID_CONFIG.rowHeight + GRID_CONFIG.margin[1]),
+            left: 6 + dropPreview.x * (gridMetrics.colWidth + gridMetrics.marginX),
+            top: 6 + dropPreview.y * (gridMetrics.rowHeight + gridMetrics.marginY),
             width:
-              dropPreview.w *
-                ((width - 12 - GRID_CONFIG.margin[0] * (GRID_CONFIG.cols - 1)) / GRID_CONFIG.cols) +
-              (dropPreview.w - 1) * GRID_CONFIG.margin[0],
-            height: dropPreview.h * GRID_CONFIG.rowHeight + (dropPreview.h - 1) * GRID_CONFIG.margin[1],
+              dropPreview.w * gridMetrics.colWidth + (dropPreview.w - 1) * gridMetrics.marginX,
+            height:
+              dropPreview.h * gridMetrics.rowHeight + (dropPreview.h - 1) * gridMetrics.marginY,
           }}
         />
       ) : null}
@@ -382,7 +446,7 @@ export default function WorksheetV2GridContent() {
           width={width - 12}
           gridConfig={{
             cols: GRID_CONFIG.cols,
-            rowHeight: GRID_CONFIG.rowHeight,
+            rowHeight: gridMetrics.rowHeight,
             margin: GRID_CONFIG.margin,
           }}
           dragConfig={{
@@ -392,13 +456,25 @@ export default function WorksheetV2GridContent() {
           }}
           resizeConfig={{
             enabled: true,
-            handles: ['se'],
+            handles: ['e', 's', 'w', 'n', 'se', 'sw', 'ne', 'nw'],
           }}
           onLayoutChange={handleLayoutChange}
           onDragStart={() => setIsInteracting(true)}
-          onDragStop={() => setIsInteracting(false)}
+          onDragStop={() => {
+            setIsInteracting(false);
+            if (pendingLayout) {
+              updateLayout(activeTab, [...pendingLayout]);
+              setPendingLayout(null);
+            }
+          }}
           onResizeStart={() => setIsInteracting(true)}
-          onResizeStop={() => setIsInteracting(false)}
+          onResizeStop={() => {
+            setIsInteracting(false);
+            if (pendingLayout) {
+              updateLayout(activeTab, [...pendingLayout]);
+              setPendingLayout(null);
+            }
+          }}
         >
           {gridChildren}
         </ReactGridLayout>
