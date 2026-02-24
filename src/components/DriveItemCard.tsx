@@ -50,6 +50,7 @@ export interface DriveItemCardProps {
   onMoveToFolder?: (id: string) => void;
   onAddFavorite?: (id: string, nextStarred: boolean) => void;
   onEdit?: (id: string) => void;
+  onDelete?: (id: string) => void;
 }
 
 const PencilIcon = ({ className }: { className?: string }) => (
@@ -378,6 +379,7 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
   onMoveToFolder,
   onAddFavorite,
   onEdit,
+  onDelete,
 }) => {
   const idPrefix = useId();
   const checkboxId = id || title;
@@ -572,7 +574,7 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
             />
           </label>
           <img
-            className='h-36 w-full object-cover sm:h-40'
+            className='aspect-[16/10] w-full object-cover'
             src={imageSrc}
             width='286'
             height='160'
@@ -642,6 +644,18 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
                     >
                       {isStarred ? '즐겨찾기 취소' : '즐겨 찾기'}
                     </button>
+                    <button
+                      type='button'
+                      className='w-full rounded-md px-2 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-500/10'
+                      onClick={() => {
+                        setKebabOpen(false);
+                        if (id && onDelete) {
+                          onDelete(id);
+                        }
+                      }}
+                    >
+                      삭제하기
+                    </button>
                   </PopoverPrimitive.Content>
                 </PopoverPrimitive.Portal>
               </PopoverPrimitive.Root>
@@ -650,7 +664,7 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
         </div>
 
         {/* Card Content */}
-        <div className='flex grow flex-col p-5'>
+        <div className='flex grow flex-col p-[clamp(12px,1.2vw,20px)]'>
           {/* Badge (이미지 아래) */}
           {(categoryLabel || badge) && (
             <div className=''>
@@ -661,7 +675,7 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
           )}
           <div className='mt-3 grow'>
             <header className={subtitle || summaryText ? 'mb-2' : 'mb-3'}>
-              <h3 className='mb-1 text-lg font-semibold text-gray-800 dark:text-gray-100'>
+              <h3 className='mb-1 text-[clamp(15px,1vw,18px)] font-semibold text-gray-800 dark:text-gray-100'>
                 {title}
               </h3>
 
@@ -779,7 +793,7 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
               </PopoverPrimitive.Root>
 
               {(summaryText || subtitle) && (
-                <div className='text-sm font-medium text-gray-600 dark:text-gray-400'>
+                <div className='text-[clamp(12px,0.86vw,14px)] font-medium text-gray-600 dark:text-gray-400'>
                   {summaryText || subtitle}
                 </div>
               )}
@@ -794,7 +808,7 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
 
           {/* Card footer */}
           <div className='flex items-center justify-between'>
-            <div className='text-xs font-medium text-gray-500 dark:text-gray-400'>
+            <div className='text-[clamp(11px,0.78vw,12px)] font-medium text-gray-500 dark:text-gray-400'>
               생성자: {creatorName || '알 수 없음'}
             </div>
             {isStarred ? (

@@ -58,16 +58,6 @@ const SEARCH_CATEGORY_VALUES: DriveSearchCategory[] = [
   'etc',
 ];
 
-const MATERIAL_CATEGORY_OPTIONS: Array<{
-  value: 'fabric' | 'rib_fabric' | 'label' | 'trim';
-  label: string;
-}> = [
-  { value: 'label', label: '라벨' },
-  { value: 'fabric', label: '원단' },
-  { value: 'rib_fabric', label: '시보리원단' },
-  { value: 'trim', label: '부자재' },
-];
-
 const isSearchCategory = (value: string): value is DriveSearchCategory => {
   return SEARCH_CATEGORY_VALUES.includes(value as DriveSearchCategory);
 };
@@ -187,6 +177,7 @@ const DriveFolderTile: React.FC<{
   onOpen: (folderId: string) => void;
   onMoveFolder: (folderId: string) => void;
   onRenameFolder: (folderId: string, name: string) => void;
+  onDeleteFolder: (folderId: string, name: string) => void;
 }> = ({
   folder,
   isSelected,
@@ -197,6 +188,7 @@ const DriveFolderTile: React.FC<{
   onOpen,
   onMoveFolder,
   onRenameFolder,
+  onDeleteFolder,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
@@ -335,6 +327,16 @@ const DriveFolderTile: React.FC<{
                 }}
               >
                 폴더 이름 수정
+              </button>
+              <button
+                type='button'
+                className='w-full rounded-md px-2 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-500/10'
+                onClick={() => {
+                  setMenuOpen(false);
+                  onDeleteFolder(folder.id, folder.name);
+                }}
+              >
+                삭제하기
               </button>
             </PopoverPrimitive.Content>
           </PopoverPrimitive.Portal>
@@ -512,9 +514,6 @@ const FadditDrive: React.FC = () => {
   const [editImageFile, setEditImageFile] = useState<File | null>(null);
   const [editImagePreviewUrl, setEditImagePreviewUrl] = useState<string | null>(null);
   const [editImageDragging, setEditImageDragging] = useState(false);
-  const [editMaterialCategory, setEditMaterialCategory] = useState<
-    'fabric' | 'rib_fabric' | 'label' | 'trim'
-  >('label');
   const [editMaterialFieldDefs, setEditMaterialFieldDefs] = useState<MaterialFieldDef[]>([]);
   const [editMaterialFieldDefsLoading, setEditMaterialFieldDefsLoading] = useState(false);
   const [editAttributes, setEditAttributes] = useState<Record<string, string>>({});
@@ -733,6 +732,7 @@ const FadditDrive: React.FC = () => {
   }, [isSearchMode, searchKeyword]);
 
   const navigateToFolder = (nextFolderId: string) => {
+    window.getSelection()?.removeAllRanges();
     navigate(`/faddit/drive/${nextFolderId}`);
   };
 
@@ -861,7 +861,6 @@ const FadditDrive: React.FC = () => {
       return;
     }
 
-    setSelectedIds([queryItem.id]);
     setActiveItemId(queryItem.id);
     setDetailPanelEditMode(keepEditMode);
     setDetailPanelOpen(true);
@@ -954,6 +953,41 @@ const FadditDrive: React.FC = () => {
     return () => window.removeEventListener('mousedown', handlePointerDown);
   }, [resultFilterOpen]);
 
+  useEffect(() => {
+    const resolveBreakpoint = (width: number) => {
+      if (width >= 1536) {
+        return '2xl';
+      }
+      if (width >= 1280) {
+        return 'xl';
+      }
+      if (width >= 1024) {
+        return 'lg';
+      }
+      if (width >= 768) {
+        return 'md';
+      }
+      if (width >= 640) {
+        return 'sm';
+      }
+      return 'xs';
+    };
+
+    let previous = '';
+    const logBreakpoint = () => {
+      const next = resolveBreakpoint(window.innerWidth);
+      if (next === previous) {
+        return;
+      }
+      previous = next;
+      console.log('[Drive breakpoint helper]', next, `${window.innerWidth}px`);
+    };
+
+    logBreakpoint();
+    window.addEventListener('resize', logBreakpoint);
+    return () => window.removeEventListener('resize', logBreakpoint);
+  }, []);
+
   const applySelection = (id: string, checked: boolean) => {
     setSelectedIds((prev) => {
       if (checked) {
@@ -981,19 +1015,18 @@ const FadditDrive: React.FC = () => {
   };
 
   const handleFileCardClick = (itemId: string, event: React.MouseEvent<HTMLDivElement>) => {
-    handleToggleWithGesture(itemId, event);
-
-    if (!isMultiSelectGesture(event)) {
-      setFileQuery(itemId);
-      setActiveItemId(itemId);
-      setDetailPanelEditMode(false);
-      setDetailPanelOpen(true);
+    if (isMultiSelectGesture(event)) {
+      return;
     }
+
+    setFileQuery(itemId);
+    setActiveItemId(itemId);
+    setDetailPanelEditMode(false);
+    setDetailPanelOpen(true);
   };
 
   const handleOpenFileEditPanel = (itemId: string) => {
     keepNextDetailEditModeRef.current = true;
-    setSelectedIds([itemId]);
     setFileQuery(itemId);
     setActiveItemId(itemId);
     setDetailPanelEditMode(true);
@@ -1117,6 +1150,34 @@ const FadditDrive: React.FC = () => {
       setFavoriteToastOpen(true);
     } catch (error) {
       console.error('Failed to set favorite from kebab menu', error);
+      await refreshDrive();
+    }
+  };
+
+  const handleDeleteSingleItem = async (id: string, itemName: string) => {
+    if (!id) {
+      return;
+    }
+
+    setDeletedMessage(`${itemName}(이) 삭제되었습니다`);
+
+    if (activeItemId === id) {
+      setDetailPanelOpen(false);
+      setActiveItemId('');
+      setFileQuery(null);
+    }
+
+    setSelectedIds((prev) => prev.filter((itemId) => itemId !== id));
+
+    try {
+      await deleteItems([id]);
+      setDeletedIds([id]);
+      setDeleteToastOpen(true);
+    } catch (error) {
+      console.error('Failed to delete drive item from kebab menu', error);
+      setDeletedMessage('삭제 중 오류가 발생했습니다');
+      setDeletedIds([]);
+      setDeleteToastOpen(true);
       await refreshDrive();
     }
   };
@@ -1284,14 +1345,18 @@ const FadditDrive: React.FC = () => {
     entry: DriveListEntry,
     event: React.MouseEvent<HTMLTableRowElement>,
   ) => {
-    handleToggleWithGesture(entry.id, event);
-
-    if (entry.kind === 'file' && !isMultiSelectGesture(event)) {
+    if (entry.kind === 'file') {
+      if (isMultiSelectGesture(event)) {
+        return;
+      }
       setFileQuery(entry.id);
       setActiveItemId(entry.id);
       setDetailPanelEditMode(false);
       setDetailPanelOpen(true);
+      return;
     }
+
+    handleToggleWithGesture(entry.id, event);
   };
 
   const handleCloseDetailPanel = () => {
@@ -1338,16 +1403,14 @@ const FadditDrive: React.FC = () => {
         const hasAttributeChange = Object.entries(nextAttributes).some(
           ([key, value]) => value !== (primaryActiveMaterial.attributes || {})[key],
         );
-        const hasCategoryChange = editMaterialCategory !== primaryActiveMaterial.category;
         const normalizedImageUrl = editImageFile
           ? await fileToDataUrl(editImageFile)
           : editImageUrl;
         const hasImageChange = normalizedImageUrl !== (primaryActiveMaterial.image_url || '');
 
-        if (hasAttributeChange || hasImageChange || hasCategoryChange) {
+        if (hasAttributeChange || hasImageChange) {
           await updateMaterial(primaryActiveMaterial.id, {
             userId,
-            category: editMaterialCategory,
             attributes: nextAttributes,
             imageUrl: normalizedImageUrl,
           });
@@ -1599,7 +1662,6 @@ const FadditDrive: React.FC = () => {
   const activeCategoryLabel = activeItem
     ? getCategoryLabel(activeItem.id, activeItem.badge)
     : '파일';
-  const editCategoryLabel = categoryLabelMap[editMaterialCategory] || editMaterialCategory;
   const activeDisplayImageSrc = activeItem
     ? getDisplayImageSrc(activeItem.id, activeItem.imageSrc)
     : '';
@@ -1640,6 +1702,10 @@ const FadditDrive: React.FC = () => {
     return map;
   }, [editMaterialFieldDefs]);
 
+  const cardGridClass = detailPanelOpen
+    ? '[grid-template-columns:repeat(auto-fit,minmax(clamp(160px,30vw,230px),1fr))] 2xl:[grid-template-columns:repeat(auto-fill,minmax(220px,260px))] 2xl:justify-start'
+    : '[grid-template-columns:repeat(auto-fit,minmax(clamp(170px,24vw,260px),1fr))] 2xl:[grid-template-columns:repeat(auto-fill,minmax(240px,280px))] 2xl:justify-start';
+
   useEffect(() => {
     if (!detailPanelEditMode || !primaryActiveMaterial) {
       setEditMaterialFieldDefs([]);
@@ -1648,7 +1714,7 @@ const FadditDrive: React.FC = () => {
 
     let cancelled = false;
     setEditMaterialFieldDefsLoading(true);
-    getMaterialFieldDefs(editMaterialCategory)
+    getMaterialFieldDefs(primaryActiveMaterial.category)
       .then((defs) => {
         if (cancelled) {
           return;
@@ -1670,7 +1736,7 @@ const FadditDrive: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [detailPanelEditMode, editMaterialCategory, primaryActiveMaterial]);
+  }, [detailPanelEditMode, primaryActiveMaterial]);
 
   useEffect(() => {
     if (!editImageFile) {
@@ -1694,7 +1760,6 @@ const FadditDrive: React.FC = () => {
     }
 
     setEditFileName(activeItem.title);
-    setEditMaterialCategory(primaryActiveMaterial?.category || 'label');
     setEditImageUrl(primaryActiveMaterial?.image_url || '');
     setEditImageFile(null);
     setEditImageDragging(false);
@@ -1711,7 +1776,6 @@ const FadditDrive: React.FC = () => {
   }, [
     activeItem,
     detailPanelEditMode,
-    primaryActiveMaterial?.category,
     primaryActiveMaterial?.attributes,
     primaryActiveMaterial?.image_url,
   ]);
@@ -1749,7 +1813,7 @@ const FadditDrive: React.FC = () => {
           />
           <div className='space-y-3 p-5'>
             <div className='inline-flex rounded-full bg-violet-100 px-2.5 py-1 text-xs font-semibold text-violet-700 dark:bg-violet-500/20 dark:text-violet-200'>
-              {detailPanelEditMode ? editCategoryLabel : activeCategoryLabel}
+              {activeCategoryLabel}
             </div>
             {detailPanelEditMode ? (
               <div>
@@ -1777,29 +1841,6 @@ const FadditDrive: React.FC = () => {
 
         {detailPanelEditMode ? (
           <>
-            <div className='mt-5 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700/60 dark:bg-gray-800'>
-              <h3 className='text-sm font-semibold text-gray-900 dark:text-gray-100'>
-                카테고리 변경
-              </h3>
-              <div className='mt-3'>
-                <select
-                  className='form-select w-full'
-                  value={editMaterialCategory}
-                  onChange={(event) =>
-                    setEditMaterialCategory(
-                      event.target.value as 'fabric' | 'rib_fabric' | 'label' | 'trim',
-                    )
-                  }
-                >
-                  {MATERIAL_CATEGORY_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
             <div className='mt-5 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700/60 dark:bg-gray-800'>
               <h3 className='text-sm font-semibold text-gray-900 dark:text-gray-100'>
                 이미지 변경
@@ -2219,7 +2260,7 @@ const FadditDrive: React.FC = () => {
             <div ref={gridContentRef} className='mt-8'>
               {viewMode === 'grid' ? (
                 <div className='space-y-6'>
-                  <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4'>
+                  <div className={`grid gap-5 ${cardGridClass}`}>
                     {displayedFolders.map((folder) => {
                       const dragSelection = getDragSelection(folder.id, 'folder', folder.name);
                       return (
@@ -2234,12 +2275,13 @@ const FadditDrive: React.FC = () => {
                           onOpen={navigateToFolder}
                           onMoveFolder={handleOpenMoveDialog}
                           onRenameFolder={handleOpenRenameFolderDialog}
+                          onDeleteFolder={handleDeleteSingleItem}
                         />
                       );
                     })}
                   </div>
 
-                  <div className='grid grid-cols-12 gap-5'>
+                  <div className={`grid gap-5 ${cardGridClass}`}>
                     {displayedItems.map((item) => {
                       const dragSelection = getDragSelection(item.id, 'file', item.title);
                       const linkedMaterials = materialsByFileSystemId[item.id] || [];
@@ -2287,13 +2329,10 @@ const FadditDrive: React.FC = () => {
                           onEdit={handleOpenFileEditPanel}
                           onMoveToFolder={handleOpenMoveDialog}
                           onAddFavorite={handleAddFavoriteFromMenu}
+                          onDelete={(id) => handleDeleteSingleItem(id, item.title)}
                           dragSelectionIds={dragSelection.ids}
                           dragSelectionEntries={dragSelection.entries}
-                          className={
-                            detailPanelOpen
-                              ? 'col-span-full sm:col-span-6 xl:col-span-6 2xl:col-span-4'
-                              : 'col-span-full sm:col-span-6 xl:col-span-4 2xl:col-span-3'
-                          }
+                          className='min-w-0'
                         />
                       );
                     })}
@@ -2352,7 +2391,7 @@ const FadditDrive: React.FC = () => {
         </main>
 
         <aside
-          className={`hidden h-full overflow-hidden border-l border-gray-200 bg-[#f9f9f9] transition-all duration-300 ease-out lg:block dark:border-gray-700/60 ${
+          className={`hidden h-full overflow-hidden border-l border-gray-200 bg-[#f9f9f9] transition-all duration-300 ease-out lg:block dark:border-gray-700/60 dark:bg-gray-900 ${
             detailPanelOpen && activeItem ? 'w-[36%] xl:w-[34%]' : 'w-0'
           }`}
         >
@@ -2365,17 +2404,45 @@ const FadditDrive: React.FC = () => {
           >
             {activeItem ? (
               <div>
-                <div className='mb-2 flex justify-end'>
-                  <button
-                    type='button'
-                    onClick={handleCloseDetailPanel}
-                    className='rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-200'
-                    aria-label='상세 패널 닫기'
-                  >
-                    <svg className='h-4 w-4 fill-current' viewBox='0 0 16 16'>
-                      <path d='M7.95 6.536 12.192 2.293a1 1 0 1 1 1.415 1.414L9.364 7.95l4.243 4.242a1 1 0 1 1-1.415 1.415L7.95 9.364l-4.243 4.243a1 1 0 0 1-1.414-1.415L6.536 7.95 2.293 3.707a1 1 0 0 1 1.414-1.414L7.95 6.536Z' />
-                    </svg>
-                  </button>
+                <div className='mb-2 flex justify-end gap-2'>
+                  <GlobalTooltip content='수정' position='bottom'>
+                    <button
+                      type='button'
+                      onClick={() => setDetailPanelEditMode(true)}
+                      className='inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 shadow-xs transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-600 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-violet-500/60 dark:hover:bg-violet-500/10 dark:hover:text-violet-300'
+                      aria-label='상세 패널 수정'
+                    >
+                      <svg className='h-4 w-4' viewBox='0 0 20 20' aria-hidden='true'>
+                        <path
+                          d='M13.6 2.7a1.7 1.7 0 0 1 2.4 0l1.3 1.3a1.7 1.7 0 0 1 0 2.4L8.2 15.5l-3.7.7.7-3.7 8.4-8.4Z'
+                          fill='none'
+                          stroke='currentColor'
+                          strokeWidth='1.7'
+                          strokeLinecap='round'
+                          strokeLinejoin='round'
+                        />
+                        <path
+                          d='M11.9 4.4l3.7 3.7'
+                          fill='none'
+                          stroke='currentColor'
+                          strokeWidth='1.7'
+                          strokeLinecap='round'
+                        />
+                      </svg>
+                    </button>
+                  </GlobalTooltip>
+                  <GlobalTooltip content='닫기' position='bottom'>
+                    <button
+                      type='button'
+                      onClick={handleCloseDetailPanel}
+                      className='rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-200'
+                      aria-label='상세 패널 닫기'
+                    >
+                      <svg className='h-4 w-4 fill-current' viewBox='0 0 16 16'>
+                        <path d='M7.95 6.536 12.192 2.293a1 1 0 1 1 1.415 1.414L9.364 7.95l4.243 4.242a1 1 0 1 1-1.415 1.415L7.95 9.364l-4.243 4.243a1 1 0 0 1-1.414-1.415L6.536 7.95 2.293 3.707a1 1 0 0 1 1.414-1.414L7.95 6.536Z' />
+                      </svg>
+                    </button>
+                  </GlobalTooltip>
                 </div>
                 {detailPanelContent}
               </div>
@@ -2400,17 +2467,45 @@ const FadditDrive: React.FC = () => {
         >
           {activeItem ? (
             <>
-              <div className='mb-2 flex justify-end'>
-                <button
-                  type='button'
-                  onClick={handleCloseDetailPanel}
-                  className='rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-200'
-                  aria-label='상세 패널 닫기'
-                >
-                  <svg className='h-4 w-4 fill-current' viewBox='0 0 16 16'>
-                    <path d='M7.95 6.536 12.192 2.293a1 1 0 1 1 1.415 1.414L9.364 7.95l4.243 4.242a1 1 0 1 1-1.415 1.415L7.95 9.364l-4.243 4.243a1 1 0 0 1-1.414-1.415L6.536 7.95 2.293 3.707a1 1 0 0 1 1.414-1.414L7.95 6.536Z' />
-                  </svg>
-                </button>
+              <div className='mb-2 flex justify-end gap-2'>
+                <GlobalTooltip content='수정' position='bottom'>
+                  <button
+                    type='button'
+                    onClick={() => setDetailPanelEditMode(true)}
+                    className='inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 shadow-xs transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-600 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-violet-500/60 dark:hover:bg-violet-500/10 dark:hover:text-violet-300'
+                    aria-label='상세 패널 수정'
+                  >
+                    <svg className='h-4 w-4' viewBox='0 0 20 20' aria-hidden='true'>
+                      <path
+                        d='M13.6 2.7a1.7 1.7 0 0 1 2.4 0l1.3 1.3a1.7 1.7 0 0 1 0 2.4L8.2 15.5l-3.7.7.7-3.7 8.4-8.4Z'
+                        fill='none'
+                        stroke='currentColor'
+                        strokeWidth='1.7'
+                        strokeLinecap='round'
+                        strokeLinejoin='round'
+                      />
+                      <path
+                        d='M11.9 4.4l3.7 3.7'
+                        fill='none'
+                        stroke='currentColor'
+                        strokeWidth='1.7'
+                        strokeLinecap='round'
+                      />
+                    </svg>
+                  </button>
+                </GlobalTooltip>
+                <GlobalTooltip content='닫기' position='bottom'>
+                  <button
+                    type='button'
+                    onClick={handleCloseDetailPanel}
+                    className='rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-200'
+                    aria-label='상세 패널 닫기'
+                  >
+                    <svg className='h-4 w-4 fill-current' viewBox='0 0 16 16'>
+                      <path d='M7.95 6.536 12.192 2.293a1 1 0 1 1 1.415 1.414L9.364 7.95l4.243 4.242a1 1 0 1 1-1.415 1.415L7.95 9.364l-4.243 4.243a1 1 0 0 1-1.414-1.415L6.536 7.95 2.293 3.707a1 1 0 0 1 1.414-1.414L7.95 6.536Z' />
+                    </svg>
+                  </button>
+                </GlobalTooltip>
               </div>
               {detailPanelContent}
             </>
