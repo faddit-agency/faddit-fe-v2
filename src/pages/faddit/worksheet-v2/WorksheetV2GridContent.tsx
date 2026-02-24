@@ -17,6 +17,7 @@ import {
   COLOR_SIZE_QTY_STATE,
   SIZE_UNIT_OPTIONS,
 } from './worksheetV2Constants';
+import type { CardDefinition } from './worksheetV2Types';
 
 function DiagramPlaceholder() {
   return (
@@ -38,36 +39,6 @@ function DiagramPlaceholder() {
       >
         <ChevronRight size={18} />
       </button>
-    </div>
-  );
-}
-
-function BasicInfoPlaceholder() {
-  const fields = ['제품명', '브랜드', '아이템', '성별', '카테고리', '의류', '시즌'];
-  return (
-    <div className='flex flex-col gap-y-3 p-3'>
-      {fields.map((label) => (
-        <div key={label} className='flex items-center gap-x-[10px]'>
-          <p className='w-[80px] shrink-0 font-medium text-[#8A8A8A]'>{label}</p>
-          <div className='h-6 w-px shrink-0 bg-gray-200' />
-          <input className='form-input min-w-0 flex-1' type='text' placeholder={label} />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function AdditionalInfoPlaceholder() {
-  return (
-    <div className='flex flex-col gap-3 p-3'>
-      <p className='text-xs text-gray-500'>추가 정보 항목을 자유롭게 입력할 수 있습니다.</p>
-      {['', ''].map((_, i) => (
-        <div key={i} className='flex items-center gap-2'>
-          <input className='form-input min-w-0 flex-1' type='text' placeholder='라벨' />
-          <div className='h-6 w-px bg-gray-200' />
-          <input className='form-input min-w-0 flex-1' type='text' placeholder='값' />
-        </div>
-      ))}
     </div>
   );
 }
@@ -98,6 +69,28 @@ function CostCalcPlaceholder() {
   );
 }
 
+function CustomWebEditorCell({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  return (
+    <div className='flex h-full flex-col gap-2 p-3'>
+      <div className='rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-[11px] text-gray-500'>
+        자유 입력 웹에디터 셀
+      </div>
+      <textarea
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder='텍스트, 링크, 메모를 자유롭게 작성하세요.'
+        className='form-textarea min-h-0 flex-1 resize-none text-sm'
+      />
+    </div>
+  );
+}
+
 function SizeSpecUnitSelector() {
   const sizeSpecUnit = useWorksheetV2Store((s) => s.sizeSpecUnit);
   const setSizeSpecUnit = useWorksheetV2Store((s) => s.setSizeSpecUnit);
@@ -115,7 +108,16 @@ function SizeSpecUnitSelector() {
   );
 }
 
-function CardBodyRenderer({ cardId }: { cardId: string }) {
+function CardBodyRenderer({
+  card,
+  customCardContent,
+  onChangeCustomContent,
+}: {
+  card: CardDefinition;
+  customCardContent: Record<string, string>;
+  onChangeCustomContent: (cardId: string, content: string) => void;
+}) {
+  const cardId = card.id;
   const sizeSpecUnit = useWorksheetV2Store((s) => s.sizeSpecUnit);
 
   switch (cardId) {
@@ -159,13 +161,20 @@ function CardBodyRenderer({ cardId }: { cardId: string }) {
       );
     case 'fabric-info':
       return <WorksheetFabricInfoView />;
-    case 'basic-info':
-      return <BasicInfoPlaceholder />;
-    case 'additional-info':
-      return <AdditionalInfoPlaceholder />;
+    case 'rib-fabric-info':
+      return <WorksheetFabricInfoView />;
     case 'cost-calc':
       return <CostCalcPlaceholder />;
     default:
+      if (!card.isDefault && cardId.startsWith('custom-')) {
+        return (
+          <CustomWebEditorCell
+            value={customCardContent[cardId] ?? ''}
+            onChange={(next) => onChangeCustomContent(cardId, next)}
+          />
+        );
+      }
+
       return (
         <div className='flex h-full items-center justify-center bg-[#f6f6f7] p-3'>
           <p className='text-xs text-gray-500'>{cardId}</p>
@@ -180,14 +189,28 @@ export default function WorksheetV2GridContent() {
   const activeTab = useWorksheetV2Store((s) => s.activeTab);
   const tabLayouts = useWorksheetV2Store((s) => s.tabLayouts);
   const cardVisibility = useWorksheetV2Store((s) => s.cardVisibility);
+  const customCards = useWorksheetV2Store((s) => s.customCards);
+  const customCardContent = useWorksheetV2Store((s) => s.customCardContent);
   const updateLayout = useWorksheetV2Store((s) => s.updateLayout);
   const removeCard = useWorksheetV2Store((s) => s.removeCard);
+  const showCardAt = useWorksheetV2Store((s) => s.showCardAt);
+  const updateCustomCardContent = useWorksheetV2Store((s) => s.updateCustomCardContent);
 
   const [isInteracting, setIsInteracting] = useState(false);
+  const [dropPreview, setDropPreview] = useState<{
+    cardId: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null>(null);
 
   const currentLayout = tabLayouts[activeTab];
   const visMap = cardVisibility[activeTab];
-  const tabCards = CARD_DEFINITIONS[activeTab];
+  const tabCards = useMemo(
+    () => [...CARD_DEFINITIONS[activeTab], ...customCards[activeTab]],
+    [activeTab, customCards],
+  );
 
   const visibleCards = useMemo(() => tabCards.filter((c) => visMap[c.id]), [tabCards, visMap]);
 
@@ -203,6 +226,45 @@ export default function WorksheetV2GridContent() {
     [activeTab, updateLayout],
   );
 
+  const calculateDropPreview = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      if (!mounted || width <= 0) {
+        return null;
+      }
+
+      const cardId = event.dataTransfer.getData('text/plain');
+      if (!cardId) {
+        return null;
+      }
+
+      const card = tabCards.find((item) => item.id === cardId);
+      if (!card) {
+        return null;
+      }
+
+      const cols = GRID_CONFIG.cols;
+      const [marginX, marginY] = GRID_CONFIG.margin;
+      const gridWidth = Math.max(0, width - 12);
+      const colWidth = (gridWidth - marginX * (cols - 1)) / cols;
+      if (colWidth <= 0) {
+        return null;
+      }
+
+      const rect = event.currentTarget.getBoundingClientRect();
+      const relX = Math.max(0, event.clientX - rect.left - 6);
+      const relY = Math.max(0, event.clientY - rect.top - 6);
+
+      const w = Math.min(card.defaultLayout.w, cols);
+      const h = card.defaultLayout.h;
+
+      const x = Math.max(0, Math.min(cols - w, Math.floor(relX / (colWidth + marginX))));
+      const y = Math.max(0, Math.floor(relY / (GRID_CONFIG.rowHeight + marginY)));
+
+      return { cardId, x, y, w, h };
+    },
+    [mounted, width, tabCards],
+  );
+
   const gridChildren = useMemo(
     () =>
       visibleCards.map((card) => (
@@ -212,18 +274,72 @@ export default function WorksheetV2GridContent() {
             headerExtra={card.id === 'size-spec' ? <SizeSpecUnitSelector /> : undefined}
             onClose={() => removeCard(activeTab, card.id)}
           >
-            <CardBodyRenderer cardId={card.id} />
+            <CardBodyRenderer
+              card={card}
+              customCardContent={customCardContent}
+              onChangeCustomContent={updateCustomCardContent}
+            />
           </WorksheetV2GridCard>
         </div>
       )),
-    [visibleCards, isInteracting, removeCard, activeTab],
+    [
+      visibleCards,
+      isInteracting,
+      removeCard,
+      activeTab,
+      customCardContent,
+      updateCustomCardContent,
+    ],
   );
 
   return (
     <div
       ref={containerRef}
-      className='min-h-0 flex-1 overflow-y-auto rounded-lg bg-[#ebebec] p-1.5'
+      className='relative min-h-0 flex-1 overflow-y-auto rounded-lg bg-[#ebebec] p-1.5'
+      onDragOver={(event) => {
+        const preview = calculateDropPreview(event);
+        if (!preview) {
+          setDropPreview(null);
+          return;
+        }
+
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        setDropPreview(preview);
+      }}
+      onDragLeave={() => {
+        setDropPreview(null);
+      }}
+      onDrop={(event) => {
+        const preview = calculateDropPreview(event);
+        setDropPreview(null);
+        if (!preview) {
+          return;
+        }
+
+        event.preventDefault();
+        showCardAt(activeTab, preview.cardId, {
+          x: preview.x,
+          y: preview.y,
+          w: preview.w,
+          h: preview.h,
+        });
+      }}
     >
+      {dropPreview ? (
+        <div
+          className='pointer-events-none absolute z-[210] rounded-md border-2 border-dashed border-blue-400 bg-blue-100/45'
+          style={{
+            left: 6 + dropPreview.x * ((width - 12 - GRID_CONFIG.margin[0] * (GRID_CONFIG.cols - 1)) / GRID_CONFIG.cols + GRID_CONFIG.margin[0]),
+            top: 6 + dropPreview.y * (GRID_CONFIG.rowHeight + GRID_CONFIG.margin[1]),
+            width:
+              dropPreview.w *
+                ((width - 12 - GRID_CONFIG.margin[0] * (GRID_CONFIG.cols - 1)) / GRID_CONFIG.cols) +
+              (dropPreview.w - 1) * GRID_CONFIG.margin[0],
+            height: dropPreview.h * GRID_CONFIG.rowHeight + (dropPreview.h - 1) * GRID_CONFIG.margin[1],
+          }}
+        />
+      ) : null}
       {mounted && width > 0 && (
         <ReactGridLayout
           key={activeTab}

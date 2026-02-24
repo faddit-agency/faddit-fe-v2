@@ -52,6 +52,8 @@ const SidebarTreeNode = ({
   onNavigateFolder,
   onOpenFile,
 }) => {
+  const [loadingChildren, setLoadingChildren] = useState(false);
+  const [loadAttempted, setLoadAttempted] = useState(false);
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: item.id,
     data: {
@@ -88,11 +90,63 @@ const SidebarTreeNode = ({
 
     const nextOpen = !isOpen;
     setExpandedFolders((prev) => ({ ...prev, [item.id]: nextOpen }));
-    if (nextOpen) {
+    if (nextOpen && !item.childrenLoaded) {
       await loadFolderChildren(item.id);
     }
     setSidebarExpanded(true);
   };
+
+  useEffect(() => {
+    if (item.type !== 'folder') {
+      return;
+    }
+
+    if (!item.childrenLoaded) {
+      setLoadAttempted(false);
+    }
+  }, [item.childrenLoaded, item.type]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setLoadAttempted(false);
+      return;
+    }
+
+    if (
+      item.type !== 'folder' ||
+      item.childrenLoaded ||
+      loadingChildren ||
+      loadAttempted
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    setLoadAttempted(true);
+    setLoadingChildren(true);
+
+    loadFolderChildren(item.id)
+      .catch((error) => {
+        console.error('Failed to load sidebar node children', error);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingChildren(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isOpen,
+    item.childrenLoaded,
+    item.id,
+    item.type,
+    loadFolderChildren,
+    loadingChildren,
+    loadAttempted,
+  ]);
 
   const handleFolderRowClick = () => {
     if (item.type !== 'folder') {

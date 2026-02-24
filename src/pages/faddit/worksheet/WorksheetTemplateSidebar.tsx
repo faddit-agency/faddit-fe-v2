@@ -1,15 +1,23 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   ArrowRight,
   Box,
+  Check,
   ChevronsLeft,
   ChevronsRight,
+  GripVertical,
   History,
   LayoutGrid,
   MessageSquare,
+  Plus,
+  Trash2,
 } from 'lucide-react';
+import FadditLogoOnly from '../../../images/icons/faddit-logo-only.svg';
+import { useWorksheetV2Store } from '../worksheet-v2/useWorksheetV2Store';
+import { CARD_DEFINITIONS } from '../worksheet-v2/worksheetV2Constants';
 
-type ToolTab = 'template' | 'element' | 'history' | 'comment';
+type ToolTab = 'template' | 'module' | 'history' | 'comment';
 
 interface WorksheetTemplateSidebarProps {
   collapsible?: boolean;
@@ -21,7 +29,7 @@ const TOOL_ITEMS: {
   icon: React.ComponentType<{ size?: number; strokeWidth?: number }>;
 }[] = [
   { key: 'template', label: '템플릿', icon: LayoutGrid },
-  { key: 'element', label: '요소', icon: Box },
+  { key: 'module', label: '모듈', icon: Box },
   { key: 'history', label: '히스토리', icon: History },
   { key: 'comment', label: '코멘트', icon: MessageSquare },
 ];
@@ -41,6 +49,24 @@ export default function WorksheetTemplateSidebar({
   const [contentOpen, setContentOpen] = useState(true);
   const [cat1, setCat1] = useState('전체');
   const [cat2, setCat2] = useState('');
+  const [dragCardId, setDragCardId] = useState<string | null>(null);
+  const [customTitle, setCustomTitle] = useState('');
+
+  const worksheetActiveTab = useWorksheetV2Store((s) => s.activeTab);
+  const cardVisibility = useWorksheetV2Store((s) => s.cardVisibility);
+  const toggleCardVisibility = useWorksheetV2Store((s) => s.toggleCardVisibility);
+  const restoreCard = useWorksheetV2Store((s) => s.restoreCard);
+  const addCustomCard = useWorksheetV2Store((s) => s.addCustomCard);
+  const deleteCustomCard = useWorksheetV2Store((s) => s.deleteCustomCard);
+  const customCards = useWorksheetV2Store((s) => s.customCards);
+
+  const cards = [...CARD_DEFINITIONS[worksheetActiveTab], ...customCards[worksheetActiveTab]];
+  const visMap = cardVisibility[worksheetActiveTab];
+
+  const addCustomModule = () => {
+    addCustomCard(worksheetActiveTab, customTitle);
+    setCustomTitle('');
+  };
 
   const tabContent = (
     <>
@@ -113,21 +139,101 @@ export default function WorksheetTemplateSidebar({
         </>
       )}
 
-      {activeTab === 'element' && (
-        <div className='flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto'>
-          <div className='rounded-lg border border-gray-200 bg-gray-50 p-2'>
-            <p className='mb-2 text-[11px] font-semibold text-gray-700'>기본 요소</p>
-            <div className='grid grid-cols-2 gap-2'>
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div
-                  key={`element-placeholder-${i}`}
-                  className='aspect-square rounded-md border border-gray-200 bg-white'
-                />
-              ))}
-            </div>
+      {activeTab === 'module' && (
+        <div className='flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto'>
+          <div className='flex items-center gap-2'>
+            <input
+              value={customTitle}
+              onChange={(event) => setCustomTitle(event.target.value)}
+              placeholder='커스텀 웹에디터 제목'
+              className='form-input h-8 flex-1 text-xs'
+            />
+            <button
+              type='button'
+              onClick={addCustomModule}
+              className='inline-flex h-8 w-8 items-center justify-center rounded border border-gray-200 text-gray-600 hover:bg-gray-50'
+              aria-label='커스텀 모듈 추가'
+            >
+              <Plus size={14} />
+            </button>
           </div>
-          <div className='rounded-lg border border-dashed border-gray-200 bg-white px-2 py-3 text-center text-[11px] text-gray-400'>
-            요소 라이브러리는 준비 중입니다
+
+          <div
+            onDragOver={(event) => {
+              event.preventDefault();
+            }}
+            onDrop={() => {
+              if (!dragCardId) return;
+              restoreCard(worksheetActiveTab, dragCardId);
+              setDragCardId(null);
+            }}
+            className='rounded border border-dashed border-gray-300 bg-gray-50 px-2 py-1.5 text-[11px] text-gray-500'
+          >
+            숨김 모듈을 여기로 드래그하면 화면에 표시됩니다.
+          </div>
+
+          <div className='overflow-hidden rounded-lg border border-gray-200'>
+            {cards.map((card) => {
+              const visible = visMap[card.id] ?? true;
+              const custom = !card.isDefault;
+
+              return (
+                <div
+                  key={card.id}
+                  draggable={!visible}
+                  onDragStart={(event) => {
+                    setDragCardId(card.id);
+                    event.dataTransfer.setData('text/plain', card.id);
+                    event.dataTransfer.effectAllowed = 'move';
+                  }}
+                  onDragEnd={() => setDragCardId(null)}
+                  className='flex items-center gap-2 border-b border-gray-100 bg-white px-2 py-2 text-sm last:border-b-0'
+                >
+                  <button
+                    type='button'
+                    onClick={() => toggleCardVisibility(worksheetActiveTab, card.id)}
+                    className='inline-flex items-center'
+                    aria-label={`${card.title} 표시 토글`}
+                  >
+                    <span
+                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
+                        visible ? 'border-gray-700 bg-gray-700 text-white' : 'border-gray-300 bg-white'
+                      }`}
+                    >
+                      {visible && <Check size={10} strokeWidth={3} />}
+                    </span>
+                  </button>
+
+                  {!visible ? <GripVertical size={13} className='text-gray-400' /> : null}
+
+                  <div className='min-w-0 flex-1'>
+                    <p className='truncate text-xs'>{card.title}</p>
+                    <p className={`text-[10px] ${visible ? 'text-emerald-600' : 'text-gray-400'}`}>
+                      {visible ? '표시 중' : '숨김'}
+                    </p>
+                  </div>
+
+                  {custom ? (
+                    <button
+                      type='button'
+                      onClick={() => deleteCustomCard(worksheetActiveTab, card.id)}
+                      className='inline-flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-red-50 hover:text-red-500'
+                      aria-label='커스텀 모듈 삭제'
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  ) : null}
+
+                  <span
+                    className={`rounded px-1.5 py-0.5 text-[10px] ${
+                      custom ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500'
+                    }`}
+                  >
+                    {custom ? '커스텀' : '기본'}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -172,6 +278,14 @@ export default function WorksheetTemplateSidebar({
     <div className='flex h-full min-h-0 bg-white p-2'>
       <div className='flex min-h-0 min-w-0 flex-1'>
         <nav className='flex w-14 shrink-0 flex-col gap-y-2'>
+          <Link
+            to='/faddit/drive'
+            className='flex aspect-square cursor-pointer items-center justify-center rounded-md p-2 text-gray-600 transition-colors hover:bg-gray-200/60'
+            aria-label='패딧 홈으로 이동'
+          >
+            <img src={FadditLogoOnly} alt='Faddit' className='h-7 w-7' />
+          </Link>
+
           {TOOL_ITEMS.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -218,7 +332,9 @@ export default function WorksheetTemplateSidebar({
             </div>
           </div>
         ) : (
-          <div className='flex min-h-0 min-w-0 flex-1 flex-col gap-y-3 pl-3'>{tabContent}</div>
+          <div className='flex min-h-0 min-w-0 flex-1 flex-col gap-y-3 pl-3'>
+            {tabContent}
+          </div>
         )}
       </div>
     </div>

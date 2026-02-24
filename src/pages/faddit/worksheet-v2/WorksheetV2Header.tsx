@@ -2,7 +2,6 @@ import React from 'react';
 import { Play } from 'lucide-react';
 import { useWorksheetV2Store } from './useWorksheetV2Store';
 import { MENU_TABS } from './worksheetV2Constants';
-import WorksheetV2ScreenEditor from './WorksheetV2ScreenEditor';
 
 export default function WorksheetV2Header() {
   const activeTab = useWorksheetV2Store((s) => s.activeTab);
@@ -40,7 +39,6 @@ export default function WorksheetV2Header() {
       </div>
 
       <div className='flex items-center gap-x-3'>
-        <WorksheetV2ScreenEditor />
         <button
           type='button'
           className='flex cursor-pointer items-center justify-center gap-x-1.5 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-all duration-300 hover:bg-gray-50'
