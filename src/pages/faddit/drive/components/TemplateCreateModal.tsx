@@ -17,6 +17,11 @@ export type CreateMaterialFormValue = {
   file: File;
 };
 
+export type CreateWorksheetFormValue = {
+  title: string;
+  description: string;
+};
+
 type TemplateKey =
   | 'folder'
   | 'fabric'
@@ -40,8 +45,10 @@ type Props = {
   setModalOpen: (open: boolean) => void;
   isSubmittingFolder: boolean;
   isSubmittingMaterial: boolean;
+  isSubmittingWorksheet: boolean;
   onCreateFolder: (folderName: string) => Promise<void> | void;
   onCreateMaterial: (value: CreateMaterialFormValue) => Promise<void> | void;
+  onCreateWorksheet: (value: CreateWorksheetFormValue) => Promise<void> | void;
 };
 
 const TEMPLATE_ITEMS: TemplateItem[] = [
@@ -196,8 +203,10 @@ const TemplateCreateModal = ({
   setModalOpen,
   isSubmittingFolder,
   isSubmittingMaterial,
+  isSubmittingWorksheet,
   onCreateFolder,
   onCreateMaterial,
+  onCreateWorksheet,
 }: Props) => {
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateKey | null>(null);
   const [mobileStep, setMobileStep] = useState<'select' | 'form'>('select');
@@ -295,7 +304,7 @@ const TemplateCreateModal = ({
   const isMaterial = selectedTemplate ? isMaterialTemplate(selectedTemplate) : false;
   const isFolder = selectedTemplate === 'folder';
 
-  const isSubmitting = isSubmittingFolder || isSubmittingMaterial;
+  const isSubmitting = isSubmittingFolder || isSubmittingMaterial || isSubmittingWorksheet;
 
   const isCreateDisabled = (() => {
     if (!selectedTemplate) return true;
@@ -361,6 +370,15 @@ const TemplateCreateModal = ({
       });
 
       await onCreateMaterial(next);
+      setModalOpen(false);
+      return;
+    }
+
+    if (selectedTemplate === 'worksheet') {
+      await onCreateWorksheet({
+        title: title.trim(),
+        description: description.trim(),
+      });
       setModalOpen(false);
       return;
     }

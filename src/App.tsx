@@ -179,6 +179,7 @@ function App() {
         </Route>
         <Route path='/faddit/worksheet' element={<WorksheetLayoutDemo />} />
         <Route path='/faddit/worksheet-v2' element={<WorksheetV2 />} />
+        <Route path='/faddit/worksheet-v2/:worksheetId' element={<WorksheetV2 />} />
         <Route path='/faddit/worksheet/edit/:worksheetId?' element={<Worksheet />} />
         <Route path='/faddit/worksheet/:worksheetId' element={<Worksheet />} />
         <Route element={<MainLayout />}>

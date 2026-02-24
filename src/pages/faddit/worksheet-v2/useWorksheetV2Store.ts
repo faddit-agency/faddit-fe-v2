@@ -38,6 +38,9 @@ interface WorksheetV2State {
   tabLayouts: TabLayoutsMap;
   cardVisibility: CardVisibilityMap;
   sizeSpecUnit: SizeSpecDisplayUnit;
+  worksheetTitle: string;
+  isLoadingWorksheet: boolean;
+  worksheetLoadError: string | null;
 
   setActiveTab: (tab: MenuTab) => void;
   updateLayout: (tab: MenuTab, layout: LayoutItem[]) => void;
@@ -45,6 +48,10 @@ interface WorksheetV2State {
   removeCard: (tab: MenuTab, cardId: string) => void;
   restoreCard: (tab: MenuTab, cardId: string) => void;
   setSizeSpecUnit: (unit: SizeSpecDisplayUnit) => void;
+  setWorksheetTitle: (title: string) => void;
+  setWorksheetLoading: (isLoading: boolean) => void;
+  setWorksheetLoadError: (message: string | null) => void;
+  hydrateWorksheetUiInfo: (uiInfoRaw: string | null | undefined) => void;
 }
 
 export const useWorksheetV2Store = create<WorksheetV2State>()(
@@ -54,6 +61,9 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
       tabLayouts: buildInitialLayouts(),
       cardVisibility: buildInitialVisibility(),
       sizeSpecUnit: 'cm',
+      worksheetTitle: '작업지시서 명',
+      isLoadingWorksheet: false,
+      worksheetLoadError: null,
 
       setActiveTab: (tab) => set({ activeTab: tab }),
 
@@ -120,6 +130,34 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
         }),
 
       setSizeSpecUnit: (unit) => set({ sizeSpecUnit: unit }),
+
+      setWorksheetTitle: (title) => set({ worksheetTitle: title || '작업지시서 명' }),
+
+      setWorksheetLoading: (isLoading) => set({ isLoadingWorksheet: isLoading }),
+
+      setWorksheetLoadError: (message) => set({ worksheetLoadError: message }),
+
+      hydrateWorksheetUiInfo: (uiInfoRaw) => {
+        if (!uiInfoRaw) return;
+
+        try {
+          const parsed = JSON.parse(uiInfoRaw) as {
+            activeTab?: MenuTab;
+            tabLayouts?: TabLayoutsMap;
+            cardVisibility?: CardVisibilityMap;
+            sizeSpecUnit?: SizeSpecDisplayUnit;
+          };
+
+          set((state) => ({
+            activeTab: parsed.activeTab ?? state.activeTab,
+            tabLayouts: parsed.tabLayouts ?? state.tabLayouts,
+            cardVisibility: parsed.cardVisibility ?? state.cardVisibility,
+            sizeSpecUnit: parsed.sizeSpecUnit ?? state.sizeSpecUnit,
+          }));
+        } catch {
+          return;
+        }
+      },
     }),
     { name: 'worksheet-v2-store' },
   ),

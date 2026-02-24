@@ -10,7 +10,10 @@ import Notification from '../../../components/Notification';
 import { useDrive, DriveItem, DriveFolder, SidebarItem } from '../../../context/DriveContext';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { useDriveMaterialStore } from '../../../store/useDriveMaterialStore';
-import TemplateCreateModal, { CreateMaterialFormValue } from './components/TemplateCreateModal';
+import TemplateCreateModal, {
+  CreateMaterialFormValue,
+  CreateWorksheetFormValue,
+} from './components/TemplateCreateModal';
 import {
   createMaterial,
   getMaterialFieldDefs,
@@ -27,6 +30,7 @@ import {
   searchDriveItems,
   updateDriveItems,
 } from '../../../lib/api/driveApi';
+import { createWorksheet } from '../../../lib/api/worksheetApi';
 import ChildClothImage from '../../../images/faddit/childcloth.png';
 
 type ViewMode = 'grid' | 'list';
@@ -501,6 +505,7 @@ const FadditDrive: React.FC = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [isCreatingMaterial, setIsCreatingMaterial] = useState(false);
+  const [isCreatingWorksheet, setIsCreatingWorksheet] = useState(false);
   const [templateCreateModalOpen, setTemplateCreateModalOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activeItemId, setActiveItemId] = useState<string>('');
@@ -1474,6 +1479,44 @@ const FadditDrive: React.FC = () => {
       console.error('Failed to create material', error);
     } finally {
       setIsCreatingMaterial(false);
+    }
+  };
+
+  const handleCreateWorksheet = async (value: CreateWorksheetFormValue) => {
+    if (!userId || !rootFolderId) {
+      return;
+    }
+
+    try {
+      setIsCreatingWorksheet(true);
+
+      const created = await createWorksheet({
+        userId,
+        parentId: currentFolderId ?? rootFolderId,
+        name: value.title || '새 작업지시서',
+        default_name: true,
+        manager_name: currentUserName || '담당자',
+        brand_name: '',
+        season_year: new Date().getFullYear(),
+        season_type: '',
+        gender: 0,
+        category: 0,
+        clothes: '',
+        size_spec: value.description || '',
+      });
+
+      const worksheetId = created.worksheetId || created.worksheet_id;
+      await refreshDrive();
+
+      if (worksheetId) {
+        navigate(`/faddit/worksheet-v2/${worksheetId}`);
+      } else {
+        navigate('/faddit/worksheet-v2');
+      }
+    } catch (error) {
+      console.error('Failed to create worksheet', error);
+    } finally {
+      setIsCreatingWorksheet(false);
     }
   };
 
@@ -2567,8 +2610,10 @@ const FadditDrive: React.FC = () => {
         setModalOpen={setTemplateCreateModalOpen}
         isSubmittingFolder={isCreatingFolder}
         isSubmittingMaterial={isCreatingMaterial}
+        isSubmittingWorksheet={isCreatingWorksheet}
         onCreateFolder={handleCreateFolder}
         onCreateMaterial={handleCreateMaterial}
+        onCreateWorksheet={handleCreateWorksheet}
       />
     </div>
   );
