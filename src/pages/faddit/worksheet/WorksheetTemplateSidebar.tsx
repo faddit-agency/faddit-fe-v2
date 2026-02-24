@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight,
@@ -10,6 +10,7 @@ import {
   History,
   LayoutGrid,
   MessageSquare,
+  Pencil,
   Plus,
   Trash2,
 } from 'lucide-react';
@@ -34,8 +35,9 @@ const TOOL_ITEMS: {
   { key: 'comment', label: '코멘트', icon: MessageSquare },
 ];
 
-const CONTENT_PANEL_WIDTH = 206;
+const CONTENT_PANEL_WIDTH = 230;
 const GAP_X = 12;
+const WORKSHEET_MODULE_DRAG_TYPE = 'application/x-faddit-worksheet-card';
 
 const CATEGORY_ROW1 = ['전체', '남성', '여성', '아동'] as const;
 const CATEGORY_ROW2 = ['반팔', '긴팔', '긴바지', '원피스', '반바지'] as const;
@@ -51,22 +53,57 @@ export default function WorksheetTemplateSidebar({
   const [cat2, setCat2] = useState('');
   const [dragCardId, setDragCardId] = useState<string | null>(null);
   const [customTitle, setCustomTitle] = useState('');
+  const [editingCustomCardId, setEditingCustomCardId] = useState<string | null>(null);
+  const [editingCustomTitle, setEditingCustomTitle] = useState('');
 
   const worksheetActiveTab = useWorksheetV2Store((s) => s.activeTab);
   const cardVisibility = useWorksheetV2Store((s) => s.cardVisibility);
   const toggleCardVisibility = useWorksheetV2Store((s) => s.toggleCardVisibility);
   const restoreCard = useWorksheetV2Store((s) => s.restoreCard);
   const addCustomCard = useWorksheetV2Store((s) => s.addCustomCard);
+  const updateCustomCardTitle = useWorksheetV2Store((s) => s.updateCustomCardTitle);
   const deleteCustomCard = useWorksheetV2Store((s) => s.deleteCustomCard);
   const customCards = useWorksheetV2Store((s) => s.customCards);
+  const setDraggingCardId = useWorksheetV2Store((s) => s.setDraggingCardId);
 
   const cards = [...CARD_DEFINITIONS[worksheetActiveTab], ...customCards[worksheetActiveTab]];
   const visMap = cardVisibility[worksheetActiveTab];
+
+  const handleToolTabClick = (tab: ToolTab) => {
+    setActiveTab(tab);
+    if (collapsible) {
+      setContentOpen(true);
+    }
+  };
 
   const addCustomModule = () => {
     addCustomCard(worksheetActiveTab, customTitle);
     setCustomTitle('');
   };
+
+  const startEditingCustomModule = (cardId: string, currentTitle: string) => {
+    setEditingCustomCardId(cardId);
+    setEditingCustomTitle(currentTitle);
+  };
+
+  const cancelEditingCustomModule = () => {
+    setEditingCustomCardId(null);
+    setEditingCustomTitle('');
+  };
+
+  const commitEditingCustomModule = () => {
+    if (!editingCustomCardId) {
+      return;
+    }
+
+    updateCustomCardTitle(worksheetActiveTab, editingCustomCardId, editingCustomTitle);
+    cancelEditingCustomModule();
+  };
+
+  useEffect(() => {
+    setEditingCustomCardId(null);
+    setEditingCustomTitle('');
+  }, [worksheetActiveTab]);
 
   const tabContent = (
     <>
@@ -145,7 +182,7 @@ export default function WorksheetTemplateSidebar({
             <input
               value={customTitle}
               onChange={(event) => setCustomTitle(event.target.value)}
-              placeholder='커스텀 웹에디터 제목'
+              placeholder='새 메모장 제목'
               className='form-input h-8 flex-1 text-xs'
             />
             <button
@@ -162,10 +199,16 @@ export default function WorksheetTemplateSidebar({
             onDragOver={(event) => {
               event.preventDefault();
             }}
-            onDrop={() => {
-              if (!dragCardId) return;
-              restoreCard(worksheetActiveTab, dragCardId);
+            onDrop={(event) => {
+              event.preventDefault();
+              const droppedCardId =
+                event.dataTransfer.getData(WORKSHEET_MODULE_DRAG_TYPE) ||
+                event.dataTransfer.getData('text/plain') ||
+                dragCardId;
+              if (!droppedCardId) return;
+              restoreCard(worksheetActiveTab, droppedCardId);
               setDragCardId(null);
+              setDraggingCardId(null);
             }}
             className='rounded border border-dashed border-gray-300 bg-gray-50 px-2 py-1.5 text-[11px] text-gray-500'
           >
@@ -176,28 +219,39 @@ export default function WorksheetTemplateSidebar({
             {cards.map((card) => {
               const visible = visMap[card.id] ?? true;
               const custom = !card.isDefault;
+              const isEditingCustom = custom && editingCustomCardId === card.id;
+              const required = card.id === 'diagram-view';
 
               return (
                 <div
                   key={card.id}
-                  draggable={!visible}
+                  draggable={!visible && !required}
                   onDragStart={(event) => {
+                    if (required) return;
                     setDragCardId(card.id);
+                    setDraggingCardId(card.id);
+                    event.dataTransfer.setData(WORKSHEET_MODULE_DRAG_TYPE, card.id);
                     event.dataTransfer.setData('text/plain', card.id);
                     event.dataTransfer.effectAllowed = 'move';
                   }}
-                  onDragEnd={() => setDragCardId(null)}
+                  onDragEnd={() => {
+                    setDragCardId(null);
+                    setDraggingCardId(null);
+                  }}
                   className='flex items-center gap-2 border-b border-gray-100 bg-white px-2 py-2 text-sm last:border-b-0'
                 >
                   <button
                     type='button'
+                    disabled={required}
                     onClick={() => toggleCardVisibility(worksheetActiveTab, card.id)}
-                    className='inline-flex items-center'
+                    className={`inline-flex items-center ${required ? 'cursor-not-allowed opacity-40' : ''}`}
                     aria-label={`${card.title} 표시 토글`}
                   >
                     <span
                       className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
-                        visible ? 'border-gray-700 bg-gray-700 text-white' : 'border-gray-300 bg-white'
+                        visible
+                          ? 'border-gray-700 bg-gray-700 text-white'
+                          : 'border-gray-300 bg-white'
                       }`}
                     >
                       {visible && <Check size={10} strokeWidth={3} />}
@@ -207,29 +261,77 @@ export default function WorksheetTemplateSidebar({
                   {!visible ? <GripVertical size={13} className='text-gray-400' /> : null}
 
                   <div className='min-w-0 flex-1'>
-                    <p className='truncate text-xs'>{card.title}</p>
+                    {isEditingCustom ? (
+                      <input
+                        value={editingCustomTitle}
+                        autoFocus
+                        onChange={(event) => setEditingCustomTitle(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            commitEditingCustomModule();
+                            return;
+                          }
+                          if (event.key === 'Escape') {
+                            event.preventDefault();
+                            cancelEditingCustomModule();
+                          }
+                        }}
+                        className='form-input h-6 w-full text-xs'
+                      />
+                    ) : (
+                      <p className='truncate text-xs'>{card.title}</p>
+                    )}
                     <p className={`text-[10px] ${visible ? 'text-emerald-600' : 'text-gray-400'}`}>
                       {visible ? '표시 중' : '숨김'}
                     </p>
                   </div>
 
                   {custom ? (
-                    <button
-                      type='button'
-                      onClick={() => deleteCustomCard(worksheetActiveTab, card.id)}
-                      className='inline-flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-red-50 hover:text-red-500'
-                      aria-label='커스텀 모듈 삭제'
-                    >
-                      <Trash2 size={13} />
-                    </button>
+                    <div className='flex items-center gap-1'>
+                      {isEditingCustom ? (
+                        <button
+                          type='button'
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={commitEditingCustomModule}
+                          className='inline-flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'
+                          aria-label='커스텀 모듈 이름 수정완료'
+                        >
+                          <Check size={13} />
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            type='button'
+                            onClick={() => startEditingCustomModule(card.id, card.title)}
+                            className='inline-flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600'
+                            aria-label='커스텀 모듈 이름 수정'
+                          >
+                            <Pencil size={13} />
+                          </button>
+                          <button
+                            type='button'
+                            onClick={() => deleteCustomCard(worksheetActiveTab, card.id)}
+                            className='inline-flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-red-50 hover:text-red-500'
+                            aria-label='커스텀 모듈 삭제'
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </>
+                      )}
+                    </div>
                   ) : null}
 
                   <span
                     className={`rounded px-1.5 py-0.5 text-[10px] ${
-                      custom ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500'
+                      required
+                        ? 'bg-amber-50 text-amber-600'
+                        : custom
+                          ? 'bg-blue-50 text-blue-600'
+                          : 'bg-gray-100 text-gray-500'
                     }`}
                   >
-                    {custom ? '커스텀' : '기본'}
+                    {required ? '필수' : custom ? '커스텀' : '기본'}
                   </span>
                 </div>
               );
@@ -290,7 +392,7 @@ export default function WorksheetTemplateSidebar({
             <button
               key={key}
               type='button'
-              onClick={() => setActiveTab(key)}
+              onClick={() => handleToolTabClick(key)}
               className={`flex aspect-square cursor-pointer flex-col items-center justify-center gap-0.5 rounded-md p-2 text-[10px] transition-colors ${
                 activeTab === key
                   ? 'bg-gray-100 text-gray-800'
@@ -325,16 +427,14 @@ export default function WorksheetTemplateSidebar({
             style={{ width: contentOpen ? CONTENT_PANEL_WIDTH + GAP_X : 0 }}
           >
             <div
-              className='flex min-h-0 min-w-[206px] flex-1 flex-col gap-y-3 pl-3 transition-opacity duration-300 ease-in-out'
-              style={{ opacity: contentOpen ? 1 : 0 }}
+              className='flex min-h-0 flex-1 flex-col gap-y-3 pl-3 transition-opacity duration-300 ease-in-out'
+              style={{ opacity: contentOpen ? 1 : 0, minWidth: CONTENT_PANEL_WIDTH }}
             >
               {tabContent}
             </div>
           </div>
         ) : (
-          <div className='flex min-h-0 min-w-0 flex-1 flex-col gap-y-3 pl-3'>
-            {tabContent}
-          </div>
+          <div className='flex min-h-0 min-w-0 flex-1 flex-col gap-y-3 pl-3'>{tabContent}</div>
         )}
       </div>
     </div>

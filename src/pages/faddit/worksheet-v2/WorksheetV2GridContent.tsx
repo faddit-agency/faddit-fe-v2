@@ -1,6 +1,6 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactGridLayout, { useContainerWidth } from 'react-grid-layout';
-import type { Layout } from 'react-grid-layout';
+import type { Layout, LayoutItem } from 'react-grid-layout';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import 'react-grid-layout/css/styles.css';
 
@@ -9,15 +9,195 @@ import { CARD_DEFINITIONS, GRID_CONFIG } from './worksheetV2Constants';
 import WorksheetV2GridCard from './WorksheetV2GridCard';
 import WorksheetSizeSpecView from '../worksheet/WorksheetSizeSpecView';
 import WorksheetNoticeEditor from '../worksheet/WorksheetNoticeEditor';
-import WorksheetFabricInfoView from '../worksheet/WorksheetFabricInfoView';
 import DropdownButton from '../../../components/atoms/DropdownButton';
 import {
   LABEL_SHEET_STATE,
   TRIM_SHEET_STATE,
   COLOR_SIZE_QTY_STATE,
   SIZE_UNIT_OPTIONS,
+  FABRIC_INFO_STATE,
+  RIB_FABRIC_INFO_STATE,
 } from './worksheetV2Constants';
 import type { CardDefinition } from './worksheetV2Types';
+
+const WORKSHEET_MODULE_DRAG_TYPE = 'application/x-faddit-worksheet-card';
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function cloneLayout(layout: readonly LayoutItem[]): LayoutItem[] {
+  return layout.map((item) => ({ ...item }));
+}
+
+function rebalanceRowsToFillWidth(layout: readonly LayoutItem[], cols: number): LayoutItem[] {
+  const nextLayout = cloneLayout(layout);
+  const rowGroups = new Map<string, LayoutItem[]>();
+
+  nextLayout.forEach((item) => {
+    const key = `${item.y}:${item.h}`;
+    const group = rowGroups.get(key) ?? [];
+    group.push(item);
+    rowGroups.set(key, group);
+  });
+
+  for (const rowItems of rowGroups.values()) {
+    rowItems.sort((a, b) => {
+      if (a.x !== b.x) return a.x - b.x;
+      return a.i.localeCompare(b.i);
+    });
+
+    let xCursor = 0;
+    rowItems.forEach((item) => {
+      item.x = xCursor;
+      xCursor += item.w;
+    });
+
+    let delta = cols - xCursor;
+    if (delta > 0) {
+      rowItems[rowItems.length - 1].w += delta;
+    } else if (delta < 0) {
+      let overflow = -delta;
+      for (let index = rowItems.length - 1; index >= 0 && overflow > 0; index -= 1) {
+        const rowItem = rowItems[index];
+        const minW = Math.max(1, rowItem.minW ?? 1);
+        const reducible = rowItem.w - minW;
+        if (reducible <= 0) continue;
+        const reduceBy = Math.min(reducible, overflow);
+        rowItem.w -= reduceBy;
+        overflow -= reduceBy;
+      }
+
+      xCursor = 0;
+      rowItems.forEach((item) => {
+        item.x = xCursor;
+        xCursor += item.w;
+      });
+    }
+  }
+
+  return nextLayout;
+}
+
+function applyCoupledHorizontalResize(
+  previousLayout: readonly LayoutItem[],
+  nextLayout: readonly LayoutItem[],
+  cols: number,
+  resizedItem?: LayoutItem,
+  previousResizedItem?: LayoutItem,
+): LayoutItem[] {
+  const prevById = new Map(previousLayout.map((item) => [item.i, item]));
+  const adjustedLayout = cloneLayout(nextLayout);
+  const adjustedById = new Map(adjustedLayout.map((item) => [item.i, item]));
+
+  const changedItems = adjustedLayout.filter((item) => {
+    const prev = prevById.get(item.i);
+    if (!prev) return false;
+    return prev.x !== item.x || prev.w !== item.w || prev.y !== item.y || prev.h !== item.h;
+  });
+
+  const targetFromCallback = resizedItem ? adjustedById.get(resizedItem.i) : undefined;
+  const target = targetFromCallback ?? changedItems.find((item) => {
+    const prev = prevById.get(item.i);
+    if (!prev) return false;
+    return prev.x !== item.x || prev.w !== item.w;
+  });
+
+  if (!target) {
+    return rebalanceRowsToFillWidth(adjustedLayout, cols);
+  }
+
+  const prevTarget = prevById.get(target.i);
+  if (!prevTarget) {
+    return rebalanceRowsToFillWidth(adjustedLayout, cols);
+  }
+
+  const overlapsVertically = (a: LayoutItem, b: LayoutItem) => {
+    const aBottom = a.y + a.h;
+    const bBottom = b.y + b.h;
+    return a.y < bBottom && b.y < aBottom;
+  };
+  const isRightEdgeResizeFromCallback =
+    previousResizedItem &&
+    resizedItem &&
+    previousResizedItem.x === resizedItem.x &&
+    previousResizedItem.w !== resizedItem.w;
+
+  const isLeftEdgeResizeFromCallback =
+    previousResizedItem &&
+    resizedItem &&
+    previousResizedItem.x + previousResizedItem.w === resizedItem.x + resizedItem.w &&
+    previousResizedItem.x !== resizedItem.x;
+
+  const prevLeft = prevTarget.x;
+  const prevRight = prevTarget.x + prevTarget.w;
+  const nextLeft = target.x;
+  const nextRight = target.x + target.w;
+
+  if ((isRightEdgeResizeFromCallback || nextRight !== prevRight) && nextLeft === prevLeft) {
+    const rightCandidates = previousLayout
+      .filter(
+        (item) => item.i !== target.i && overlapsVertically(item, prevTarget) && item.x >= prevRight,
+      )
+      .sort((a, b) => a.x - b.x);
+    const prevRightNeighbor =
+      rightCandidates.find((item) => item.x === prevRight) ?? rightCandidates[0];
+    const rightNeighbor = prevRightNeighbor ? adjustedById.get(prevRightNeighbor.i) : undefined;
+
+    if (prevRightNeighbor && rightNeighbor) {
+      const pairSpanEnd = prevRightNeighbor.x + prevRightNeighbor.w;
+      const pairTotal = pairSpanEnd - prevTarget.x;
+      const minTarget = Math.max(1, target.minW ?? prevTarget.minW ?? 1);
+      const minRight = Math.max(1, rightNeighbor.minW ?? prevRightNeighbor.minW ?? 1);
+
+      const nextTargetWidth = clamp(target.w, minTarget, pairTotal - minRight);
+      const nextRightX = prevTarget.x + nextTargetWidth;
+      const nextRightWidth = pairSpanEnd - nextRightX;
+
+      target.x = prevTarget.x;
+      target.y = prevTarget.y;
+      target.h = prevTarget.h;
+      target.w = nextTargetWidth;
+      rightNeighbor.x = nextRightX;
+      rightNeighbor.y = prevRightNeighbor.y;
+      rightNeighbor.h = prevRightNeighbor.h;
+      rightNeighbor.w = nextRightWidth;
+    }
+  }
+
+  if ((isLeftEdgeResizeFromCallback || nextLeft !== prevLeft) && nextRight === prevRight) {
+    const leftCandidates = previousLayout
+      .filter(
+        (item) =>
+          item.i !== target.i && overlapsVertically(item, prevTarget) && item.x + item.w <= prevLeft,
+      )
+      .sort((a, b) => b.x + b.w - (a.x + a.w));
+    const prevLeftNeighbor =
+      leftCandidates.find((item) => item.x + item.w === prevLeft) ?? leftCandidates[0];
+    const leftNeighbor = prevLeftNeighbor ? adjustedById.get(prevLeftNeighbor.i) : undefined;
+
+    if (prevLeftNeighbor && leftNeighbor) {
+      const pairSpanStart = prevLeftNeighbor.x;
+      const pairTotal = prevTarget.x + prevTarget.w - pairSpanStart;
+      const minTarget = Math.max(1, target.minW ?? prevTarget.minW ?? 1);
+      const minLeft = Math.max(1, leftNeighbor.minW ?? prevLeftNeighbor.minW ?? 1);
+
+      const nextTargetWidth = clamp(target.w, minTarget, pairTotal - minLeft);
+      const nextLeftWidth = pairTotal - nextTargetWidth;
+
+      leftNeighbor.x = pairSpanStart;
+      leftNeighbor.w = nextLeftWidth;
+      leftNeighbor.y = prevLeftNeighbor.y;
+      leftNeighbor.h = prevLeftNeighbor.h;
+      target.x = leftNeighbor.x + leftNeighbor.w;
+      target.y = prevTarget.y;
+      target.h = prevTarget.h;
+      target.w = nextTargetWidth;
+    }
+  }
+
+  return rebalanceRowsToFillWidth(adjustedLayout, cols);
+}
 
 function DiagramPlaceholder() {
   return (
@@ -77,17 +257,12 @@ function CustomWebEditorCell({
   onChange: (next: string) => void;
 }) {
   return (
-    <div className='flex h-full flex-col gap-2 p-3'>
-      <div className='rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-[11px] text-gray-500'>
-        자유 입력 웹에디터 셀
-      </div>
-      <textarea
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder='텍스트, 링크, 메모를 자유롭게 작성하세요.'
-        className='form-textarea min-h-0 flex-1 resize-none text-sm'
-      />
-    </div>
+    <WorksheetNoticeEditor
+      value={value}
+      onChange={onChange}
+      placeholder='새 메모장 내용을 입력하세요. (예: 체크리스트, 링크, 메모)'
+      initialContent=''
+    />
   );
 }
 
@@ -126,14 +301,12 @@ function CardBodyRenderer({
     case 'notice':
       return <WorksheetNoticeEditor />;
     case 'size-spec':
-      return <WorksheetSizeSpecView displayUnit={sizeSpecUnit} />;
+      return <WorksheetSizeSpecView displayUnit={sizeSpecUnit} fillWidth />;
     case 'label-sheet':
       return (
         <WorksheetSizeSpecView
           showRowHeader={false}
           enableUnitConversion={false}
-          showAddColumnButton={false}
-          showColumnActions={false}
           showRowDeleteButton
           fillWidth
           initialState={LABEL_SHEET_STATE}
@@ -144,8 +317,6 @@ function CardBodyRenderer({
         <WorksheetSizeSpecView
           showRowHeader={false}
           enableUnitConversion={false}
-          showAddColumnButton={false}
-          showColumnActions={false}
           showRowDeleteButton
           fillWidth
           initialState={TRIM_SHEET_STATE}
@@ -156,13 +327,30 @@ function CardBodyRenderer({
         <WorksheetSizeSpecView
           enableUnitConversion={false}
           showTotals
+          fillWidth
           initialState={COLOR_SIZE_QTY_STATE}
         />
       );
     case 'fabric-info':
-      return <WorksheetFabricInfoView />;
+      return (
+        <WorksheetSizeSpecView
+          showRowHeader={false}
+          enableUnitConversion={false}
+          showRowDeleteButton
+          fillWidth
+          initialState={FABRIC_INFO_STATE}
+        />
+      );
     case 'rib-fabric-info':
-      return <WorksheetFabricInfoView />;
+      return (
+        <WorksheetSizeSpecView
+          showRowHeader={false}
+          enableUnitConversion={false}
+          showRowDeleteButton
+          fillWidth
+          initialState={RIB_FABRIC_INFO_STATE}
+        />
+      );
     case 'cost-calc':
       return <CostCalcPlaceholder />;
     default:
@@ -189,14 +377,20 @@ export default function WorksheetV2GridContent() {
   const activeTab = useWorksheetV2Store((s) => s.activeTab);
   const tabLayouts = useWorksheetV2Store((s) => s.tabLayouts);
   const cardVisibility = useWorksheetV2Store((s) => s.cardVisibility);
+  const activeCardIdByTab = useWorksheetV2Store((s) => s.activeCardIdByTab);
   const customCards = useWorksheetV2Store((s) => s.customCards);
   const customCardContent = useWorksheetV2Store((s) => s.customCardContent);
+  const draggingCardId = useWorksheetV2Store((s) => s.draggingCardId);
   const updateLayout = useWorksheetV2Store((s) => s.updateLayout);
   const removeCard = useWorksheetV2Store((s) => s.removeCard);
   const showCardAt = useWorksheetV2Store((s) => s.showCardAt);
   const updateCustomCardContent = useWorksheetV2Store((s) => s.updateCustomCardContent);
+  const setDraggingCardId = useWorksheetV2Store((s) => s.setDraggingCardId);
+  const setActiveCard = useWorksheetV2Store((s) => s.setActiveCard);
 
   const [isInteracting, setIsInteracting] = useState(false);
+  const [pendingLayout, setPendingLayout] = useState<LayoutItem[] | null>(null);
+  const [containerHeight, setContainerHeight] = useState(0);
   const [dropPreview, setDropPreview] = useState<{
     cardId: string;
     x: number;
@@ -204,9 +398,11 @@ export default function WorksheetV2GridContent() {
     w: number;
     h: number;
   } | null>(null);
+  const interactionStartLayoutRef = useRef<LayoutItem[] | null>(null);
 
   const currentLayout = tabLayouts[activeTab];
   const visMap = cardVisibility[activeTab];
+  const activeCardId = activeCardIdByTab[activeTab];
   const tabCards = useMemo(
     () => [...CARD_DEFINITIONS[activeTab], ...customCards[activeTab]],
     [activeTab, customCards],
@@ -219,20 +415,89 @@ export default function WorksheetV2GridContent() {
     [currentLayout, visMap],
   );
 
+  const usedRows = useMemo(() => {
+    if (visibleLayout.length === 0) {
+      return 1;
+    }
+
+    return Math.max(1, ...visibleLayout.map((item) => item.y + item.h));
+  }, [visibleLayout]);
+
+  const gridRowHeight = useMemo(() => {
+    const innerHeight = Math.max(0, containerHeight - 12);
+    const marginY = GRID_CONFIG.margin[1];
+    const totalMargins = Math.max(0, usedRows - 1) * marginY;
+    const availableHeight = innerHeight - totalMargins;
+
+    if (availableHeight <= 0) {
+      return GRID_CONFIG.rowHeight;
+    }
+
+    return Math.max(12, availableHeight / usedRows);
+  }, [containerHeight, usedRows]);
+
+  const gridMetrics = useMemo(() => {
+    const [marginX, marginY] = GRID_CONFIG.margin;
+    const gridWidth = Math.max(0, width - 12);
+    const colWidth = (gridWidth - marginX * (GRID_CONFIG.cols - 1)) / GRID_CONFIG.cols;
+
+    return {
+      marginX,
+      marginY,
+      colWidth,
+      rowHeight: gridRowHeight,
+    };
+  }, [width, gridRowHeight]);
+
   const handleLayoutChange = useCallback(
     (newLayout: Layout) => {
-      updateLayout(activeTab, [...newLayout]);
+      setPendingLayout(cloneLayout(newLayout));
     },
-    [activeTab, updateLayout],
+    [],
+  );
+
+  useEffect(() => {
+    setPendingLayout(null);
+    interactionStartLayoutRef.current = null;
+  }, [activeTab]);
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) {
+      return;
+    }
+
+    const updateContainerHeight = () => {
+      setContainerHeight(element.clientHeight);
+    };
+
+    updateContainerHeight();
+
+    const observer = new ResizeObserver(() => {
+      updateContainerHeight();
+    });
+
+    observer.observe(element);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [containerRef]);
+
+  const resolveDraggedCardId = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      const byCustomType = event.dataTransfer.getData(WORKSHEET_MODULE_DRAG_TYPE);
+      const byPlainText = event.dataTransfer.getData('text/plain');
+      return byCustomType || byPlainText || draggingCardId || '';
+    },
+    [draggingCardId],
   );
 
   const calculateDropPreview = useCallback(
-    (event: React.DragEvent<HTMLDivElement>) => {
+    (event: React.DragEvent<HTMLDivElement>, cardId: string) => {
       if (!mounted || width <= 0) {
         return null;
       }
-
-      const cardId = event.dataTransfer.getData('text/plain');
       if (!cardId) {
         return null;
       }
@@ -243,9 +508,7 @@ export default function WorksheetV2GridContent() {
       }
 
       const cols = GRID_CONFIG.cols;
-      const [marginX, marginY] = GRID_CONFIG.margin;
-      const gridWidth = Math.max(0, width - 12);
-      const colWidth = (gridWidth - marginX * (cols - 1)) / cols;
+      const { colWidth, marginX, marginY, rowHeight } = gridMetrics;
       if (colWidth <= 0) {
         return null;
       }
@@ -258,11 +521,11 @@ export default function WorksheetV2GridContent() {
       const h = card.defaultLayout.h;
 
       const x = Math.max(0, Math.min(cols - w, Math.floor(relX / (colWidth + marginX))));
-      const y = Math.max(0, Math.floor(relY / (GRID_CONFIG.rowHeight + marginY)));
+      const y = Math.max(0, Math.floor(relY / (rowHeight + marginY)));
 
       return { cardId, x, y, w, h };
     },
-    [mounted, width, tabCards],
+    [gridMetrics, mounted, tabCards],
   );
 
   const gridChildren = useMemo(
@@ -270,9 +533,12 @@ export default function WorksheetV2GridContent() {
       visibleCards.map((card) => (
         <div key={card.id} style={{ pointerEvents: isInteracting ? 'none' : 'auto' }}>
           <WorksheetV2GridCard
+            cardId={card.id}
             title={card.title}
             headerExtra={card.id === 'size-spec' ? <SizeSpecUnitSelector /> : undefined}
-            onClose={() => removeCard(activeTab, card.id)}
+            onClose={card.id === 'diagram-view' ? undefined : () => removeCard(activeTab, card.id)}
+            isActive={activeCardId === card.id}
+            onActivate={(cardId) => setActiveCard(activeTab, cardId)}
           >
             <CardBodyRenderer
               card={card}
@@ -287,6 +553,8 @@ export default function WorksheetV2GridContent() {
       isInteracting,
       removeCard,
       activeTab,
+      activeCardId,
+      setActiveCard,
       customCardContent,
       updateCustomCardContent,
     ],
@@ -295,29 +563,40 @@ export default function WorksheetV2GridContent() {
   return (
     <div
       ref={containerRef}
-      className='relative min-h-0 flex-1 overflow-y-auto rounded-lg bg-[#ebebec] p-1.5'
+      className='relative min-h-0 flex-1 overflow-hidden rounded-lg bg-[#ebebec] p-1.5'
       onDragOver={(event) => {
-        const preview = calculateDropPreview(event);
-        if (!preview) {
+        const draggedCardId = resolveDraggedCardId(event);
+        if (!draggedCardId) {
           setDropPreview(null);
           return;
         }
 
         event.preventDefault();
         event.dataTransfer.dropEffect = 'move';
+
+        const preview = calculateDropPreview(event, draggedCardId);
+        if (!preview) {
+          setDropPreview(null);
+          return;
+        }
+
         setDropPreview(preview);
       }}
       onDragLeave={() => {
         setDropPreview(null);
       }}
       onDrop={(event) => {
-        const preview = calculateDropPreview(event);
+        const draggedCardId = resolveDraggedCardId(event);
+        event.preventDefault();
+
+        const preview = draggedCardId ? calculateDropPreview(event, draggedCardId) : null;
         setDropPreview(null);
+        setDraggingCardId(null);
+
         if (!preview) {
           return;
         }
 
-        event.preventDefault();
         showCardAt(activeTab, preview.cardId, {
           x: preview.x,
           y: preview.y,
@@ -330,13 +609,12 @@ export default function WorksheetV2GridContent() {
         <div
           className='pointer-events-none absolute z-[210] rounded-md border-2 border-dashed border-blue-400 bg-blue-100/45'
           style={{
-            left: 6 + dropPreview.x * ((width - 12 - GRID_CONFIG.margin[0] * (GRID_CONFIG.cols - 1)) / GRID_CONFIG.cols + GRID_CONFIG.margin[0]),
-            top: 6 + dropPreview.y * (GRID_CONFIG.rowHeight + GRID_CONFIG.margin[1]),
+            left: 6 + dropPreview.x * (gridMetrics.colWidth + gridMetrics.marginX),
+            top: 6 + dropPreview.y * (gridMetrics.rowHeight + gridMetrics.marginY),
             width:
-              dropPreview.w *
-                ((width - 12 - GRID_CONFIG.margin[0] * (GRID_CONFIG.cols - 1)) / GRID_CONFIG.cols) +
-              (dropPreview.w - 1) * GRID_CONFIG.margin[0],
-            height: dropPreview.h * GRID_CONFIG.rowHeight + (dropPreview.h - 1) * GRID_CONFIG.margin[1],
+              dropPreview.w * gridMetrics.colWidth + (dropPreview.w - 1) * gridMetrics.marginX,
+            height:
+              dropPreview.h * gridMetrics.rowHeight + (dropPreview.h - 1) * gridMetrics.marginY,
           }}
         />
       ) : null}
@@ -347,7 +625,7 @@ export default function WorksheetV2GridContent() {
           width={width - 12}
           gridConfig={{
             cols: GRID_CONFIG.cols,
-            rowHeight: GRID_CONFIG.rowHeight,
+            rowHeight: gridMetrics.rowHeight,
             margin: GRID_CONFIG.margin,
           }}
           dragConfig={{
@@ -357,13 +635,48 @@ export default function WorksheetV2GridContent() {
           }}
           resizeConfig={{
             enabled: true,
-            handles: ['se'],
+            handles: ['e', 's', 'w', 'n', 'se', 'sw', 'ne', 'nw'],
           }}
           onLayoutChange={handleLayoutChange}
-          onDragStart={() => setIsInteracting(true)}
-          onDragStop={() => setIsInteracting(false)}
-          onResizeStart={() => setIsInteracting(true)}
-          onResizeStop={() => setIsInteracting(false)}
+          onDragStart={() => {
+            setIsInteracting(true);
+            setPendingLayout(null);
+            interactionStartLayoutRef.current = cloneLayout(currentLayout);
+          }}
+          onDragStop={(layout) => {
+            setIsInteracting(false);
+            const finalLayout = pendingLayout ?? layout ?? currentLayout;
+            if (finalLayout) {
+              updateLayout(activeTab, rebalanceRowsToFillWidth(finalLayout, GRID_CONFIG.cols));
+              setPendingLayout(null);
+            }
+            interactionStartLayoutRef.current = null;
+          }}
+          onResizeStart={() => {
+            setIsInteracting(true);
+            setPendingLayout(null);
+            interactionStartLayoutRef.current = cloneLayout(currentLayout);
+          }}
+          onResizeStop={(layout, oldItem, newItem) => {
+            setIsInteracting(false);
+            const finalLayout = pendingLayout ?? layout ?? currentLayout;
+            const baseLayout = interactionStartLayoutRef.current ?? currentLayout;
+
+            if (finalLayout) {
+              updateLayout(
+                activeTab,
+                applyCoupledHorizontalResize(
+                  baseLayout,
+                  finalLayout,
+                  GRID_CONFIG.cols,
+                  newItem,
+                  oldItem,
+                ),
+              );
+              setPendingLayout(null);
+            }
+            interactionStartLayoutRef.current = null;
+          }}
         >
           {gridChildren}
         </ReactGridLayout>

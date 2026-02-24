@@ -129,7 +129,7 @@ export default function WorksheetSizeSpecView({
   showRowHeader = true,
   enableUnitConversion = true,
   showAddColumnButton = true,
-  fillWidth = false,
+  fillWidth = true,
   showColumnActions = true,
   showRowDeleteButton = true,
   showTotals = false,
@@ -415,7 +415,11 @@ export default function WorksheetSizeSpecView({
   return (
     <div className='flex h-full flex-col overflow-hidden'>
       <div className='flex-1 overflow-auto p-4'>
-        <div className='relative inline-block overflow-hidden rounded-lg bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]'>
+        <div
+          className={`relative overflow-hidden rounded-lg bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] ${
+            fillWidth ? 'w-full' : 'inline-block'
+          }`}
+        >
           <div className='pointer-events-none absolute inset-0 z-40 rounded-lg border border-slate-200' />
           <table
             className='border-collapse border-spacing-0 bg-white text-sm'

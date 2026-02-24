@@ -87,6 +87,22 @@ export const LABEL_SHEET_STATE = {
   ],
 };
 
+export const FABRIC_INFO_STATE = {
+  headers: ['원단명', '색상', '사이즈/단가', '혼용률', '요척', '코드'],
+  rows: [
+    ['코튼 트윌', 'Black', 'M / 8,500', '면 100%', '1.4yd', 'BK-01'],
+    ['헤비 쭈리', 'Melange', 'L / 7,300', '면 70 폴리 30', '1.2yd', 'MG-09'],
+  ],
+};
+
+export const RIB_FABRIC_INFO_STATE = {
+  headers: ['원단명', '색상', '사이즈/단가', '혼용률', '요척', '코드'],
+  rows: [
+    ['폴리 립', 'Navy', 'L / 6,200', '폴리 95 스판 5', '0.8yd', 'NV-04'],
+    ['코튼 립', 'White', 'M / 5,900', '면 98 스판 2', '0.7yd', 'WH-03'],
+  ],
+};
+
 export const TRIM_SHEET_STATE = {
   headers: ['품명', '컬러', '규격', '수량'],
   rows: [

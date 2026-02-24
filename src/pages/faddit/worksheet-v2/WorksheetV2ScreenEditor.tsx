@@ -65,7 +65,7 @@ export default function WorksheetV2ScreenEditor() {
               <input
                 value={customTitle}
                 onChange={(event) => setCustomTitle(event.target.value)}
-                placeholder='커스텀 웹에디터 제목'
+                placeholder='새 메모장 제목'
                 className='form-input h-8 flex-1 text-xs'
               />
               <button
