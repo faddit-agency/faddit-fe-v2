@@ -36,6 +36,7 @@ const TOOL_ITEMS: {
 
 const CONTENT_PANEL_WIDTH = 206;
 const GAP_X = 12;
+const WORKSHEET_MODULE_DRAG_TYPE = 'application/x-faddit-worksheet-card';
 
 const CATEGORY_ROW1 = ['전체', '남성', '여성', '아동'] as const;
 const CATEGORY_ROW2 = ['반팔', '긴팔', '긴바지', '원피스', '반바지'] as const;
@@ -59,6 +60,7 @@ export default function WorksheetTemplateSidebar({
   const addCustomCard = useWorksheetV2Store((s) => s.addCustomCard);
   const deleteCustomCard = useWorksheetV2Store((s) => s.deleteCustomCard);
   const customCards = useWorksheetV2Store((s) => s.customCards);
+  const setDraggingCardId = useWorksheetV2Store((s) => s.setDraggingCardId);
 
   const cards = [...CARD_DEFINITIONS[worksheetActiveTab], ...customCards[worksheetActiveTab]];
   const visMap = cardVisibility[worksheetActiveTab];
@@ -162,10 +164,16 @@ export default function WorksheetTemplateSidebar({
             onDragOver={(event) => {
               event.preventDefault();
             }}
-            onDrop={() => {
-              if (!dragCardId) return;
-              restoreCard(worksheetActiveTab, dragCardId);
+            onDrop={(event) => {
+              event.preventDefault();
+              const droppedCardId =
+                event.dataTransfer.getData(WORKSHEET_MODULE_DRAG_TYPE) ||
+                event.dataTransfer.getData('text/plain') ||
+                dragCardId;
+              if (!droppedCardId) return;
+              restoreCard(worksheetActiveTab, droppedCardId);
               setDragCardId(null);
+              setDraggingCardId(null);
             }}
             className='rounded border border-dashed border-gray-300 bg-gray-50 px-2 py-1.5 text-[11px] text-gray-500'
           >
@@ -183,10 +191,15 @@ export default function WorksheetTemplateSidebar({
                   draggable={!visible}
                   onDragStart={(event) => {
                     setDragCardId(card.id);
+                    setDraggingCardId(card.id);
+                    event.dataTransfer.setData(WORKSHEET_MODULE_DRAG_TYPE, card.id);
                     event.dataTransfer.setData('text/plain', card.id);
                     event.dataTransfer.effectAllowed = 'move';
                   }}
-                  onDragEnd={() => setDragCardId(null)}
+                  onDragEnd={() => {
+                    setDragCardId(null);
+                    setDraggingCardId(null);
+                  }}
                   className='flex items-center gap-2 border-b border-gray-100 bg-white px-2 py-2 text-sm last:border-b-0'
                 >
                   <button

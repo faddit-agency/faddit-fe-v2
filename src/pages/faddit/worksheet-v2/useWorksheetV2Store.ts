@@ -40,6 +40,7 @@ interface WorksheetV2State {
   cardVisibility: CardVisibilityMap;
   customCards: Record<MenuTab, CardDefinition[]>;
   customCardContent: Record<string, string>;
+  draggingCardId: string | null;
   sizeSpecUnit: SizeSpecDisplayUnit;
   worksheetTitle: string;
   isLoadingWorksheet: boolean;
@@ -58,6 +59,7 @@ interface WorksheetV2State {
   addCustomCard: (tab: MenuTab, title: string) => string;
   deleteCustomCard: (tab: MenuTab, cardId: string) => void;
   updateCustomCardContent: (cardId: string, content: string) => void;
+  setDraggingCardId: (cardId: string | null) => void;
   setSizeSpecUnit: (unit: SizeSpecDisplayUnit) => void;
   setWorksheetTitle: (title: string) => void;
   setWorksheetLoading: (isLoading: boolean) => void;
@@ -73,6 +75,7 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
       cardVisibility: buildInitialVisibility(),
       customCards: { diagram: [], basic: [], size: [], cost: [] },
       customCardContent: {},
+      draggingCardId: null,
       sizeSpecUnit: 'cm',
       worksheetTitle: '작업지시서 명',
       isLoadingWorksheet: false,
@@ -242,6 +245,8 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
             [cardId]: content,
           },
         })),
+
+      setDraggingCardId: (cardId) => set({ draggingCardId: cardId }),
 
       setSizeSpecUnit: (unit) => set({ sizeSpecUnit: unit }),
 

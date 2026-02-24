@@ -19,6 +19,8 @@ import {
 } from './worksheetV2Constants';
 import type { CardDefinition } from './worksheetV2Types';
 
+const WORKSHEET_MODULE_DRAG_TYPE = 'application/x-faddit-worksheet-card';
+
 function DiagramPlaceholder() {
   return (
     <div className='flex h-full items-center justify-center bg-[#f6f6f7]'>
@@ -191,10 +193,12 @@ export default function WorksheetV2GridContent() {
   const cardVisibility = useWorksheetV2Store((s) => s.cardVisibility);
   const customCards = useWorksheetV2Store((s) => s.customCards);
   const customCardContent = useWorksheetV2Store((s) => s.customCardContent);
+  const draggingCardId = useWorksheetV2Store((s) => s.draggingCardId);
   const updateLayout = useWorksheetV2Store((s) => s.updateLayout);
   const removeCard = useWorksheetV2Store((s) => s.removeCard);
   const showCardAt = useWorksheetV2Store((s) => s.showCardAt);
   const updateCustomCardContent = useWorksheetV2Store((s) => s.updateCustomCardContent);
+  const setDraggingCardId = useWorksheetV2Store((s) => s.setDraggingCardId);
 
   const [isInteracting, setIsInteracting] = useState(false);
   const [dropPreview, setDropPreview] = useState<{
@@ -226,13 +230,20 @@ export default function WorksheetV2GridContent() {
     [activeTab, updateLayout],
   );
 
-  const calculateDropPreview = useCallback(
+  const resolveDraggedCardId = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
+      const byCustomType = event.dataTransfer.getData(WORKSHEET_MODULE_DRAG_TYPE);
+      const byPlainText = event.dataTransfer.getData('text/plain');
+      return byCustomType || byPlainText || draggingCardId || '';
+    },
+    [draggingCardId],
+  );
+
+  const calculateDropPreview = useCallback(
+    (event: React.DragEvent<HTMLDivElement>, cardId: string) => {
       if (!mounted || width <= 0) {
         return null;
       }
-
-      const cardId = event.dataTransfer.getData('text/plain');
       if (!cardId) {
         return null;
       }
@@ -297,27 +308,38 @@ export default function WorksheetV2GridContent() {
       ref={containerRef}
       className='relative min-h-0 flex-1 overflow-y-auto rounded-lg bg-[#ebebec] p-1.5'
       onDragOver={(event) => {
-        const preview = calculateDropPreview(event);
-        if (!preview) {
+        const draggedCardId = resolveDraggedCardId(event);
+        if (!draggedCardId) {
           setDropPreview(null);
           return;
         }
 
         event.preventDefault();
         event.dataTransfer.dropEffect = 'move';
+
+        const preview = calculateDropPreview(event, draggedCardId);
+        if (!preview) {
+          setDropPreview(null);
+          return;
+        }
+
         setDropPreview(preview);
       }}
       onDragLeave={() => {
         setDropPreview(null);
       }}
       onDrop={(event) => {
-        const preview = calculateDropPreview(event);
+        const draggedCardId = resolveDraggedCardId(event);
+        event.preventDefault();
+
+        const preview = draggedCardId ? calculateDropPreview(event, draggedCardId) : null;
         setDropPreview(null);
+        setDraggingCardId(null);
+
         if (!preview) {
           return;
         }
 
-        event.preventDefault();
         showCardAt(activeTab, preview.cardId, {
           x: preview.x,
           y: preview.y,
