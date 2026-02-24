@@ -10,6 +10,7 @@ import {
   getDriveFilePreviewUrl,
   getDriveTrashAll,
   restoreDriveItems,
+  updateDriveItems,
 } from '../../../lib/api/driveApi';
 import ChildClothImage from '../../../images/faddit/childcloth.png';
 
@@ -84,6 +85,71 @@ const DeletedDrive: React.FC = () => {
     files.forEach((file) => idSet.add(file.fileSystemId));
     return idSet;
   }, [folders, files]);
+
+  const trashParentMap = useMemo(() => {
+    const parentMap: Record<string, string | null> = {};
+    folders.forEach((folder) => {
+      parentMap[folder.fileSystemId] = folder.parentId;
+    });
+    files.forEach((file) => {
+      parentMap[file.fileSystemId] = file.parentId;
+    });
+    return parentMap;
+  }, [folders, files]);
+
+  const trashChildrenMap = useMemo(() => {
+    const childMap = new Map<string | null, string[]>();
+
+    const appendChild = (parentId: string | null, childId: string) => {
+      const current = childMap.get(parentId) || [];
+      current.push(childId);
+      childMap.set(parentId, current);
+    };
+
+    folders.forEach((folder) => appendChild(folder.parentId, folder.fileSystemId));
+    files.forEach((file) => appendChild(file.parentId, file.fileSystemId));
+
+    return childMap;
+  }, [folders, files]);
+
+  const collectDescendantTrashIds = (ids: string[]) => {
+    const resolved = new Set<string>();
+    const queue = [...ids];
+
+    while (queue.length > 0) {
+      const nextId = queue.shift();
+      if (!nextId || resolved.has(nextId)) {
+        continue;
+      }
+      resolved.add(nextId);
+
+      const children = trashChildrenMap.get(nextId) || [];
+      children.forEach((childId) => {
+        if (!resolved.has(childId)) {
+          queue.push(childId);
+        }
+      });
+    }
+
+    return resolved;
+  };
+
+  const collectRestoreTrashIds = (ids: string[]) => {
+    const resolved = collectDescendantTrashIds(ids);
+
+    ids.forEach((id) => {
+      let cursor = trashParentMap[id];
+      const visited = new Set<string>();
+
+      while (cursor && !visited.has(cursor) && allDeletedIds.has(cursor)) {
+        visited.add(cursor);
+        resolved.add(cursor);
+        cursor = trashParentMap[cursor] ?? null;
+      }
+    });
+
+    return resolved;
+  };
 
   const loadTrash = async () => {
     try {
@@ -191,13 +257,26 @@ const DeletedDrive: React.FC = () => {
       return;
     }
 
-    await restoreDriveItems({ userId, ids });
-    const idSet = new Set(ids);
+    const restoreSet = collectRestoreTrashIds(ids);
+    const restoreIds = Array.from(restoreSet);
+    const starredRestoreIds = [
+      ...folders.filter((folder) => restoreSet.has(folder.fileSystemId) && folder.isStarred),
+      ...files.filter((file) => restoreSet.has(file.fileSystemId) && file.isStarred),
+    ].map((node) => node.fileSystemId);
+
+    await restoreDriveItems({ userId, ids: restoreIds });
+    if (starredRestoreIds.length > 0) {
+      await updateDriveItems({ id: starredRestoreIds, isStarred: true });
+    }
+
+    const idSet = restoreSet;
     setFolders((prev) => prev.filter((node) => !idSet.has(node.fileSystemId)));
     setFiles((prev) => prev.filter((node) => !idSet.has(node.fileSystemId)));
     setSelectedIds((prev) => prev.filter((id) => !idSet.has(id)));
     setToastMessage(
-      ids.length === 1 ? '항목이 복원되었습니다' : `${ids.length}개 항목이 복원되었습니다`,
+      restoreIds.length === 1
+        ? '항목이 복원되었습니다'
+        : `${restoreIds.length}개 항목이 복원되었습니다`,
     );
     setToastOpen(true);
   };
@@ -219,8 +298,8 @@ const DeletedDrive: React.FC = () => {
     }
 
     try {
-      await destroyDriveItems({ userId, ids: selectedIds });
-      const removeSet = new Set(selectedIds);
+      const removeSet = collectDescendantTrashIds(selectedIds);
+      await destroyDriveItems({ userId, ids: Array.from(removeSet) });
       setFolders((prev) => prev.filter((node) => !removeSet.has(node.fileSystemId)));
       setFiles((prev) => prev.filter((node) => !removeSet.has(node.fileSystemId)));
       setSelectedIds([]);

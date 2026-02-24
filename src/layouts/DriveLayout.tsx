@@ -17,6 +17,8 @@ import Header from '../partials/Header';
 import { DriveProvider, useDrive } from '../context/DriveContext';
 import { useAuthStore } from '../store/useAuthStore';
 import DriveSearchModal from '../pages/faddit/drive/components/DriveSearchModal';
+import { getDriveAll } from '../lib/api/driveApi';
+import Notification from '../components/Notification';
 
 const getPointerCoordinates = (event: Event | null) => {
   if (!event) {
@@ -62,6 +64,8 @@ const cursorTopLeftModifier: Modifier = ({ transform, activeNodeRect, activatorE
 const DriveLayoutContent: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
+  const [favoriteToastOpen, setFavoriteToastOpen] = useState(false);
+  const [favoriteMessage, setFavoriteMessage] = useState('즐겨찾기가 완료되었습니다');
   const {
     activeDragItem,
     setActiveDragItem,
@@ -85,6 +89,18 @@ const DriveLayoutContent: React.FC = () => {
       console.error('Failed to hydrate drive', error);
     });
   }, [rootFolderFromAuth, hydrateDrive]);
+
+  useEffect(() => {
+    if (!favoriteToastOpen) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setFavoriteToastOpen(false);
+    }, 5000);
+
+    return () => window.clearTimeout(timer);
+  }, [favoriteToastOpen]);
 
   const sensors = useSensors(
     useSensor(MouseSensor, {
@@ -216,9 +232,63 @@ const DriveLayoutContent: React.FC = () => {
     const resolveSourceParentId = (itemId: string, fallbackParentId?: string | null) =>
       getItemParentId(itemId) || fallbackParentId || rootFolderId;
 
+    const isFolderDescendantOf = (candidateFolderId: string, ancestorFolderId: string) => {
+      if (!candidateFolderId || !ancestorFolderId) {
+        return false;
+      }
+
+      let cursor: string | null = candidateFolderId;
+      const visited = new Set<string>();
+
+      while (cursor && !visited.has(cursor)) {
+        if (cursor === ancestorFolderId) {
+          return true;
+        }
+        visited.add(cursor);
+        cursor = getItemParentId(cursor);
+      }
+
+      return false;
+    };
+
+    const isFolderDescendantByPath = async (candidateFolderId: string, ancestorFolderId: string) => {
+      try {
+        const folderData = await getDriveAll(candidateFolderId);
+        const idPath = typeof folderData.idPath === 'string' ? folderData.idPath : '';
+        if (!idPath) {
+          return false;
+        }
+
+        return idPath
+          .split('/')
+          .map((segment) => segment.trim())
+          .filter(Boolean)
+          .includes(ancestorFolderId);
+      } catch (error) {
+        console.error('Failed to validate descendant move by path', {
+          candidateFolderId,
+          ancestorFolderId,
+          error,
+        });
+        return false;
+      }
+    };
+
+    const isFolderMoveIntoOwnDescendant = async (
+      candidateFolderId: string,
+      ancestorFolderId: string,
+    ) => {
+      if (isFolderDescendantOf(candidateFolderId, ancestorFolderId)) {
+        return true;
+      }
+
+      return isFolderDescendantByPath(candidateFolderId, ancestorFolderId);
+    };
+
     try {
       if (activeType === 'sidebar-item') {
         const activeId = active.id.toString();
+        const draggedSidebarItemType = String(active.data.current?.itemType || 'file');
         const sourceParentIdFromDrag =
           typeof active.data.current?.parentId === 'string' ? active.data.current.parentId : null;
         const sourceParentId =
@@ -228,6 +298,8 @@ const DriveLayoutContent: React.FC = () => {
 
         if (targetId === 'section-favorite') {
           await setItemsStarred([activeId], true);
+          setFavoriteMessage('즐겨찾기가 완료되었습니다');
+          setFavoriteToastOpen(true);
         } else if (
           isFolderDropTarget ||
           targetId === 'drive-root-container' ||
@@ -238,6 +310,15 @@ const DriveLayoutContent: React.FC = () => {
             : sourceParentId === normalizedTargetId;
 
           if (activeId !== normalizedTargetId && !shouldSkipSameParent) {
+            const isFolderToOwnDescendantMove =
+              draggedSidebarItemType === 'folder' &&
+              (await isFolderMoveIntoOwnDescendant(normalizedTargetId, activeId));
+
+            if (isFolderToOwnDescendantMove) {
+              setActiveDragItem(null);
+              return;
+            }
+
             await moveItems([activeId], normalizedTargetId, sourceParentId);
             if (isFolderDropTarget) {
               setSidebarAutoOpenFolderId(normalizedTargetId);
@@ -280,6 +361,8 @@ const DriveLayoutContent: React.FC = () => {
             entries.map((entry) => entry.id),
             true,
           );
+          setFavoriteMessage('즐겨찾기가 완료되었습니다');
+          setFavoriteToastOpen(true);
         } else {
           if (
             !(isFolderDropTarget || targetId === 'drive-root-container' || isWorkspaceRootTarget)
@@ -289,6 +372,21 @@ const DriveLayoutContent: React.FC = () => {
           }
 
           const moveTargetFolderId = normalizedTargetId;
+          const movingFolderIds = entries
+            .filter((entry) => entry.type === 'folder')
+            .map((entry) => entry.id);
+          let hasFolderMovedIntoOwnDescendant = false;
+          for (const folderId of movingFolderIds) {
+            if (await isFolderMoveIntoOwnDescendant(moveTargetFolderId, folderId)) {
+              hasFolderMovedIntoOwnDescendant = true;
+              break;
+            }
+          }
+
+          if (hasFolderMovedIntoOwnDescendant) {
+            setActiveDragItem(null);
+            return;
+          }
 
           const groupedBySource = new Map<string, string[]>();
           entries.forEach((entry) => {
@@ -346,6 +444,18 @@ const DriveLayoutContent: React.FC = () => {
         </div>
       </div>
       <DriveSearchModal modalOpen={searchModalOpen} setModalOpen={setSearchModalOpen} />
+      <Notification
+        type='warning'
+        open={favoriteToastOpen}
+        setOpen={setFavoriteToastOpen}
+        showAction={false}
+        className='fixed right-4 bottom-4 z-50'
+      >
+        <div className='mb-1 font-medium text-gray-800 dark:text-gray-100'>즐겨찾기</div>
+        <div>
+          <span>{favoriteMessage}</span>
+        </div>
+      </Notification>
       <DragOverlay modifiers={[cursorTopLeftModifier]}>
         {activeDragItem ? (
           <div className='pointer-events-none w-[200px] rounded-xl border-2 border-violet-500 bg-white opacity-90 shadow-2xl dark:bg-gray-800'>

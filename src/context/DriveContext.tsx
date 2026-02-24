@@ -125,13 +125,48 @@ const toSidebarFile = (file: DriveNode): SidebarItem => ({
   parentId: file.parentId,
 });
 
+const dedupeSidebarNodesById = (nodes: SidebarItem[]): SidebarItem[] => {
+  const byId = new Map<string, SidebarItem>();
+
+  nodes.forEach((node) => {
+    const normalizedNode =
+      node.type === 'folder' && node.children?.length
+        ? {
+            ...node,
+            children: dedupeSidebarNodesById(node.children),
+          }
+        : node;
+
+    const existing = byId.get(normalizedNode.id);
+    if (!existing) {
+      byId.set(normalizedNode.id, normalizedNode);
+      return;
+    }
+
+    if (existing.type === 'folder' && normalizedNode.type === 'folder') {
+      byId.set(normalizedNode.id, {
+        ...existing,
+        ...normalizedNode,
+        children: dedupeSidebarNodesById([
+          ...(existing.children || []),
+          ...(normalizedNode.children || []),
+        ]),
+        childrenLoaded: Boolean(existing.childrenLoaded) || Boolean(normalizedNode.childrenLoaded),
+      });
+    }
+  });
+
+  return Array.from(byId.values());
+};
+
 const mergeSidebarNodesPreservingLoadedDescendants = (
   previousNodes: SidebarItem[] = [],
   nextNodes: SidebarItem[],
 ): SidebarItem[] => {
+  const normalizedNextNodes = dedupeSidebarNodesById(nextNodes);
   const previousById = new Map(previousNodes.map((item) => [item.id, item]));
 
-  return nextNodes.map((nextNode) => {
+  return normalizedNextNodes.map((nextNode) => {
     if (nextNode.type !== 'folder') {
       return nextNode;
     }
@@ -210,7 +245,7 @@ const insertNodesIntoSidebarFolder = (
     if (node.type === 'folder' && node.id === folderId) {
       return {
         ...node,
-        children: [...(node.children || []), ...withUpdatedParent],
+        children: dedupeSidebarNodesById([...(node.children || []), ...withUpdatedParent]),
         childrenLoaded: true,
       };
     }
@@ -242,7 +277,7 @@ const moveNodesWithRootSupport = (
     parentId: rootFolderId,
   }));
 
-  return [...withoutMoved, ...rootInserted];
+  return dedupeSidebarNodesById([...withoutMoved, ...rootInserted]);
 };
 
 const formatBytes = (value?: number) => {
