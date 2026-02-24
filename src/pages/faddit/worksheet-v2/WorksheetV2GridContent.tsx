@@ -260,7 +260,7 @@ function CustomWebEditorCell({
     <WorksheetNoticeEditor
       value={value}
       onChange={onChange}
-      placeholder='커스텀 모듈 내용을 입력하세요. (예: 체크리스트, 링크, 메모)'
+      placeholder='새 메모장 내용을 입력하세요. (예: 체크리스트, 링크, 메모)'
       initialContent=''
     />
   );

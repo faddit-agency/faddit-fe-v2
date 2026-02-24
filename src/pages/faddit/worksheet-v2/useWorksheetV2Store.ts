@@ -483,7 +483,7 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
 
       addCustomCard: (tab, title) => {
         const cardId = `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        const nextTitle = title.trim() || '커스텀 웹에디터';
+        const nextTitle = title.trim() || '새 메모장';
 
         set((state) => {
           const newCard: CardDefinition = {
