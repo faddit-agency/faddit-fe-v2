@@ -57,6 +57,7 @@ interface WorksheetV2State {
     position: { x: number; y: number; w?: number; h?: number },
   ) => void;
   addCustomCard: (tab: MenuTab, title: string) => string;
+  updateCustomCardTitle: (tab: MenuTab, cardId: string, title: string) => void;
   deleteCustomCard: (tab: MenuTab, cardId: string) => void;
   updateCustomCardContent: (cardId: string, content: string) => void;
   setDraggingCardId: (cardId: string | null) => void;
@@ -209,6 +210,38 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
 
         return cardId;
       },
+
+      updateCustomCardTitle: (tab, cardId, title) =>
+        set((state) => {
+          const nextTitle = title.trim();
+          if (!nextTitle) {
+            return state;
+          }
+
+          let changed = false;
+          const updatedCards = state.customCards[tab].map((card) => {
+            if (card.id !== cardId) {
+              return card;
+            }
+
+            changed = true;
+            return {
+              ...card,
+              title: nextTitle,
+            };
+          });
+
+          if (!changed) {
+            return state;
+          }
+
+          return {
+            customCards: {
+              ...state.customCards,
+              [tab]: updatedCards,
+            },
+          };
+        }),
 
       deleteCustomCard: (tab, cardId) =>
         set((state) => {

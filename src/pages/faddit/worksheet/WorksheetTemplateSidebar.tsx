@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight,
@@ -10,6 +10,7 @@ import {
   History,
   LayoutGrid,
   MessageSquare,
+  Pencil,
   Plus,
   Trash2,
 } from 'lucide-react';
@@ -52,12 +53,15 @@ export default function WorksheetTemplateSidebar({
   const [cat2, setCat2] = useState('');
   const [dragCardId, setDragCardId] = useState<string | null>(null);
   const [customTitle, setCustomTitle] = useState('');
+  const [editingCustomCardId, setEditingCustomCardId] = useState<string | null>(null);
+  const [editingCustomTitle, setEditingCustomTitle] = useState('');
 
   const worksheetActiveTab = useWorksheetV2Store((s) => s.activeTab);
   const cardVisibility = useWorksheetV2Store((s) => s.cardVisibility);
   const toggleCardVisibility = useWorksheetV2Store((s) => s.toggleCardVisibility);
   const restoreCard = useWorksheetV2Store((s) => s.restoreCard);
   const addCustomCard = useWorksheetV2Store((s) => s.addCustomCard);
+  const updateCustomCardTitle = useWorksheetV2Store((s) => s.updateCustomCardTitle);
   const deleteCustomCard = useWorksheetV2Store((s) => s.deleteCustomCard);
   const customCards = useWorksheetV2Store((s) => s.customCards);
   const setDraggingCardId = useWorksheetV2Store((s) => s.setDraggingCardId);
@@ -69,6 +73,30 @@ export default function WorksheetTemplateSidebar({
     addCustomCard(worksheetActiveTab, customTitle);
     setCustomTitle('');
   };
+
+  const startEditingCustomModule = (cardId: string, currentTitle: string) => {
+    setEditingCustomCardId(cardId);
+    setEditingCustomTitle(currentTitle);
+  };
+
+  const cancelEditingCustomModule = () => {
+    setEditingCustomCardId(null);
+    setEditingCustomTitle('');
+  };
+
+  const commitEditingCustomModule = () => {
+    if (!editingCustomCardId) {
+      return;
+    }
+
+    updateCustomCardTitle(worksheetActiveTab, editingCustomCardId, editingCustomTitle);
+    cancelEditingCustomModule();
+  };
+
+  useEffect(() => {
+    setEditingCustomCardId(null);
+    setEditingCustomTitle('');
+  }, [worksheetActiveTab]);
 
   const tabContent = (
     <>
@@ -184,6 +212,7 @@ export default function WorksheetTemplateSidebar({
             {cards.map((card) => {
               const visible = visMap[card.id] ?? true;
               const custom = !card.isDefault;
+              const isEditingCustom = custom && editingCustomCardId === card.id;
 
               return (
                 <div
@@ -220,21 +249,65 @@ export default function WorksheetTemplateSidebar({
                   {!visible ? <GripVertical size={13} className='text-gray-400' /> : null}
 
                   <div className='min-w-0 flex-1'>
-                    <p className='truncate text-xs'>{card.title}</p>
+                    {isEditingCustom ? (
+                      <input
+                        value={editingCustomTitle}
+                        autoFocus
+                        onChange={(event) => setEditingCustomTitle(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            commitEditingCustomModule();
+                            return;
+                          }
+                          if (event.key === 'Escape') {
+                            event.preventDefault();
+                            cancelEditingCustomModule();
+                          }
+                        }}
+                        className='form-input h-6 w-full text-xs'
+                      />
+                    ) : (
+                      <p className='truncate text-xs'>{card.title}</p>
+                    )}
                     <p className={`text-[10px] ${visible ? 'text-emerald-600' : 'text-gray-400'}`}>
                       {visible ? '표시 중' : '숨김'}
                     </p>
                   </div>
 
                   {custom ? (
-                    <button
-                      type='button'
-                      onClick={() => deleteCustomCard(worksheetActiveTab, card.id)}
-                      className='inline-flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-red-50 hover:text-red-500'
-                      aria-label='커스텀 모듈 삭제'
-                    >
-                      <Trash2 size={13} />
-                    </button>
+                    <div className='flex items-center gap-1'>
+                      {isEditingCustom ? (
+                        <button
+                          type='button'
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={commitEditingCustomModule}
+                          className='inline-flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'
+                          aria-label='커스텀 모듈 이름 수정완료'
+                        >
+                          <Check size={13} />
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            type='button'
+                            onClick={() => startEditingCustomModule(card.id, card.title)}
+                            className='inline-flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600'
+                            aria-label='커스텀 모듈 이름 수정'
+                          >
+                            <Pencil size={13} />
+                          </button>
+                          <button
+                            type='button'
+                            onClick={() => deleteCustomCard(worksheetActiveTab, card.id)}
+                            className='inline-flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-red-50 hover:text-red-500'
+                            aria-label='커스텀 모듈 삭제'
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </>
+                      )}
+                    </div>
                   ) : null}
 
                   <span

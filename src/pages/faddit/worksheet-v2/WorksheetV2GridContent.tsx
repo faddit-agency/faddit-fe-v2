@@ -9,13 +9,14 @@ import { CARD_DEFINITIONS, GRID_CONFIG } from './worksheetV2Constants';
 import WorksheetV2GridCard from './WorksheetV2GridCard';
 import WorksheetSizeSpecView from '../worksheet/WorksheetSizeSpecView';
 import WorksheetNoticeEditor from '../worksheet/WorksheetNoticeEditor';
-import WorksheetFabricInfoView from '../worksheet/WorksheetFabricInfoView';
 import DropdownButton from '../../../components/atoms/DropdownButton';
 import {
   LABEL_SHEET_STATE,
   TRIM_SHEET_STATE,
   COLOR_SIZE_QTY_STATE,
   SIZE_UNIT_OPTIONS,
+  FABRIC_INFO_STATE,
+  RIB_FABRIC_INFO_STATE,
 } from './worksheetV2Constants';
 import type { CardDefinition } from './worksheetV2Types';
 
@@ -134,8 +135,6 @@ function CardBodyRenderer({
         <WorksheetSizeSpecView
           showRowHeader={false}
           enableUnitConversion={false}
-          showAddColumnButton={false}
-          showColumnActions={false}
           showRowDeleteButton
           fillWidth
           initialState={LABEL_SHEET_STATE}
@@ -146,8 +145,6 @@ function CardBodyRenderer({
         <WorksheetSizeSpecView
           showRowHeader={false}
           enableUnitConversion={false}
-          showAddColumnButton={false}
-          showColumnActions={false}
           showRowDeleteButton
           fillWidth
           initialState={TRIM_SHEET_STATE}
@@ -162,9 +159,25 @@ function CardBodyRenderer({
         />
       );
     case 'fabric-info':
-      return <WorksheetFabricInfoView />;
+      return (
+        <WorksheetSizeSpecView
+          showRowHeader={false}
+          enableUnitConversion={false}
+          showRowDeleteButton
+          fillWidth
+          initialState={FABRIC_INFO_STATE}
+        />
+      );
     case 'rib-fabric-info':
-      return <WorksheetFabricInfoView />;
+      return (
+        <WorksheetSizeSpecView
+          showRowHeader={false}
+          enableUnitConversion={false}
+          showRowDeleteButton
+          fillWidth
+          initialState={RIB_FABRIC_INFO_STATE}
+        />
+      );
     case 'cost-calc':
       return <CostCalcPlaceholder />;
     default:
