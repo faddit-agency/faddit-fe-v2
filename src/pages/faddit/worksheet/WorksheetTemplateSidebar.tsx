@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   ArrowRight,
   Box,
@@ -8,6 +9,7 @@ import {
   LayoutGrid,
   MessageSquare,
 } from 'lucide-react';
+import FadditLogoOnly from '../../../images/icons/faddit-logo-only.svg';
 
 type ToolTab = 'template' | 'element' | 'history' | 'comment';
 
@@ -172,6 +174,14 @@ export default function WorksheetTemplateSidebar({
     <div className='flex h-full min-h-0 bg-white p-2'>
       <div className='flex min-h-0 min-w-0 flex-1'>
         <nav className='flex w-14 shrink-0 flex-col gap-y-2'>
+          <Link
+            to='/faddit/drive'
+            className='flex aspect-square cursor-pointer items-center justify-center rounded-md p-2 text-gray-600 transition-colors hover:bg-gray-200/60'
+            aria-label='패딧 홈으로 이동'
+          >
+            <img src={FadditLogoOnly} alt='Faddit' className='h-7 w-7' />
+          </Link>
+
           {TOOL_ITEMS.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -218,7 +228,9 @@ export default function WorksheetTemplateSidebar({
             </div>
           </div>
         ) : (
-          <div className='flex min-h-0 min-w-0 flex-1 flex-col gap-y-3 pl-3'>{tabContent}</div>
+          <div className='flex min-h-0 min-w-0 flex-1 flex-col gap-y-3 pl-3'>
+            {tabContent}
+          </div>
         )}
       </div>
     </div>
