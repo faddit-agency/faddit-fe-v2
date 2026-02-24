@@ -3,6 +3,7 @@ import { devtools } from 'zustand/middleware';
 import type { LayoutItem } from 'react-grid-layout';
 import type {
   MenuTab,
+  CardDefinition,
   CardVisibilityMap,
   TabLayoutsMap,
   SizeSpecDisplayUnit,
@@ -37,6 +38,8 @@ interface WorksheetV2State {
   activeTab: MenuTab;
   tabLayouts: TabLayoutsMap;
   cardVisibility: CardVisibilityMap;
+  customCards: Record<MenuTab, CardDefinition[]>;
+  customCardContent: Record<string, string>;
   sizeSpecUnit: SizeSpecDisplayUnit;
   worksheetTitle: string;
   isLoadingWorksheet: boolean;
@@ -47,6 +50,14 @@ interface WorksheetV2State {
   toggleCardVisibility: (tab: MenuTab, cardId: string) => void;
   removeCard: (tab: MenuTab, cardId: string) => void;
   restoreCard: (tab: MenuTab, cardId: string) => void;
+  showCardAt: (
+    tab: MenuTab,
+    cardId: string,
+    position: { x: number; y: number; w?: number; h?: number },
+  ) => void;
+  addCustomCard: (tab: MenuTab, title: string) => string;
+  deleteCustomCard: (tab: MenuTab, cardId: string) => void;
+  updateCustomCardContent: (cardId: string, content: string) => void;
   setSizeSpecUnit: (unit: SizeSpecDisplayUnit) => void;
   setWorksheetTitle: (title: string) => void;
   setWorksheetLoading: (isLoading: boolean) => void;
@@ -60,6 +71,8 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
       activeTab: 'diagram',
       tabLayouts: buildInitialLayouts(),
       cardVisibility: buildInitialVisibility(),
+      customCards: { diagram: [], basic: [], size: [], cost: [] },
+      customCardContent: {},
       sizeSpecUnit: 'cm',
       worksheetTitle: '작업지시서 명',
       isLoadingWorksheet: false,
@@ -82,14 +95,12 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
 
           let nextLayouts = state.tabLayouts;
           if (current) {
-            // Hiding: remove from layout
             nextLayouts = {
               ...state.tabLayouts,
               [tab]: state.tabLayouts[tab].filter((l) => l.i !== cardId),
             };
           } else {
-            // Showing: restore to layout at bottom
-            const def = CARD_DEFINITIONS[tab].find((d) => d.id === cardId);
+            const def = [...CARD_DEFINITIONS[tab], ...state.customCards[tab]].find((d) => d.id === cardId);
             if (def) {
               nextLayouts = {
                 ...state.tabLayouts,
@@ -115,7 +126,7 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
 
       restoreCard: (tab, cardId) =>
         set((state) => {
-          const def = CARD_DEFINITIONS[tab].find((d) => d.id === cardId);
+          const def = [...CARD_DEFINITIONS[tab], ...state.customCards[tab]].find((d) => d.id === cardId);
           if (!def) return state;
           return {
             cardVisibility: {
@@ -128,6 +139,109 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
             },
           };
         }),
+
+      showCardAt: (tab, cardId, position) =>
+        set((state) => {
+          const def = [...CARD_DEFINITIONS[tab], ...state.customCards[tab]].find((d) => d.id === cardId);
+          if (!def) return state;
+
+          const w = position.w ?? def.defaultLayout.w;
+          const h = position.h ?? def.defaultLayout.h;
+
+          return {
+            cardVisibility: {
+              ...state.cardVisibility,
+              [tab]: { ...state.cardVisibility[tab], [cardId]: true },
+            },
+            tabLayouts: {
+              ...state.tabLayouts,
+              [tab]: [
+                ...state.tabLayouts[tab].filter((layout) => layout.i !== cardId),
+                {
+                  i: cardId,
+                  x: position.x,
+                  y: position.y,
+                  w,
+                  h,
+                  minW: def.defaultLayout.minW,
+                  minH: def.defaultLayout.minH,
+                },
+              ],
+            },
+          };
+        }),
+
+      addCustomCard: (tab, title) => {
+        const cardId = `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const nextTitle = title.trim() || '커스텀 웹에디터';
+
+        set((state) => {
+          const newCard: CardDefinition = {
+            id: cardId,
+            title: nextTitle,
+            tab,
+            defaultLayout: { x: 0, y: Infinity, w: 6, h: 6, minW: 3, minH: 3 },
+            isDefault: false,
+          };
+
+          return {
+            customCards: {
+              ...state.customCards,
+              [tab]: [...state.customCards[tab], newCard],
+            },
+            cardVisibility: {
+              ...state.cardVisibility,
+              [tab]: { ...state.cardVisibility[tab], [cardId]: true },
+            },
+            tabLayouts: {
+              ...state.tabLayouts,
+              [tab]: [...state.tabLayouts[tab], { i: newCard.id, ...newCard.defaultLayout }],
+            },
+            customCardContent: {
+              ...state.customCardContent,
+              [cardId]: '',
+            },
+          };
+        });
+
+        return cardId;
+      },
+
+      deleteCustomCard: (tab, cardId) =>
+        set((state) => {
+          const target = state.customCards[tab].find((card) => card.id === cardId);
+          if (!target) return state;
+
+          const nextContent = { ...state.customCardContent };
+          delete nextContent[cardId];
+
+          const nextVisibility = { ...state.cardVisibility[tab] };
+          delete nextVisibility[cardId];
+
+          return {
+            customCards: {
+              ...state.customCards,
+              [tab]: state.customCards[tab].filter((card) => card.id !== cardId),
+            },
+            cardVisibility: {
+              ...state.cardVisibility,
+              [tab]: nextVisibility,
+            },
+            tabLayouts: {
+              ...state.tabLayouts,
+              [tab]: state.tabLayouts[tab].filter((layout) => layout.i !== cardId),
+            },
+            customCardContent: nextContent,
+          };
+        }),
+
+      updateCustomCardContent: (cardId, content) =>
+        set((state) => ({
+          customCardContent: {
+            ...state.customCardContent,
+            [cardId]: content,
+          },
+        })),
 
       setSizeSpecUnit: (unit) => set({ sizeSpecUnit: unit }),
 

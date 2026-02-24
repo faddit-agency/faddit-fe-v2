@@ -14,6 +14,7 @@ export interface CardDefinition {
   title: string;
   tab: MenuTab;
   defaultLayout: Omit<LayoutItem, 'i'>;
+  isDefault?: boolean;
 }
 
 export type CardVisibilityMap = Record<MenuTab, Record<CardId, boolean>>;
