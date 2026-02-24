@@ -145,6 +145,27 @@ const DriveLayoutContent: React.FC = () => {
       return;
     }
 
+    if (activeType === 'sidebar-item') {
+      const sidebarItemType = String(active.data.current?.itemType || 'file');
+      if (sidebarItemType === 'folder') {
+        setActiveDragItem({
+          id: active.id.toString(),
+          type: 'drive-folder',
+          title: String(active.data.current?.title || 'Folder'),
+          subtitle: String(active.data.current?.subtitle || '폴더'),
+          shared: Boolean(active.data.current?.shared),
+        });
+      } else {
+        setActiveDragItem({
+          id: active.id.toString(),
+          type: 'drive-item',
+          title: String(active.data.current?.title || 'File'),
+          subtitle: String(active.data.current?.subtitle || '파일'),
+        });
+      }
+      return;
+    }
+
     if (activeType !== 'drive-item' && activeType !== 'drive-folder') {
       setActiveDragItem(null);
       return;
@@ -361,13 +382,23 @@ const DriveLayoutContent: React.FC = () => {
                         <path d='M4 2.5A1.5 1.5 0 0 0 2.5 4v10A1.5 1.5 0 0 0 4 15.5h8A1.5 1.5 0 0 0 13.5 14V4A1.5 1.5 0 0 0 12 2.5H4Zm4.5 2h5.5A1.5 1.5 0 0 1 15.5 6v10A1.5 1.5 0 0 1 14 17.5H6A1.5 1.5 0 0 1 4.5 16v-.5H12A2.5 2.5 0 0 0 14.5 13V4.5H8.5Z' />
                       </svg>
                     </div>
-                  ) : (
+                  ) : activeDragItem.imageSrc ? (
                     <div className='h-10 w-10 shrink-0 overflow-hidden rounded-md bg-gray-200'>
                       <img
                         src={activeDragItem.imageSrc}
                         alt={activeDragItem.imageAlt || activeDragItem.title}
                         className='h-full w-full object-cover'
                       />
+                    </div>
+                  ) : (
+                    <div className='flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-gray-100 dark:bg-gray-700'>
+                      <svg
+                        className='h-5 w-5 fill-gray-600 dark:fill-gray-200'
+                        viewBox='0 0 20 20'
+                        aria-hidden='true'
+                      >
+                        <path d='M5 2.5A1.5 1.5 0 0 0 3.5 4v12A1.5 1.5 0 0 0 5 17.5h10a1.5 1.5 0 0 0 1.5-1.5V7.25a1.5 1.5 0 0 0-.44-1.06l-3.75-3.75A1.5 1.5 0 0 0 11.25 2H5v.5Zm6.5.56V6a.5.5 0 0 0 .5.5h2.94l-3.44-3.44Z' />
+                      </svg>
                     </div>
                   )}
                 </>
