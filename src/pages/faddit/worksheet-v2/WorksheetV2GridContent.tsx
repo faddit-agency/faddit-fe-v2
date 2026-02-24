@@ -26,13 +26,13 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
-function cloneLayout(layout: Layout): Layout {
+function cloneLayout(layout: readonly LayoutItem[]): LayoutItem[] {
   return layout.map((item) => ({ ...item }));
 }
 
-function rebalanceRowsToFillWidth(layout: Layout, cols: number): Layout {
+function rebalanceRowsToFillWidth(layout: readonly LayoutItem[], cols: number): LayoutItem[] {
   const nextLayout = cloneLayout(layout);
-  const rowGroups = new Map<string, Layout>();
+  const rowGroups = new Map<string, LayoutItem[]>();
 
   nextLayout.forEach((item) => {
     const key = `${item.y}:${item.h}`;
@@ -80,12 +80,12 @@ function rebalanceRowsToFillWidth(layout: Layout, cols: number): Layout {
 }
 
 function applyCoupledHorizontalResize(
-  previousLayout: Layout,
-  nextLayout: Layout,
+  previousLayout: readonly LayoutItem[],
+  nextLayout: readonly LayoutItem[],
   cols: number,
   resizedItem?: LayoutItem,
   previousResizedItem?: LayoutItem,
-): Layout {
+): LayoutItem[] {
   const prevById = new Map(previousLayout.map((item) => [item.i, item]));
   const adjustedLayout = cloneLayout(nextLayout);
   const adjustedById = new Map(adjustedLayout.map((item) => [item.i, item]));
@@ -112,7 +112,7 @@ function applyCoupledHorizontalResize(
     return rebalanceRowsToFillWidth(adjustedLayout, cols);
   }
 
-  const overlapsVertically = (a: Layout[number], b: Layout[number]) => {
+  const overlapsVertically = (a: LayoutItem, b: LayoutItem) => {
     const aBottom = a.y + a.h;
     const bBottom = b.y + b.h;
     return a.y < bBottom && b.y < aBottom;
@@ -389,7 +389,7 @@ export default function WorksheetV2GridContent() {
   const setActiveCard = useWorksheetV2Store((s) => s.setActiveCard);
 
   const [isInteracting, setIsInteracting] = useState(false);
-  const [pendingLayout, setPendingLayout] = useState<Layout | null>(null);
+  const [pendingLayout, setPendingLayout] = useState<LayoutItem[] | null>(null);
   const [containerHeight, setContainerHeight] = useState(0);
   const [dropPreview, setDropPreview] = useState<{
     cardId: string;
@@ -398,7 +398,7 @@ export default function WorksheetV2GridContent() {
     w: number;
     h: number;
   } | null>(null);
-  const interactionStartLayoutRef = useRef<Layout | null>(null);
+  const interactionStartLayoutRef = useRef<LayoutItem[] | null>(null);
 
   const currentLayout = tabLayouts[activeTab];
   const visMap = cardVisibility[activeTab];
@@ -451,7 +451,7 @@ export default function WorksheetV2GridContent() {
 
   const handleLayoutChange = useCallback(
     (newLayout: Layout) => {
-      setPendingLayout([...newLayout]);
+      setPendingLayout(cloneLayout(newLayout));
     },
     [],
   );

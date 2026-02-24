@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import WorksheetTemplateSidebar from '../worksheet/WorksheetTemplateSidebar';
 import WorksheetV2Header from './WorksheetV2Header';
@@ -14,6 +14,46 @@ const WorksheetV2: React.FC = () => {
   const setWorksheetLoading = useWorksheetV2Store((state) => state.setWorksheetLoading);
   const setWorksheetLoadError = useWorksheetV2Store((state) => state.setWorksheetLoadError);
   const hydrateWorksheetUiInfo = useWorksheetV2Store((state) => state.hydrateWorksheetUiInfo);
+  const activeTab = useWorksheetV2Store((state) => state.activeTab);
+  const setActiveCard = useWorksheetV2Store((state) => state.setActiveCard);
+
+  const blurActiveEditableElement = useCallback(() => {
+    const activeElement = document.activeElement;
+    if (!(activeElement instanceof HTMLElement)) {
+      return;
+    }
+
+    const tagName = activeElement.tagName;
+    const isFormControl = tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
+    if (activeElement.isContentEditable || isFormControl) {
+      activeElement.blur();
+    }
+  }, []);
+
+  const handleRootMouseDownCapture = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement;
+
+      const moduleRoot = target.closest<HTMLElement>('.worksheet-v2-grid-card-root');
+      if (moduleRoot?.dataset.cardId) {
+        setActiveCard(activeTab, moduleRoot.dataset.cardId);
+        return;
+      }
+
+      const gridItem = target.closest<HTMLElement>('.react-grid-item');
+      if (gridItem) {
+        const gridCardRoot = gridItem.querySelector<HTMLElement>('.worksheet-v2-grid-card-root');
+        if (gridCardRoot?.dataset.cardId) {
+          setActiveCard(activeTab, gridCardRoot.dataset.cardId);
+          return;
+        }
+      }
+
+      setActiveCard(activeTab, null);
+      blurActiveEditableElement();
+    },
+    [activeTab, setActiveCard, blurActiveEditableElement],
+  );
 
   useEffect(() => {
     if (!worksheetId) {
@@ -57,10 +97,28 @@ const WorksheetV2: React.FC = () => {
     hydrateWorksheetUiInfo,
   ]);
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') {
+        return;
+      }
+
+      setActiveCard(activeTab, null);
+      blurActiveEditableElement();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeTab, setActiveCard, blurActiveEditableElement]);
+
   return (
     <div
       className='flex h-screen w-screen gap-2 overflow-hidden bg-[#f9f9f9] p-2'
       data-worksheet-id={worksheetId || ''}
+      onMouseDownCapture={handleRootMouseDownCapture}
     >
       <aside className='shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-white'>
         <WorksheetTemplateSidebar collapsible />

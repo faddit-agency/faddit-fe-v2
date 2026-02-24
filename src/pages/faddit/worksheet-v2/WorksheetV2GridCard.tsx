@@ -22,8 +22,9 @@ const WorksheetV2GridCard: React.FC<WorksheetV2GridCardProps> = ({
 }) => {
   return (
     <section
+      data-card-id={cardId}
       onMouseDownCapture={() => onActivate?.(cardId)}
-      className={`flex h-full min-h-0 w-full flex-col overflow-hidden rounded-md border bg-white transition-[border-color,box-shadow] duration-200 ${
+      className={`worksheet-v2-grid-card-root flex h-full min-h-0 w-full flex-col overflow-hidden rounded-md border bg-white transition-[border-color,box-shadow] duration-200 ${
         isActive ? 'border-faddit' : 'border-gray-200'
       }`}
       style={

@@ -312,7 +312,11 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
       isLoadingWorksheet: false,
       worksheetLoadError: null,
 
-      setActiveTab: (tab) => set({ activeTab: tab }),
+      setActiveTab: (tab) =>
+        set(() => ({
+          activeTab: tab,
+          activeCardIdByTab: buildInitialActiveCards(),
+        })),
 
       setActiveCard: (tab, cardId) =>
         set((state) => ({
