@@ -1,11 +1,6 @@
 import React, { useId, useState } from 'react';
 import * as PopoverPrimitive from '@radix-ui/react-popover';
 
-import UserImage02 from '../images/avatar-02.jpg';
-import UserImage03 from '../images/avatar-03.jpg';
-import UserImage04 from '../images/avatar-04.jpg';
-import UserImage05 from '../images/avatar-05.jpg';
-
 export interface DriveItemCardProps {
   /** 이미지 URL */
   imageSrc: string;
@@ -41,6 +36,15 @@ export interface DriveItemCardProps {
   onCardClick?: (id: string, event: React.MouseEvent<HTMLDivElement>) => void;
   dragSelectionIds?: string[];
   dragSelectionEntries?: Array<{ id: string; type: 'file' | 'folder'; name: string }>;
+  fileSystemId?: string;
+  parentId?: string | null;
+  sourcePath?: string;
+  stateStoreKey?: string;
+  materialAttributesCount?: number;
+  materialFetchedFromBackend?: boolean;
+  categoryLabel?: string;
+  summaryText?: string;
+  creatorName?: string;
 }
 
 const PencilIcon = ({ className }: { className?: string }) => (
@@ -352,13 +356,18 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
   actionHref = '#0',
   imageOverlay,
   children,
-  className = 'col-span-full sm:col-span-6 xl:col-span-3',
+  className = 'col-span-full sm:col-span-6 xl:col-span-4 2xl:col-span-3',
   isSelected = false,
   isActive = false,
   onSelectChange,
   onCardClick,
   dragSelectionIds,
   dragSelectionEntries,
+  materialAttributesCount,
+  materialFetchedFromBackend,
+  categoryLabel,
+  summaryText,
+  creatorName,
 }) => {
   const idPrefix = useId();
   const checkboxId = id || title;
@@ -551,7 +560,13 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
               }}
             />
           </label>
-          <img className='w-full' src={imageSrc} width='286' height='160' alt={imageAlt} />
+          <img
+            className='h-36 w-full object-cover sm:h-40'
+            src={imageSrc}
+            width='286'
+            height='160'
+            alt={imageAlt}
+          />
           {imageOverlay && <div className='absolute top-0 right-0 mt-4 mr-4'>{imageOverlay}</div>}
           {/* Hover: 연필 / 구분선 / 더보기 */}
           <div className='absolute top-3 right-3 flex items-center rounded-lg bg-white/90 opacity-0 shadow-sm backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100 dark:bg-gray-800/90'>
@@ -576,15 +591,15 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
         {/* Card Content */}
         <div className='flex grow flex-col p-5'>
           {/* Badge (이미지 아래) */}
-          {badge && (
+          {(categoryLabel || badge) && (
             <div className=''>
               <span className='inline-flex items-center rounded-full bg-[#3ec972]/20 px-2.5 pt-1 pb-0.5 text-center text-xs font-medium text-[#239F52] dark:bg-gray-700/80 dark:text-[#239F52]'>
-                {badge}
+                {categoryLabel || badge}
               </span>
             </div>
           )}
           <div className='mt-3 grow'>
-            <header className={subtitle ? 'mb-2' : 'mb-3'}>
+            <header className={subtitle || summaryText ? 'mb-2' : 'mb-3'}>
               <h3 className='mb-1 text-lg font-semibold text-gray-800 dark:text-gray-100'>
                 {title}
               </h3>
@@ -702,9 +717,15 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
                 </PopoverPrimitive.Portal>
               </PopoverPrimitive.Root>
 
-              {subtitle && (
-                <div className='text-sm text-gray-600 dark:text-gray-400'>{subtitle}</div>
+              {(summaryText || subtitle) && (
+                <div className='text-sm font-medium text-gray-600 dark:text-gray-400'>
+                  {summaryText || subtitle}
+                </div>
               )}
+
+              {/* <div className='mt-2 space-y-1 text-xs text-gray-500 dark:text-gray-400'>
+                {summaryText ? <div>{summaryText}</div> : null}
+              </div> */}
             </header>
 
             {children && <div className='mb-5'>{children}</div>}
@@ -712,36 +733,8 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
 
           {/* Card footer */}
           <div className='flex items-center justify-between'>
-            {/* Avatars group */}
-            <div className='-ml-0.5 flex -space-x-3'>
-              <img
-                className='box-content rounded-full border-2 border-white dark:border-gray-800'
-                src={UserImage02}
-                width='24'
-                height='24'
-                alt='Avatar'
-              />
-              <img
-                className='box-content rounded-full border-2 border-white dark:border-gray-800'
-                src={UserImage03}
-                width='24'
-                height='24'
-                alt='Avatar'
-              />
-              <img
-                className='box-content rounded-full border-2 border-white dark:border-gray-800'
-                src={UserImage04}
-                width='24'
-                height='24'
-                alt='Avatar'
-              />
-              <img
-                className='box-content rounded-full border-2 border-white dark:border-gray-800'
-                src={UserImage05}
-                width='24'
-                height='24'
-                alt='Avatar'
-              />
+            <div className='text-xs font-medium text-gray-500 dark:text-gray-400'>
+              생성자: {creatorName || '알 수 없음'}
             </div>
           </div>
         </div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import {
   DndContext,
@@ -15,7 +15,7 @@ import {
 import Drivebar from '../partials/Drivebar';
 import Header from '../partials/Header';
 import { DriveProvider, useDrive } from '../context/DriveContext';
-import DriveItemCard from '../components/DriveItemCard';
+import { useAuthStore } from '../store/useAuthStore';
 
 const getPointerCoordinates = (event: Event | null) => {
   if (!event) {
@@ -63,14 +63,26 @@ const DriveLayoutContent: React.FC = () => {
   const {
     activeDragItem,
     setActiveDragItem,
-    moveItemToFolder,
-    moveSidebarItem,
     items,
-    setItems,
-    driveFolders,
-    setDriveFolders,
-    addFileToSection,
+    rootFolderId,
+    currentFolderId,
+    hydrateDrive,
+    moveItems,
+    setItemsStarred,
+    getItemParentId,
+    setSidebarAutoOpenFolderId,
   } = useDrive();
+  const rootFolderFromAuth = useAuthStore((state) => state.user?.rootFolder);
+
+  useEffect(() => {
+    if (!rootFolderFromAuth) {
+      return;
+    }
+
+    hydrateDrive(rootFolderFromAuth).catch((error) => {
+      console.error('Failed to hydrate drive', error);
+    });
+  }, [rootFolderFromAuth, hydrateDrive]);
 
   const sensors = useSensors(
     useSensor(MouseSensor, {
@@ -146,70 +158,138 @@ const DriveLayoutContent: React.FC = () => {
     // console.log('Dragging over:', over?.id);
   };
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     const activeType = active.data.current?.type;
 
-    if (over && active.id !== over.id && activeType === 'sidebar-item') {
-      moveSidebarItem(active.id.toString(), over.id.toString());
+    if (!over || active.id === over.id) {
       setActiveDragItem(null);
       return;
     }
 
-    if (
-      over &&
-      active.id !== over.id &&
-      (activeType === 'drive-item' || activeType === 'drive-folder')
-    ) {
-      const selectedEntries =
-        (active.data.current?.selectedEntries as
-          | Array<{ id: string; type: 'file' | 'folder'; name: string }>
-          | undefined) || [];
+    if (!rootFolderId) {
+      setActiveDragItem(null);
+      return;
+    }
 
-      const entries =
-        selectedEntries.length > 0
-          ? selectedEntries
-          : [
-              {
-                id: active.id.toString(),
-                type: activeType === 'drive-folder' ? ('folder' as const) : ('file' as const),
-                name: String(active.data.current?.title || ''),
-              },
-            ];
+    const targetId = over.id.toString();
+    const overType = String(over.data.current?.type || '');
+    const overDataFolderId =
+      typeof over.data.current?.id === 'string' ? over.data.current.id : null;
+    const sidebarFolderTargetId = targetId.startsWith('sidebar-folder-')
+      ? targetId.replace('sidebar-folder-', '')
+      : null;
+    const isWorkspaceRootTarget = targetId === 'my-workspace' || targetId === 'section-workspace';
+    const isFolderDropTarget = overType === 'folder' || Boolean(sidebarFolderTargetId);
+    const normalizedTargetId =
+      targetId === 'drive-root-container' || isWorkspaceRootTarget
+        ? rootFolderId
+        : isFolderDropTarget && (overDataFolderId || sidebarFolderTargetId)
+          ? overDataFolderId
+            ? overDataFolderId
+            : sidebarFolderTargetId
+          : targetId;
 
-      const targetId = over.id.toString();
-      const movedIds = new Set<string>();
+    const resolveSourceParentId = (itemId: string, fallbackParentId?: string | null) =>
+      getItemParentId(itemId) || fallbackParentId || rootFolderId;
 
-      if (targetId === 'section-workspace' || targetId === 'section-favorite') {
-        const section = targetId === 'section-workspace' ? 'workspace' : 'favorite';
-        entries.forEach((entry) => {
-          addFileToSection(section, {
-            id: entry.id,
-            type: entry.type,
-            name: entry.name,
-          });
-          movedIds.add(entry.id);
-        });
-      } else {
-        entries.forEach((entry) => {
-          const moved = moveItemToFolder(
-            {
-              id: entry.id,
-              type: entry.type,
-              name: entry.name,
-            },
-            targetId,
-          );
-          if (moved) {
-            movedIds.add(entry.id);
+    try {
+      if (activeType === 'sidebar-item') {
+        const activeId = active.id.toString();
+        const sourceParentIdFromDrag =
+          typeof active.data.current?.parentId === 'string' ? active.data.current.parentId : null;
+        const sourceParentId =
+          sourceParentIdFromDrag ||
+          getItemParentId(activeId) ||
+          resolveSourceParentId(activeId, currentFolderId);
+
+        if (targetId === 'section-favorite') {
+          await setItemsStarred([activeId], true);
+        } else if (
+          isFolderDropTarget ||
+          targetId === 'drive-root-container' ||
+          isWorkspaceRootTarget
+        ) {
+          const shouldSkipSameParent = isWorkspaceRootTarget
+            ? false
+            : sourceParentId === normalizedTargetId;
+
+          if (activeId !== normalizedTargetId && !shouldSkipSameParent) {
+            await moveItems([activeId], normalizedTargetId, sourceParentId);
+            if (isFolderDropTarget) {
+              setSidebarAutoOpenFolderId(normalizedTargetId);
+            }
+          } else if (import.meta.env.DEV) {
+            console.debug('Skipped sidebar move', {
+              activeId,
+              targetId,
+              normalizedTargetId,
+              sourceParentId,
+              overType,
+              sourceParentIdFromDrag,
+            });
           }
-        });
+        }
+
+        setActiveDragItem(null);
+        return;
       }
 
-      if (movedIds.size > 0) {
-        setItems((prev) => prev.filter((item) => !movedIds.has(item.id)));
-        setDriveFolders((prev) => prev.filter((folder) => !movedIds.has(folder.id)));
+      if (activeType === 'drive-item' || activeType === 'drive-folder') {
+        const selectedEntries =
+          (active.data.current?.selectedEntries as
+            | Array<{ id: string; type: 'file' | 'folder'; name: string }>
+            | undefined) || [];
+
+        const entries =
+          selectedEntries.length > 0
+            ? selectedEntries
+            : [
+                {
+                  id: active.id.toString(),
+                  type: activeType === 'drive-folder' ? ('folder' as const) : ('file' as const),
+                  name: String(active.data.current?.title || ''),
+                },
+              ];
+
+        if (targetId === 'section-favorite') {
+          await setItemsStarred(
+            entries.map((entry) => entry.id),
+            true,
+          );
+        } else {
+          if (
+            !(isFolderDropTarget || targetId === 'drive-root-container' || isWorkspaceRootTarget)
+          ) {
+            setActiveDragItem(null);
+            return;
+          }
+
+          const moveTargetFolderId = normalizedTargetId;
+
+          const groupedBySource = new Map<string, string[]>();
+          entries.forEach((entry) => {
+            const sourceParentId = resolveSourceParentId(entry.id, currentFolderId);
+            if (sourceParentId === moveTargetFolderId) {
+              return;
+            }
+
+            const current = groupedBySource.get(sourceParentId) || [];
+            current.push(entry.id);
+            groupedBySource.set(sourceParentId, current);
+          });
+
+          for (const [sourceParentId, ids] of groupedBySource.entries()) {
+            await moveItems(ids, moveTargetFolderId, sourceParentId);
+          }
+
+          if (isFolderDropTarget) {
+            setSidebarAutoOpenFolderId(moveTargetFolderId);
+          }
+        }
       }
+    } catch (error) {
+      console.error('Failed to update drive folder state', error);
     }
 
     setActiveDragItem(null);

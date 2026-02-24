@@ -4,20 +4,14 @@ import Transition from '../utils/Transition';
 function ModalFooterBasic({ children, footer, id, title, modalOpen, setModalOpen }) {
   const modalContent = useRef(null);
 
-  // close on click outside
-  useEffect(() => {
-    const clickHandler = ({ target }) => {
-      if (!modalOpen || modalContent.current.contains(target)) return;
-      setModalOpen(false);
-    };
-    document.addEventListener('click', clickHandler);
-    return () => document.removeEventListener('click', clickHandler);
-  }, [modalOpen, setModalOpen]);
-
   // close if the esc key is pressed
   useEffect(() => {
+    if (!modalOpen) {
+      return undefined;
+    }
+
     const keyHandler = ({ keyCode }) => {
-      if (!modalOpen || keyCode !== 27) return;
+      if (keyCode !== 27) return;
       setModalOpen(false);
     };
     document.addEventListener('keydown', keyHandler);
@@ -28,7 +22,8 @@ function ModalFooterBasic({ children, footer, id, title, modalOpen, setModalOpen
     <>
       {/* Modal backdrop */}
       <Transition
-        className='fixed inset-0 bg-gray-900/30 z-50 transition-opacity'
+        className='fixed inset-0 z-50 bg-gray-900/30 transition-opacity'
+        onMouseDown={() => setModalOpen(false)}
         show={modalOpen}
         enter='transition ease-out duration-200'
         enterStart='opacity-0'
@@ -41,7 +36,7 @@ function ModalFooterBasic({ children, footer, id, title, modalOpen, setModalOpen
       {/* Modal dialog */}
       <Transition
         id={id}
-        className='fixed inset-0 z-50 overflow-hidden flex items-center my-4 justify-center px-4 sm:px-6'
+        className='fixed inset-0 z-50 my-4 flex items-center justify-center overflow-hidden px-4 sm:px-6'
         role='dialog'
         aria-modal='true'
         show={modalOpen}
@@ -54,14 +49,14 @@ function ModalFooterBasic({ children, footer, id, title, modalOpen, setModalOpen
       >
         <div
           ref={modalContent}
-          className='bg-white dark:bg-gray-800 rounded-lg shadow-lg max-w-lg w-full max-h-full flex flex-col'
+          className='flex max-h-full w-full max-w-lg flex-col rounded-lg bg-white shadow-lg dark:bg-gray-800'
         >
           {/* Modal header - 고정 */}
-          <div className='px-5 py-3 border-b border-gray-200 dark:border-gray-700/60 flex-shrink-0'>
-            <div className='flex justify-between items-center'>
+          <div className='flex-shrink-0 border-b border-gray-200 px-5 py-3 dark:border-gray-700/60'>
+            <div className='flex items-center justify-between'>
               <div className='font-semibold text-gray-800 dark:text-gray-100'>{title}</div>
               <button
-                className='text-gray-400 dark:text-gray-500 hover:text-gray-500 dark:hover:text-gray-400'
+                className='text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400'
                 onClick={(e) => {
                   e.stopPropagation();
                   setModalOpen(false);
@@ -75,7 +70,7 @@ function ModalFooterBasic({ children, footer, id, title, modalOpen, setModalOpen
             </div>
           </div>
           {/* 스크롤 가능한 컨텐츠 영역 */}
-          <div className='overflow-y-auto flex-1'>{children}</div>
+          <div className='flex-1 overflow-y-auto'>{children}</div>
           {/* Modal footer - 고정 */}
           {footer && <div className='flex-shrink-0'>{footer}</div>}
         </div>
