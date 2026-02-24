@@ -213,12 +213,14 @@ export default function WorksheetTemplateSidebar({
               const visible = visMap[card.id] ?? true;
               const custom = !card.isDefault;
               const isEditingCustom = custom && editingCustomCardId === card.id;
+              const required = card.id === 'diagram-view';
 
               return (
                 <div
                   key={card.id}
-                  draggable={!visible}
+                  draggable={!visible && !required}
                   onDragStart={(event) => {
+                    if (required) return;
                     setDragCardId(card.id);
                     setDraggingCardId(card.id);
                     event.dataTransfer.setData(WORKSHEET_MODULE_DRAG_TYPE, card.id);
@@ -233,8 +235,9 @@ export default function WorksheetTemplateSidebar({
                 >
                   <button
                     type='button'
+                    disabled={required}
                     onClick={() => toggleCardVisibility(worksheetActiveTab, card.id)}
-                    className='inline-flex items-center'
+                    className={`inline-flex items-center ${required ? 'cursor-not-allowed opacity-40' : ''}`}
                     aria-label={`${card.title} 표시 토글`}
                   >
                     <span
@@ -314,10 +317,14 @@ export default function WorksheetTemplateSidebar({
 
                   <span
                     className={`rounded px-1.5 py-0.5 text-[10px] ${
-                      custom ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500'
+                      required
+                        ? 'bg-amber-50 text-amber-600'
+                        : custom
+                          ? 'bg-blue-50 text-blue-600'
+                          : 'bg-gray-100 text-gray-500'
                     }`}
                   >
-                    {custom ? '커스텀' : '기본'}
+                    {required ? '필수' : custom ? '커스텀' : '기본'}
                   </span>
                 </div>
               );

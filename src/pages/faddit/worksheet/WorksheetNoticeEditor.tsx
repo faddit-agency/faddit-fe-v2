@@ -25,6 +25,34 @@ type ToolButtonProps = {
   title: string;
 };
 
+type WorksheetNoticeEditorProps = {
+  value?: string;
+  onChange?: (html: string) => void;
+  placeholder?: string;
+  initialContent?: string;
+};
+
+const DEFAULT_PLACEHOLDER =
+  '작업 시 주의사항을 입력하세요 (예: 봉제 순서, 시접 규격, 검수 체크포인트)';
+
+const DEFAULT_NOTICE_CONTENT = `
+  <h2>작업 시 주의사항</h2>
+  <ul>
+    <li>어깨 봉제 전 앞/뒤판 기준점 노치를 먼저 맞춰주세요.</li>
+    <li>넥 시보리 연결 시 시접 0.7cm를 유지합니다.</li>
+    <li>최종 다림질 전 실밥 정리 및 오염 여부를 확인하세요.</li>
+  </ul>
+`;
+
+function normalizeEditorHtml(html: string) {
+  const trimmed = html.trim();
+  if (trimmed === '' || trimmed === '<p></p>') {
+    return '';
+  }
+
+  return trimmed;
+}
+
 const ListTabKeymap = Extension.create({
   name: 'listTabKeymap',
   addKeyboardShortcuts() {
@@ -59,7 +87,12 @@ function ToolButton({ active = false, disabled = false, onClick, children, title
   );
 }
 
-export default function WorksheetNoticeEditor() {
+export default function WorksheetNoticeEditor({
+  value,
+  onChange,
+  placeholder = DEFAULT_PLACEHOLDER,
+  initialContent = DEFAULT_NOTICE_CONTENT,
+}: WorksheetNoticeEditorProps) {
   const [, setEditorVersion] = useState(0);
   const editor = useEditor({
     extensions: [
@@ -69,17 +102,14 @@ export default function WorksheetNoticeEditor() {
       Underline,
       ListTabKeymap,
       Placeholder.configure({
-        placeholder: '작업 시 주의사항을 입력하세요 (예: 봉제 순서, 시접 규격, 검수 체크포인트)',
+        placeholder,
       }),
     ],
-    content: `
-      <h2>작업 시 주의사항</h2>
-      <ul>
-        <li>어깨 봉제 전 앞/뒤판 기준점 노치를 먼저 맞춰주세요.</li>
-        <li>넥 시보리 연결 시 시접 0.7cm를 유지합니다.</li>
-        <li>최종 다림질 전 실밥 정리 및 오염 여부를 확인하세요.</li>
-      </ul>
-    `,
+    content: value ?? initialContent,
+    onUpdate: ({ editor: nextEditor }) => {
+      if (!onChange) return;
+      onChange(normalizeEditorHtml(nextEditor.getHTML()));
+    },
     editorProps: {
       attributes: {
         class:
@@ -105,6 +135,16 @@ export default function WorksheetNoticeEditor() {
       editor.off('blur', syncToolbar);
     };
   }, [editor]);
+
+  useEffect(() => {
+    if (!editor || value === undefined) return;
+
+    const current = normalizeEditorHtml(editor.getHTML());
+    const next = normalizeEditorHtml(value);
+    if (current === next) return;
+
+    editor.commands.setContent(next || '', false);
+  }, [editor, value]);
 
   if (!editor) return null;
 
