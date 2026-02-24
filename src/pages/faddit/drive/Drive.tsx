@@ -1,19 +1,33 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import { LayoutGrid, List } from 'lucide-react';
+import * as PopoverPrimitive from '@radix-ui/react-popover';
+import { LayoutGrid, List, SlidersHorizontal } from 'lucide-react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import DriveItemCard from '../../../components/DriveItemCard';
 import GlobalTooltip from '../../../components/ui/GlobalTooltip';
 import Notification from '../../../components/Notification';
-import { useDrive, DriveItem, DriveFolder } from '../../../context/DriveContext';
+import { useDrive, DriveItem, DriveFolder, SidebarItem } from '../../../context/DriveContext';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { useDriveMaterialStore } from '../../../store/useDriveMaterialStore';
-import AddViewOptionModal from './components/AddViewOptionModal';
-import CreateFolderModal from './components/CreateFolderModal';
-import CreateMaterialModal, { CreateMaterialFormValue } from './components/CreateMaterialModal';
-import { createMaterial } from './materialApi';
-import { createDriveFile, DriveUploadTag } from '../../../lib/api/driveApi';
+import TemplateCreateModal, { CreateMaterialFormValue } from './components/TemplateCreateModal';
+import {
+  createMaterial,
+  getMaterialFieldDefs,
+  getMaterialsByFileSystem,
+  MaterialFieldDef,
+  updateMaterial,
+} from './materialApi';
+import {
+  createDriveFile,
+  DriveNode,
+  DriveSearchCategory,
+  DriveUploadTag,
+  getDriveFilePreviewUrl,
+  searchDriveItems,
+  updateDriveItems,
+} from '../../../lib/api/driveApi';
+import ChildClothImage from '../../../images/faddit/childcloth.png';
 
 type ViewMode = 'grid' | 'list';
 
@@ -32,6 +46,130 @@ type DragSelectionEntry = {
   name: string;
 };
 
+const SEARCH_CATEGORY_VALUES: DriveSearchCategory[] = [
+  'folder',
+  'worksheet',
+  'faddit',
+  'schematic',
+  'label',
+  'fabric',
+  'pattern',
+  'print',
+  'etc',
+];
+
+const MATERIAL_CATEGORY_OPTIONS: Array<{
+  value: 'fabric' | 'rib_fabric' | 'label' | 'trim';
+  label: string;
+}> = [
+  { value: 'label', label: '라벨' },
+  { value: 'fabric', label: '원단' },
+  { value: 'rib_fabric', label: '시보리원단' },
+  { value: 'trim', label: '부자재' },
+];
+
+const isSearchCategory = (value: string): value is DriveSearchCategory => {
+  return SEARCH_CATEGORY_VALUES.includes(value as DriveSearchCategory);
+};
+
+const formatBytes = (value?: number) => {
+  if (!value || Number.isNaN(value)) {
+    return '-';
+  }
+
+  if (value < 1024) {
+    return `${value} B`;
+  }
+
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let next = value / 1024;
+  let index = 0;
+  while (next >= 1024 && index < units.length - 1) {
+    next /= 1024;
+    index += 1;
+  }
+
+  return `${next.toFixed(next >= 10 ? 0 : 1)} ${units[index]}`;
+};
+
+const isImageFile = (extension?: string) => {
+  if (!extension) {
+    return false;
+  }
+
+  const value = extension.toLowerCase();
+  return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(value);
+};
+
+const toEditableAttributeValue = (value: unknown) => {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '';
+  }
+};
+
+const parseEditedAttributeValue = (rawValue: string, originalValue: unknown): unknown => {
+  const trimmed = rawValue.trim();
+  if (trimmed === '') {
+    return '';
+  }
+
+  if (typeof originalValue === 'number') {
+    const numeric = Number(trimmed);
+    return Number.isNaN(numeric) ? originalValue : numeric;
+  }
+
+  if (typeof originalValue === 'boolean') {
+    if (trimmed.toLowerCase() === 'true') {
+      return true;
+    }
+    if (trimmed.toLowerCase() === 'false') {
+      return false;
+    }
+    return originalValue;
+  }
+
+  if (Array.isArray(originalValue) || (originalValue && typeof originalValue === 'object')) {
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return originalValue;
+    }
+  }
+
+  return rawValue;
+};
+
+const fileToDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error('Failed to read image file'));
+    };
+    reader.onerror = () => reject(reader.error || new Error('Failed to read image file'));
+    reader.readAsDataURL(file);
+  });
+
+const shouldShowMaterialField = (fieldDef: MaterialFieldDef, values: Record<string, string>) => {
+  if (!fieldDef.show_if) {
+    return true;
+  }
+
+  const compareValue = String(values[fieldDef.show_if.field] ?? '');
+  return fieldDef.show_if.in.includes(compareValue);
+};
+
 type MarqueeRect = {
   x: number;
   y: number;
@@ -47,6 +185,8 @@ const DriveFolderTile: React.FC<{
   onToggleSelect: (checked: boolean) => void;
   onPress: (event: React.MouseEvent<HTMLDivElement>) => void;
   onOpen: (folderId: string) => void;
+  onMoveFolder: (folderId: string) => void;
+  onRenameFolder: (folderId: string, name: string) => void;
 }> = ({
   folder,
   isSelected,
@@ -55,7 +195,10 @@ const DriveFolderTile: React.FC<{
   onToggleSelect,
   onPress,
   onOpen,
+  onMoveFolder,
+  onRenameFolder,
 }) => {
+  const [menuOpen, setMenuOpen] = useState(false);
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: folder.id,
     data: {
@@ -143,6 +286,59 @@ const DriveFolderTile: React.FC<{
           </svg>
         )}
         <span className='text-xl font-medium text-gray-800 dark:text-gray-100'>{folder.name}</span>
+      </div>
+
+      <div
+        className={`absolute top-2 right-2 z-10 transition-opacity ${
+          isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+        }`}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <PopoverPrimitive.Root open={menuOpen} onOpenChange={setMenuOpen}>
+          <PopoverPrimitive.Trigger asChild>
+            <button
+              type='button'
+              className='inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white/95 text-gray-600 shadow-sm hover:bg-gray-100 hover:text-gray-900 dark:border-gray-700/60 dark:bg-gray-800/95 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100'
+              aria-label='폴더 메뉴'
+            >
+              <svg className='h-4 w-4 fill-current' viewBox='0 0 16 16' aria-hidden='true'>
+                <circle cx='4' cy='8' r='1.25' />
+                <circle cx='8' cy='8' r='1.25' />
+                <circle cx='12' cy='8' r='1.25' />
+              </svg>
+            </button>
+          </PopoverPrimitive.Trigger>
+          <PopoverPrimitive.Portal>
+            <PopoverPrimitive.Content
+              align='end'
+              side='bottom'
+              sideOffset={6}
+              className='z-50 w-36 rounded-lg border border-gray-200 bg-white p-1.5 shadow-lg dark:border-gray-700/60 dark:bg-gray-800'
+            >
+              <button
+                type='button'
+                className='w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
+                onClick={() => {
+                  setMenuOpen(false);
+                  onMoveFolder(folder.id);
+                }}
+              >
+                폴더 이동
+              </button>
+              <button
+                type='button'
+                className='w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
+                onClick={() => {
+                  setMenuOpen(false);
+                  onRenameFolder(folder.id, folder.name);
+                }}
+              >
+                폴더 이름 수정
+              </button>
+            </PopoverPrimitive.Content>
+          </PopoverPrimitive.Portal>
+        </PopoverPrimitive.Root>
       </div>
     </div>
   );
@@ -280,6 +476,13 @@ const FadditDrive: React.FC = () => {
     driveFolders,
     setDriveFolders,
     createFolder,
+    deleteItems,
+    restoreItems,
+    moveItems,
+    setItemsStarred,
+    getItemParentId,
+    workspaces,
+    loadFolderChildren,
     loadFolderView,
     currentFolderPath,
     currentFolderIdPath,
@@ -294,26 +497,50 @@ const FadditDrive: React.FC = () => {
   const userId = useAuthStore((state) => state.user?.userId);
   const currentUserName = useAuthStore((state) => state.user?.name);
   const materialsByFileSystemId = useDriveMaterialStore((state) => state.materialsByFileSystemId);
+  const setMaterialsForFile = useDriveMaterialStore((state) => state.setMaterialsForFile);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [isCreatingMaterial, setIsCreatingMaterial] = useState(false);
-  const [addViewOptionModalOpen, setAddViewOptionModalOpen] = useState(false);
-  const [createFolderModalOpen, setCreateFolderModalOpen] = useState(false);
-  const [createMaterialModalOpen, setCreateMaterialModalOpen] = useState(false);
+  const [templateCreateModalOpen, setTemplateCreateModalOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activeItemId, setActiveItemId] = useState<string>('');
   const [detailPanelOpen, setDetailPanelOpen] = useState(false);
+  const [detailPanelEditMode, setDetailPanelEditMode] = useState(false);
+  const [detailSaveLoading, setDetailSaveLoading] = useState(false);
+  const [editFileName, setEditFileName] = useState('');
+  const [editImageUrl, setEditImageUrl] = useState('');
+  const [editImageFile, setEditImageFile] = useState<File | null>(null);
+  const [editImagePreviewUrl, setEditImagePreviewUrl] = useState<string | null>(null);
+  const [editImageDragging, setEditImageDragging] = useState(false);
+  const [editMaterialCategory, setEditMaterialCategory] = useState<
+    'fabric' | 'rib_fabric' | 'label' | 'trim'
+  >('label');
+  const [editMaterialFieldDefs, setEditMaterialFieldDefs] = useState<MaterialFieldDef[]>([]);
+  const [editMaterialFieldDefsLoading, setEditMaterialFieldDefsLoading] = useState(false);
+  const [editAttributes, setEditAttributes] = useState<Record<string, string>>({});
   const [deleteToastOpen, setDeleteToastOpen] = useState(false);
-  const [deletedSnapshot, setDeletedSnapshot] = useState<{
-    items: DriveItem[];
-    folders: DriveFolder[];
-  }>({
-    items: [],
-    folders: [],
-  });
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchTotalCount, setSearchTotalCount] = useState(0);
+  const [resultFilterOpen, setResultFilterOpen] = useState(false);
+  const [draftSearchCategories, setDraftSearchCategories] = useState<DriveSearchCategory[]>([]);
+  const [searchInputValue, setSearchInputValue] = useState('');
   const [deletedMessage, setDeletedMessage] = useState('');
+  const [deletedIds, setDeletedIds] = useState<string[]>([]);
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false);
+  const [moveSourceId, setMoveSourceId] = useState<string>('');
+  const [moveTargetFolderId, setMoveTargetFolderId] = useState<string>('');
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [renameFolderId, setRenameFolderId] = useState('');
+  const [renameFolderName, setRenameFolderName] = useState('');
+  const [expandedMoveFolders, setExpandedMoveFolders] = useState<Record<string, boolean>>({});
+  const [favoriteToastOpen, setFavoriteToastOpen] = useState(false);
+  const [favoriteMessage, setFavoriteMessage] = useState('즐겨찾기가 완료되었습니다');
   const gridSelectionRef = useRef<HTMLDivElement | null>(null);
   const gridContentRef = useRef<HTMLDivElement | null>(null);
+  const editImageInputRef = useRef<HTMLInputElement | null>(null);
+  const keepNextDetailEditModeRef = useRef(false);
+  const resultFilterRef = useRef<HTMLDivElement | null>(null);
+  const resultSearchInputRef = useRef<HTMLInputElement | null>(null);
   const suppressBlankClearRef = useRef(false);
   const [marqueeRect, setMarqueeRect] = useState<MarqueeRect | null>(null);
   const { setNodeRef: setRootDropRef } = useDroppable({
@@ -326,6 +553,18 @@ const FadditDrive: React.FC = () => {
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const fileIdFromQuery = searchParams.get('file') || '';
+  const searchModeParam = searchParams.get('mode') || '';
+  const searchKeyword = (searchParams.get('q') || '').trim();
+  const searchCategoriesParam = searchParams.get('categories') || '';
+  const searchCategories = useMemo(
+    () =>
+      searchCategoriesParam
+        .split(',')
+        .map((value) => value.trim())
+        .filter((value): value is DriveSearchCategory => Boolean(value) && isSearchCategory(value)),
+    [searchCategoriesParam],
+  );
+  const isSearchMode = searchModeParam === 'search' || Boolean(searchKeyword);
 
   const categoryLabelMap: Record<string, string> = {
     fabric: '원단',
@@ -338,6 +577,18 @@ const FadditDrive: React.FC = () => {
     print: '프린트',
     etc: '부자재',
     faddit: '파일',
+  };
+
+  const searchFilterLabelMap: Record<DriveSearchCategory, string> = {
+    folder: '폴더',
+    worksheet: '작업지시서',
+    schematic: '도식화',
+    etc: '기타',
+    pattern: '패턴',
+    print: '인쇄',
+    faddit: 'faddit',
+    fabric: '원단',
+    label: '라벨',
   };
 
   const attributeLabelMap: Record<string, string> = {
@@ -387,6 +638,15 @@ const FadditDrive: React.FC = () => {
     return '파일';
   };
 
+  const getDisplayImageSrc = (fileId: string, fallbackImageSrc: string) => {
+    const linkedMaterials = materialsByFileSystemId[fileId] || [];
+    const primaryMaterial = linkedMaterials[0];
+    if (primaryMaterial?.image_url) {
+      return primaryMaterial.image_url;
+    }
+    return fallbackImageSrc;
+  };
+
   const formatAttributeValue = (value: unknown): string => {
     if (value === null || value === undefined || value === '') {
       return '-';
@@ -426,7 +686,6 @@ const FadditDrive: React.FC = () => {
       .split('/')
       .map((segment) => segment.trim())
       .filter(Boolean);
-
     return segments.length > 0 ? segments : ['홈'];
   }, [currentFolderPath]);
 
@@ -440,7 +699,38 @@ const FadditDrive: React.FC = () => {
       .filter(Boolean);
   }, [currentFolderIdPath]);
 
-  const pageTitle = breadcrumbParts[breadcrumbParts.length - 1] || '홈';
+  const visibleBreadcrumbParts = useMemo(
+    () => breadcrumbParts.filter((part) => part !== '홈'),
+    [breadcrumbParts],
+  );
+
+  const breadcrumbIdStartIndex = useMemo(
+    () => Math.max(0, breadcrumbIds.length - visibleBreadcrumbParts.length),
+    [breadcrumbIds.length, visibleBreadcrumbParts.length],
+  );
+
+  const pageTitle = isSearchMode ? '검색결과' : breadcrumbParts[breadcrumbParts.length - 1] || '홈';
+
+  useEffect(() => {
+    setDraftSearchCategories(searchCategories);
+    if (!isSearchMode) {
+      setResultFilterOpen(false);
+    }
+  }, [searchCategories, isSearchMode]);
+
+  useEffect(() => {
+    setSearchInputValue(searchKeyword);
+    if (!isSearchMode) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      resultSearchInputRef.current?.focus();
+      resultSearchInputRef.current?.select();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [isSearchMode, searchKeyword]);
 
   const navigateToFolder = (nextFolderId: string) => {
     navigate(`/faddit/drive/${nextFolderId}`);
@@ -457,21 +747,110 @@ const FadditDrive: React.FC = () => {
   };
 
   useEffect(() => {
-    const effectiveRootFolderId = rootFolderId || rootFolderFromAuth;
-    if (!effectiveRootFolderId) {
+    if (!isSearchMode) {
       return;
     }
 
+    let cancelled = false;
+
+    const runSearch = async () => {
+      try {
+        setSearchLoading(true);
+        const searchResult = await searchDriveItems({
+          search: searchKeyword || undefined,
+          page: 1,
+          categories: searchCategories.length ? searchCategories : undefined,
+          category: searchCategories.length === 1 ? searchCategories[0] : undefined,
+        });
+
+        const folders = searchResult.data
+          .filter((node) => node.type === 'folder')
+          .map((node) => ({
+            id: node.fileSystemId,
+            name: node.name,
+            shared: false,
+            updatedAt: node.updatedAt || '',
+            updatedBy: '',
+            parentId: node.parentId,
+            isStarred: node.isStarred,
+          }));
+
+        const files = await Promise.all(
+          searchResult.data
+            .filter((node) => node.type !== 'folder')
+            .map(async (node) => {
+              const previewUrl = isImageFile(node.mimetype)
+                ? await getDriveFilePreviewUrl(node.fileSystemId).catch(() => '')
+                : '';
+
+              return {
+                id: node.fileSystemId,
+                imageSrc: previewUrl || ChildClothImage,
+                imageAlt: node.name,
+                title: node.name,
+                subtitle: node.mimetype ? `.${node.mimetype}` : 'file',
+                badge: node.tag ? String(node.tag) : '파일',
+                isStarred: node.isStarred,
+                owner: node.creatorName || undefined,
+                date: node.updatedAt ? String(node.updatedAt).slice(0, 10) : '-',
+                size: formatBytes(node.size),
+                parentId: node.parentId,
+                sourcePath: node.path,
+                stateStoreKey: 'Drive.search.items',
+              } as DriveItem;
+            }),
+        );
+
+        if (cancelled) {
+          return;
+        }
+
+        setDriveFolders(folders);
+        setItems(files);
+        setSearchTotalCount(searchResult.count);
+        clearSelectionEffects();
+      } catch (error) {
+        console.error('Failed to load search results', error);
+        if (!cancelled) {
+          setDriveFolders([]);
+          setItems([]);
+          setSearchTotalCount(0);
+        }
+      } finally {
+        if (!cancelled) {
+          setSearchLoading(false);
+        }
+      }
+    };
+
+    void runSearch();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isSearchMode, searchCategories, searchKeyword, setDriveFolders, setItems]);
+
+  useEffect(() => {
+    const effectiveRootFolderId = rootFolderId || rootFolderFromAuth;
+    if (!effectiveRootFolderId || isSearchMode) {
+      return;
+    }
+
+    setSearchLoading(false);
+    setSearchTotalCount(0);
     const targetFolderId = folderId || effectiveRootFolderId;
     loadFolderView(targetFolderId).catch((error) => {
       console.error('Failed to load drive folder view', error);
     });
-  }, [folderId, loadFolderView, rootFolderFromAuth, rootFolderId]);
+  }, [folderId, isSearchMode, loadFolderView, rootFolderFromAuth, rootFolderId]);
 
   useEffect(() => {
     if (!fileIdFromQuery) {
       return;
     }
+
+    const keepEditMode = keepNextDetailEditModeRef.current;
+    keepNextDetailEditModeRef.current = false;
 
     const queryItem = items.find((item) => item.id === fileIdFromQuery);
     if (!queryItem) {
@@ -484,12 +863,14 @@ const FadditDrive: React.FC = () => {
 
     setSelectedIds([queryItem.id]);
     setActiveItemId(queryItem.id);
+    setDetailPanelEditMode(keepEditMode);
     setDetailPanelOpen(true);
   }, [fileIdFromQuery, items]);
 
   const clearSelectionEffects = () => {
     setSelectedIds([]);
     setActiveItemId('');
+    setDetailPanelEditMode(false);
     setDetailPanelOpen(false);
     setFileQuery(null);
   };
@@ -506,12 +887,14 @@ const FadditDrive: React.FC = () => {
   useEffect(() => {
     if (items.length === 0) {
       setActiveItemId('');
+      setDetailPanelEditMode(false);
       setDetailPanelOpen(false);
       return;
     }
 
     if (activeItemId && !items.some((item) => item.id === activeItemId)) {
       setActiveItemId('');
+      setDetailPanelEditMode(false);
       setDetailPanelOpen(false);
     }
   }, [items, activeItemId]);
@@ -529,15 +912,47 @@ const FadditDrive: React.FC = () => {
   }, [deleteToastOpen]);
 
   useEffect(() => {
+    if (!favoriteToastOpen) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setFavoriteToastOpen(false);
+    }, 5000);
+
+    return () => window.clearTimeout(timer);
+  }, [favoriteToastOpen]);
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        if (resultFilterOpen) {
+          setResultFilterOpen(false);
+          return;
+        }
         clearSelectionEffects();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [resultFilterOpen]);
+
+  useEffect(() => {
+    if (!resultFilterOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (!resultFilterRef.current?.contains(target)) {
+        setResultFilterOpen(false);
+      }
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+    return () => window.removeEventListener('mousedown', handlePointerDown);
+  }, [resultFilterOpen]);
 
   const applySelection = (id: string, checked: boolean) => {
     setSelectedIds((prev) => {
@@ -571,17 +986,30 @@ const FadditDrive: React.FC = () => {
     if (!isMultiSelectGesture(event)) {
       setFileQuery(itemId);
       setActiveItemId(itemId);
+      setDetailPanelEditMode(false);
       setDetailPanelOpen(true);
     }
   };
 
-  const handleBulkDelete = () => {
+  const handleOpenFileEditPanel = (itemId: string) => {
+    keepNextDetailEditModeRef.current = true;
+    setSelectedIds([itemId]);
+    setFileQuery(itemId);
+    setActiveItemId(itemId);
+    setDetailPanelEditMode(true);
+    setDetailPanelOpen(true);
+  };
+
+  const handleBulkDelete = async () => {
     if (selectedIds.length === 0) {
       return;
     }
 
-    const deletingItems = items.filter((item) => selectedSet.has(item.id));
-    const deletingFolders = driveFolders.filter((folder) => selectedSet.has(folder.id));
+    const idsToDelete = [...selectedIds];
+    const deleteSet = new Set(idsToDelete);
+
+    const deletingItems = items.filter((item) => deleteSet.has(item.id));
+    const deletingFolders = driveFolders.filter((folder) => deleteSet.has(folder.id));
     const deleteCount = deletingItems.length + deletingFolders.length;
 
     if (deleteCount === 1) {
@@ -594,34 +1022,223 @@ const FadditDrive: React.FC = () => {
       setDeletedMessage(`${deleteCount}개 항목이 삭제되었습니다`);
     }
 
-    setDeletedSnapshot({
-      items,
-      folders: driveFolders,
-    });
-    setItems((prev) => prev.filter((item) => !selectedSet.has(item.id)));
-    setDriveFolders((prev) => prev.filter((folder) => !selectedSet.has(folder.id)));
+    if (activeItemId && deleteSet.has(activeItemId)) {
+      setDetailPanelOpen(false);
+      setActiveItemId('');
+      setFileQuery(null);
+    }
+
     setSelectedIds([]);
-    setDeleteToastOpen(true);
+
+    try {
+      await deleteItems(idsToDelete);
+      setDeletedIds(idsToDelete);
+      setDeleteToastOpen(true);
+    } catch (error) {
+      console.error('Failed to delete drive items', error);
+      setDeletedMessage('삭제 중 오류가 발생했습니다');
+      setDeletedIds([]);
+      setDeleteToastOpen(true);
+      await refreshDrive();
+    }
   };
 
-  const handleUndoDelete = () => {
-    setItems(deletedSnapshot.items);
-    setDriveFolders(deletedSnapshot.folders);
-    setDeleteToastOpen(false);
+  const handleUndoDelete = async () => {
+    if (deletedIds.length === 0) {
+      return;
+    }
+
+    try {
+      await restoreItems(deletedIds);
+      setDeleteToastOpen(false);
+      setDeletedIds([]);
+    } catch (error) {
+      console.error('Failed to restore drive items', error);
+      setDeletedMessage('복원 중 오류가 발생했습니다');
+      setDeleteToastOpen(true);
+      await refreshDrive();
+    }
+  };
+
+  const handleOpenMoveDialog = (id: string) => {
+    const effectiveRoot = rootFolderId || rootFolderFromAuth || '';
+    setMoveSourceId(id);
+    setMoveTargetFolderId(currentFolderId || effectiveRoot);
+    setExpandedMoveFolders({});
+    setMoveDialogOpen(true);
+  };
+
+  const toggleMoveFolderExpand = (folderId: string) => {
+    setExpandedMoveFolders((prev) => {
+      const nextOpen = !prev[folderId];
+      if (nextOpen) {
+        loadFolderChildren(folderId).catch((error) => {
+          console.error('Failed to load move target folder children', error);
+        });
+      }
+      return {
+        ...prev,
+        [folderId]: nextOpen,
+      };
+    });
+  };
+
+  const handleConfirmMoveFromMenu = async () => {
+    if (!moveSourceId || !moveTargetFolderId) {
+      return;
+    }
+
+    const effectiveRoot = rootFolderId || rootFolderFromAuth || '';
+    const sourceParentId = getItemParentId(moveSourceId) || currentFolderId || effectiveRoot;
+
+    if (
+      !sourceParentId ||
+      sourceParentId === moveTargetFolderId ||
+      moveSourceId === moveTargetFolderId
+    ) {
+      setMoveDialogOpen(false);
+      return;
+    }
+
+    try {
+      await moveItems([moveSourceId], moveTargetFolderId, sourceParentId);
+      setMoveDialogOpen(false);
+    } catch (error) {
+      console.error('Failed to move drive item from kebab menu', error);
+      setMoveDialogOpen(false);
+      await refreshDrive();
+    }
+  };
+
+  const handleAddFavoriteFromMenu = async (id: string, nextStarred: boolean) => {
+    try {
+      await setItemsStarred([id], nextStarred);
+      setFavoriteMessage(nextStarred ? '즐겨찾기가 완료되었습니다' : '즐겨찾기가 취소되었습니다');
+      setFavoriteToastOpen(true);
+    } catch (error) {
+      console.error('Failed to set favorite from kebab menu', error);
+      await refreshDrive();
+    }
+  };
+
+  const handleOpenRenameFolderDialog = (folderId: string, currentName: string) => {
+    setRenameFolderId(folderId);
+    setRenameFolderName(currentName);
+    setRenameDialogOpen(true);
+  };
+
+  const handleConfirmRenameFolder = async () => {
+    const nextName = renameFolderName.trim();
+    if (!renameFolderId || !nextName) {
+      return;
+    }
+
+    try {
+      await updateDriveItems({ id: [renameFolderId], name: nextName });
+      setRenameDialogOpen(false);
+      await refreshDrive();
+    } catch (error) {
+      console.error('Failed to rename folder from kebab menu', error);
+      setRenameDialogOpen(false);
+      await refreshDrive();
+    }
+  };
+
+  const renderMoveFolderTree = (nodes: SidebarItem[], depth = 0): React.ReactNode => {
+    return nodes
+      .filter((node) => node.type === 'folder')
+      .map((folder) => {
+        const isOpen = Boolean(expandedMoveFolders[folder.id]);
+        const hasChildren = Boolean(folder.children && folder.children.length > 0);
+
+        return (
+          <div key={folder.id}>
+            <div
+              className={`flex items-center rounded-md px-2 py-1.5 text-sm ${
+                moveTargetFolderId === folder.id
+                  ? 'bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300'
+                  : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700/60'
+              }`}
+              style={{ paddingLeft: `${depth * 16 + 8}px` }}
+            >
+              <button
+                type='button'
+                className='mr-1 flex h-5 w-5 items-center justify-center rounded text-gray-400 hover:bg-gray-200/70 hover:text-gray-600 dark:hover:bg-gray-700 dark:hover:text-gray-200'
+                onClick={() => toggleMoveFolderExpand(folder.id)}
+                aria-label={isOpen ? '폴더 닫기' : '폴더 열기'}
+              >
+                <svg className='h-3 w-3 fill-current' viewBox='0 0 12 12' aria-hidden='true'>
+                  {isOpen ? <path d='M2 4h8L6 8z' /> : <path d='M4 2v8l4-4z' />}
+                </svg>
+              </button>
+              <button
+                type='button'
+                onClick={() => setMoveTargetFolderId(folder.id)}
+                className='flex min-w-0 flex-1 items-center gap-2 text-left'
+              >
+                <svg
+                  className='h-4 w-4 shrink-0 fill-gray-500 dark:fill-gray-300'
+                  viewBox='0 0 20 20'
+                >
+                  <path d='M2.5 4.75A2.25 2.25 0 0 1 4.75 2.5h3.21a2 2 0 0 1 1.41.59l.75.75c.19.19.44.29.71.29h4.42a2.25 2.25 0 0 1 2.25 2.25v6.87a2.25 2.25 0 0 1-2.25 2.25H4.75A2.25 2.25 0 0 1 2.5 13.25V4.75Z' />
+                </svg>
+                <span className='truncate'>{folder.name}</span>
+              </button>
+            </div>
+
+            {isOpen && hasChildren ? renderMoveFolderTree(folder.children || [], depth + 1) : null}
+          </div>
+        );
+      });
   };
 
   const activeItem = items.find((item) => item.id === activeItemId) || null;
 
+  const displayedFolders = useMemo(() => {
+    if (isSearchMode || searchCategories.length === 0) {
+      return driveFolders;
+    }
+
+    if (searchCategories.includes('folder')) {
+      return driveFolders;
+    }
+
+    return [] as DriveFolder[];
+  }, [driveFolders, isSearchMode, searchCategories]);
+
+  const displayedItems = useMemo(() => {
+    if (isSearchMode || searchCategories.length === 0) {
+      return items;
+    }
+
+    const normalizedCategories = searchCategories.map((value) => value.toLowerCase());
+    const hasWorksheetFilter =
+      normalizedCategories.includes('worksheet') || normalizedCategories.includes('faddit');
+
+    return items.filter((item) => {
+      const tag = (item.badge || '').toLowerCase();
+      if (!tag) {
+        return false;
+      }
+
+      if (hasWorksheetFilter && (tag === 'worksheet' || tag === 'faddit')) {
+        return true;
+      }
+
+      return normalizedCategories.includes(tag);
+    });
+  }, [isSearchMode, items, searchCategories]);
+
   const listEntries = useMemo<DriveListEntry[]>(
     () => [
-      ...driveFolders.map((folder) => ({
+      ...displayedFolders.map((folder) => ({
         id: folder.id,
         kind: 'folder' as const,
         title: folder.name,
         date: `${folder.updatedAt} ${folder.updatedBy}`,
         size: '—',
       })),
-      ...items.map((item) => ({
+      ...displayedItems.map((item) => ({
         id: item.id,
         kind: 'file' as const,
         title: item.title,
@@ -630,7 +1247,7 @@ const FadditDrive: React.FC = () => {
         size: item.size || '-',
       })),
     ],
-    [items, driveFolders],
+    [displayedItems, displayedFolders],
   );
 
   const getDragSelection = (
@@ -672,13 +1289,134 @@ const FadditDrive: React.FC = () => {
     if (entry.kind === 'file' && !isMultiSelectGesture(event)) {
       setFileQuery(entry.id);
       setActiveItemId(entry.id);
+      setDetailPanelEditMode(false);
       setDetailPanelOpen(true);
     }
   };
 
   const handleCloseDetailPanel = () => {
+    setDetailPanelEditMode(false);
     setDetailPanelOpen(false);
     setFileQuery(null);
+  };
+
+  const handleEditAttributeChange = (key: string, value: string) => {
+    setEditAttributes((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  };
+
+  const handleDropEditImageFile = (nextFile: File | null) => {
+    setEditImageFile(nextFile);
+    setEditImageDragging(false);
+  };
+
+  const handleSaveFileEdits = async () => {
+    if (!activeItem || !userId) {
+      return;
+    }
+
+    const trimmedName = editFileName.trim();
+    if (!trimmedName) {
+      return;
+    }
+
+    try {
+      setDetailSaveLoading(true);
+      if (trimmedName !== activeItem.title) {
+        await updateDriveItems({ id: [activeItem.id], name: trimmedName });
+      }
+
+      if (primaryActiveMaterial) {
+        const nextAttributes: Record<string, unknown> = {};
+        editableAttributeKeys.forEach((key) => {
+          const originalValue = (primaryActiveMaterial.attributes || {})[key];
+          nextAttributes[key] = parseEditedAttributeValue(editAttributes[key] ?? '', originalValue);
+        });
+
+        const hasAttributeChange = Object.entries(nextAttributes).some(
+          ([key, value]) => value !== (primaryActiveMaterial.attributes || {})[key],
+        );
+        const hasCategoryChange = editMaterialCategory !== primaryActiveMaterial.category;
+        const normalizedImageUrl = editImageFile
+          ? await fileToDataUrl(editImageFile)
+          : editImageUrl;
+        const hasImageChange = normalizedImageUrl !== (primaryActiveMaterial.image_url || '');
+
+        if (hasAttributeChange || hasImageChange || hasCategoryChange) {
+          await updateMaterial(primaryActiveMaterial.id, {
+            userId,
+            category: editMaterialCategory,
+            attributes: nextAttributes,
+            imageUrl: normalizedImageUrl,
+          });
+        }
+      }
+
+      await refreshDrive();
+      if (primaryActiveMaterial) {
+        const nextMaterials = await getMaterialsByFileSystem(activeItem.id, userId);
+        setMaterialsForFile(activeItem.id, nextMaterials);
+      }
+      setDetailPanelEditMode(false);
+    } catch (error) {
+      console.error('Failed to save file edit changes', error);
+      await refreshDrive();
+    } finally {
+      setDetailSaveLoading(false);
+    }
+  };
+
+  const toggleDraftSearchCategory = (category: DriveSearchCategory) => {
+    setDraftSearchCategories((prev) =>
+      prev.includes(category) ? prev.filter((item) => item !== category) : [...prev, category],
+    );
+  };
+
+  const applySearchFilters = () => {
+    const next = new URLSearchParams(searchParams);
+    if (draftSearchCategories.length) {
+      next.set('categories', draftSearchCategories.join(','));
+    } else {
+      next.delete('categories');
+    }
+
+    if (isSearchMode) {
+      next.set('mode', 'search');
+    }
+
+    setSearchParams(next);
+    setResultFilterOpen(false);
+  };
+
+  const clearSearchFilters = () => {
+    setDraftSearchCategories([]);
+    const next = new URLSearchParams(searchParams);
+    next.delete('categories');
+
+    if (isSearchMode && !searchKeyword) {
+      next.delete('mode');
+    }
+
+    setSearchParams(next);
+    setResultFilterOpen(false);
+  };
+
+  const submitResultSearch = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const next = new URLSearchParams(searchParams);
+    const trimmed = searchInputValue.trim();
+    next.set('mode', 'search');
+
+    if (trimmed) {
+      next.set('q', trimmed);
+    } else {
+      next.delete('q');
+    }
+
+    setSearchParams(next);
   };
 
   const handleCreateFolder = async (folderName: string) => {
@@ -861,104 +1599,411 @@ const FadditDrive: React.FC = () => {
   const activeCategoryLabel = activeItem
     ? getCategoryLabel(activeItem.id, activeItem.badge)
     : '파일';
+  const editCategoryLabel = categoryLabelMap[editMaterialCategory] || editMaterialCategory;
+  const activeDisplayImageSrc = activeItem
+    ? getDisplayImageSrc(activeItem.id, activeItem.imageSrc)
+    : '';
   const activeAttributeEntries = primaryActiveMaterial
     ? Object.entries(primaryActiveMaterial.attributes || {})
     : [];
+
+  const visibleEditMaterialFieldDefs = useMemo(
+    () =>
+      editMaterialFieldDefs
+        .filter((fieldDef) => fieldDef.input_type !== 'group')
+        .filter((fieldDef) => shouldShowMaterialField(fieldDef, editAttributes)),
+    [editAttributes, editMaterialFieldDefs],
+  );
+
+  const editableAttributeKeys = useMemo(() => {
+    const keySet = new Set<string>();
+    visibleEditMaterialFieldDefs.forEach((fieldDef) => {
+      keySet.add(fieldDef.field_key);
+    });
+    Object.keys(primaryActiveMaterial?.attributes || {}).forEach((key) => {
+      keySet.add(key);
+    });
+
+    const orderedFromDefs = visibleEditMaterialFieldDefs
+      .map((fieldDef) => fieldDef.field_key)
+      .filter((fieldKey) => keySet.has(fieldKey));
+    const extras = Array.from(keySet).filter((fieldKey) => !orderedFromDefs.includes(fieldKey));
+
+    return [...orderedFromDefs, ...extras];
+  }, [primaryActiveMaterial?.attributes, visibleEditMaterialFieldDefs]);
+
+  const materialFieldDefByKey = useMemo(() => {
+    const map = new Map<string, MaterialFieldDef>();
+    editMaterialFieldDefs.forEach((fieldDef) => {
+      map.set(fieldDef.field_key, fieldDef);
+    });
+    return map;
+  }, [editMaterialFieldDefs]);
+
+  useEffect(() => {
+    if (!detailPanelEditMode || !primaryActiveMaterial) {
+      setEditMaterialFieldDefs([]);
+      return;
+    }
+
+    let cancelled = false;
+    setEditMaterialFieldDefsLoading(true);
+    getMaterialFieldDefs(editMaterialCategory)
+      .then((defs) => {
+        if (cancelled) {
+          return;
+        }
+        setEditMaterialFieldDefs(defs);
+      })
+      .catch((error) => {
+        console.error('Failed to load material field defs in edit panel', error);
+        if (!cancelled) {
+          setEditMaterialFieldDefs([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setEditMaterialFieldDefsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [detailPanelEditMode, editMaterialCategory, primaryActiveMaterial]);
+
+  useEffect(() => {
+    if (!editImageFile) {
+      setEditImagePreviewUrl(null);
+      return;
+    }
+
+    if (!editImageFile.type.startsWith('image/')) {
+      setEditImagePreviewUrl(null);
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(editImageFile);
+    setEditImagePreviewUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [editImageFile]);
+
+  useEffect(() => {
+    if (!detailPanelEditMode || !activeItem) {
+      return;
+    }
+
+    setEditFileName(activeItem.title);
+    setEditMaterialCategory(primaryActiveMaterial?.category || 'label');
+    setEditImageUrl(primaryActiveMaterial?.image_url || '');
+    setEditImageFile(null);
+    setEditImageDragging(false);
+    setEditAttributes(() => {
+      const next: Record<string, string> = {};
+      if (!primaryActiveMaterial) {
+        return next;
+      }
+      Object.entries(primaryActiveMaterial.attributes || {}).forEach(([key, value]) => {
+        next[key] = toEditableAttributeValue(value);
+      });
+      return next;
+    });
+  }, [
+    activeItem,
+    detailPanelEditMode,
+    primaryActiveMaterial?.category,
+    primaryActiveMaterial?.attributes,
+    primaryActiveMaterial?.image_url,
+  ]);
+
+  useEffect(() => {
+    if (!detailPanelEditMode || editMaterialFieldDefs.length === 0) {
+      return;
+    }
+
+    setEditAttributes((prev) => {
+      const next = { ...prev };
+      editMaterialFieldDefs
+        .filter((fieldDef) => fieldDef.input_type !== 'group')
+        .forEach((fieldDef) => {
+          if (next[fieldDef.field_key] === undefined) {
+            next[fieldDef.field_key] = '';
+          }
+        });
+      return next;
+    });
+  }, [detailPanelEditMode, editMaterialFieldDefs]);
 
   const detailPanelContent =
     detailPanelOpen && activeItem ? (
       <>
         <div className='overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xs dark:border-gray-700/60 dark:bg-gray-800'>
           <img
-            src={activeItem.imageSrc}
+            src={
+              detailPanelEditMode
+                ? editImagePreviewUrl || editImageUrl || activeDisplayImageSrc
+                : activeDisplayImageSrc
+            }
             alt={activeItem.imageAlt}
             className='h-52 w-full object-cover'
           />
           <div className='space-y-3 p-5'>
             <div className='inline-flex rounded-full bg-violet-100 px-2.5 py-1 text-xs font-semibold text-violet-700 dark:bg-violet-500/20 dark:text-violet-200'>
-              {activeCategoryLabel}
+              {detailPanelEditMode ? editCategoryLabel : activeCategoryLabel}
             </div>
-            <h2 className='text-2xl leading-tight font-bold text-gray-900 dark:text-gray-100'>
-              {activeItem.title}
-            </h2>
+            {detailPanelEditMode ? (
+              <div>
+                <div className='mb-1 text-xs font-semibold tracking-wide text-gray-500 dark:text-gray-400'>
+                  파일 이름
+                </div>
+                <input
+                  type='text'
+                  value={editFileName}
+                  onChange={(event) => setEditFileName(event.target.value)}
+                  className='form-input w-full'
+                  placeholder='파일 이름'
+                />
+              </div>
+            ) : (
+              <h2 className='text-2xl leading-tight font-bold text-gray-900 dark:text-gray-100'>
+                {activeItem.title}
+              </h2>
+            )}
             <p className='text-sm text-gray-500 dark:text-gray-400'>
               {activeItem.subtitle || 'file'} · {activeItem.size || '-'}
             </p>
           </div>
         </div>
 
-        <div className='mt-5 grid grid-cols-2 gap-3'>
-          <div className='rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700/60 dark:bg-gray-800'>
-            <div className='text-xs text-gray-500 dark:text-gray-400'>생성자</div>
-            <div className='mt-1 text-sm font-medium break-all text-gray-800 dark:text-gray-100'>
-              {activeItem.owner || currentUserName || '알 수 없음'}
-            </div>
-          </div>
-          <div className='rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700/60 dark:bg-gray-800'>
-            <div className='text-xs text-gray-500 dark:text-gray-400'>수정일</div>
-            <div className='mt-1 text-sm font-medium text-gray-800 dark:text-gray-100'>
-              {activeItem.date || '-'}
-            </div>
-          </div>
-          <div className='rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700/60 dark:bg-gray-800'>
-            <div className='text-xs text-gray-500 dark:text-gray-400'>폴더 경로</div>
-            <div className='mt-1 text-sm font-medium break-all text-gray-800 dark:text-gray-100'>
-              {activeItem.sourcePath || '-'}
-            </div>
-          </div>
-          <div className='rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700/60 dark:bg-gray-800'>
-            <div className='text-xs text-gray-500 dark:text-gray-400'>속성 개수</div>
-            <div className='mt-1 text-sm font-medium text-gray-800 dark:text-gray-100'>
-              {activeAttributeEntries.length}
-            </div>
-          </div>
-        </div>
-
-        <div className='mt-5 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700/60 dark:bg-gray-800'>
-          <h3 className='text-sm font-semibold text-gray-900 dark:text-gray-100'>소재 요약</h3>
-          {primaryActiveMaterial ? (
-            <div className='mt-3 space-y-2 text-sm text-gray-700 dark:text-gray-300'>
-              <div>
-                코드:{' '}
-                <span className='font-medium'>{primaryActiveMaterial.code_internal || '-'}</span>
-              </div>
-              <div>
-                업체명:{' '}
-                <span className='font-medium'>{primaryActiveMaterial.vendor_name || '-'}</span>
-              </div>
-              <div>
-                품명: <span className='font-medium'>{primaryActiveMaterial.item_name || '-'}</span>
-              </div>
-            </div>
-          ) : (
-            <p className='mt-3 text-sm text-gray-500 dark:text-gray-400'>
-              연결된 소재 정보가 없습니다.
-            </p>
-          )}
-        </div>
-
-        <div className='mt-5 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700/60 dark:bg-gray-800'>
-          <h3 className='text-sm font-semibold text-gray-900 dark:text-gray-100'>속성 정보</h3>
-          {activeAttributeEntries.length === 0 ? (
-            <p className='mt-3 text-sm text-gray-500 dark:text-gray-400'>등록된 속성이 없습니다.</p>
-          ) : (
-            <div className='mt-3 space-y-2'>
-              {activeAttributeEntries.map(([key, value]) => (
-                <div
-                  key={key}
-                  className='flex items-start justify-between gap-3 rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-700/60'
+        {detailPanelEditMode ? (
+          <>
+            <div className='mt-5 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700/60 dark:bg-gray-800'>
+              <h3 className='text-sm font-semibold text-gray-900 dark:text-gray-100'>
+                카테고리 변경
+              </h3>
+              <div className='mt-3'>
+                <select
+                  className='form-select w-full'
+                  value={editMaterialCategory}
+                  onChange={(event) =>
+                    setEditMaterialCategory(
+                      event.target.value as 'fabric' | 'rib_fabric' | 'label' | 'trim',
+                    )
+                  }
                 >
-                  <div className='text-xs font-semibold tracking-wide text-gray-500 dark:text-gray-400'>
-                    {getAttributeLabel(key)}
+                  {MATERIAL_CATEGORY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className='mt-5 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700/60 dark:bg-gray-800'>
+              <h3 className='text-sm font-semibold text-gray-900 dark:text-gray-100'>
+                이미지 변경
+              </h3>
+              <div
+                role='button'
+                tabIndex={0}
+                className={`mt-3 cursor-pointer rounded-lg border-2 border-dashed px-4 py-5 text-center transition ${
+                  editImageDragging
+                    ? 'border-violet-400 bg-violet-50 dark:border-violet-500 dark:bg-violet-500/10'
+                    : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50 dark:border-gray-700/60 dark:hover:border-gray-600 dark:hover:bg-gray-700/40'
+                }`}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    editImageInputRef.current?.click();
+                  }
+                }}
+                onClick={() => editImageInputRef.current?.click()}
+                onDragEnter={(event) => {
+                  event.preventDefault();
+                  setEditImageDragging(true);
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setEditImageDragging(true);
+                }}
+                onDragLeave={(event) => {
+                  event.preventDefault();
+                  const related = event.relatedTarget as Node | null;
+                  if (!event.currentTarget.contains(related)) {
+                    setEditImageDragging(false);
+                  }
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const droppedFile = event.dataTransfer.files?.[0] ?? null;
+                  handleDropEditImageFile(droppedFile);
+                }}
+              >
+                <input
+                  ref={editImageInputRef}
+                  type='file'
+                  accept='image/*'
+                  className='hidden'
+                  onChange={(event) => handleDropEditImageFile(event.target.files?.[0] ?? null)}
+                />
+                {editImageFile || editImageUrl ? (
+                  <div className='space-y-2'>
+                    <div className='text-sm font-medium text-gray-800 dark:text-gray-100'>
+                      {editImageFile ? editImageFile.name : '현재 이미지'}
+                    </div>
+                    <div className='text-xs text-gray-500 dark:text-gray-400'>
+                      드래그 앤 드랍 또는 클릭해서 이미지 변경
+                    </div>
                   </div>
-                  <div className='text-right text-sm text-gray-800 dark:text-gray-100'>
-                    {formatAttributeValue(value)}
+                ) : (
+                  <div className='space-y-1'>
+                    <div className='text-sm font-medium text-gray-800 dark:text-gray-100'>
+                      이미지를 드래그하여 업로드
+                    </div>
+                    <div className='text-xs text-gray-500 dark:text-gray-400'>
+                      또는 클릭해서 이미지 선택
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className='mt-5 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700/60 dark:bg-gray-800'>
+              <h3 className='text-sm font-semibold text-gray-900 dark:text-gray-100'>
+                소재 속성 수정
+              </h3>
+              {editMaterialFieldDefsLoading ? (
+                <p className='mt-3 text-sm text-gray-500 dark:text-gray-400'>
+                  속성 필드를 불러오는 중입니다...
+                </p>
+              ) : editableAttributeKeys.length === 0 ? (
+                <p className='mt-3 text-sm text-gray-500 dark:text-gray-400'>
+                  수정 가능한 속성이 없습니다.
+                </p>
+              ) : (
+                <div className='mt-3 space-y-3'>
+                  {editableAttributeKeys.map((key) => (
+                    <div key={key}>
+                      <div className='mb-1 text-xs font-semibold tracking-wide text-gray-500 dark:text-gray-400'>
+                        {materialFieldDefByKey.get(key)?.label || getAttributeLabel(key)}
+                      </div>
+                      <input
+                        type={
+                          materialFieldDefByKey.get(key)?.input_type === 'number'
+                            ? 'number'
+                            : 'text'
+                        }
+                        value={editAttributes[key] ?? ''}
+                        onChange={(event) => handleEditAttributeChange(key, event.target.value)}
+                        className='form-input w-full'
+                        placeholder={key}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className='mt-5 flex justify-end gap-2'>
+              <button
+                type='button'
+                onClick={() => setDetailPanelEditMode(false)}
+                className='btn border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-200'
+              >
+                취소
+              </button>
+              <button
+                type='button'
+                onClick={handleSaveFileEdits}
+                disabled={detailSaveLoading}
+                className='btn border-gray-200 bg-white text-gray-700 hover:border-gray-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-200'
+              >
+                {detailSaveLoading ? '저장 중...' : '저장'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className='mt-5 grid grid-cols-2 gap-3'>
+              <div className='rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700/60 dark:bg-gray-800'>
+                <div className='text-xs text-gray-500 dark:text-gray-400'>생성자</div>
+                <div className='mt-1 text-sm font-medium break-all text-gray-800 dark:text-gray-100'>
+                  {activeItem.owner || currentUserName || '알 수 없음'}
+                </div>
+              </div>
+              <div className='rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700/60 dark:bg-gray-800'>
+                <div className='text-xs text-gray-500 dark:text-gray-400'>수정일</div>
+                <div className='mt-1 text-sm font-medium text-gray-800 dark:text-gray-100'>
+                  {activeItem.date || '-'}
+                </div>
+              </div>
+              <div className='rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700/60 dark:bg-gray-800'>
+                <div className='text-xs text-gray-500 dark:text-gray-400'>폴더 경로</div>
+                <div className='mt-1 text-sm font-medium break-all text-gray-800 dark:text-gray-100'>
+                  {activeItem.sourcePath || '-'}
+                </div>
+              </div>
+              <div className='rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700/60 dark:bg-gray-800'>
+                <div className='text-xs text-gray-500 dark:text-gray-400'>속성 개수</div>
+                <div className='mt-1 text-sm font-medium text-gray-800 dark:text-gray-100'>
+                  {activeAttributeEntries.length}
+                </div>
+              </div>
+            </div>
+
+            <div className='mt-5 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700/60 dark:bg-gray-800'>
+              <h3 className='text-sm font-semibold text-gray-900 dark:text-gray-100'>소재 요약</h3>
+              {primaryActiveMaterial ? (
+                <div className='mt-3 space-y-2 text-sm text-gray-700 dark:text-gray-300'>
+                  <div>
+                    코드:{' '}
+                    <span className='font-medium'>
+                      {primaryActiveMaterial.code_internal || '-'}
+                    </span>
+                  </div>
+                  <div>
+                    업체명:{' '}
+                    <span className='font-medium'>{primaryActiveMaterial.vendor_name || '-'}</span>
+                  </div>
+                  <div>
+                    품명:{' '}
+                    <span className='font-medium'>{primaryActiveMaterial.item_name || '-'}</span>
                   </div>
                 </div>
-              ))}
+              ) : (
+                <p className='mt-3 text-sm text-gray-500 dark:text-gray-400'>
+                  연결된 소재 정보가 없습니다.
+                </p>
+              )}
             </div>
-          )}
-        </div>
+
+            <div className='mt-5 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700/60 dark:bg-gray-800'>
+              <h3 className='text-sm font-semibold text-gray-900 dark:text-gray-100'>속성 정보</h3>
+              {activeAttributeEntries.length === 0 ? (
+                <p className='mt-3 text-sm text-gray-500 dark:text-gray-400'>
+                  등록된 속성이 없습니다.
+                </p>
+              ) : (
+                <div className='mt-3 space-y-2'>
+                  {activeAttributeEntries.map(([key, value]) => (
+                    <div
+                      key={key}
+                      className='flex items-start justify-between gap-3 rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-700/60'
+                    >
+                      <div className='text-xs font-semibold tracking-wide text-gray-500 dark:text-gray-400'>
+                        {getAttributeLabel(key)}
+                      </div>
+                      <div className='text-right text-sm text-gray-800 dark:text-gray-100'>
+                        {formatAttributeValue(value)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </>
     ) : null;
 
@@ -984,18 +2029,18 @@ const FadditDrive: React.FC = () => {
                 <h1 className='text-2xl font-bold text-gray-800 md:text-3xl dark:text-gray-100'>
                   {pageTitle}
                 </h1>
-                <div className='mt-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-600 dark:text-gray-300'>
-                  <button
-                    type='button'
-                    onClick={() => navigate('/faddit/drive')}
-                    className='rounded px-1.5 py-0.5 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-100'
-                  >
-                    홈
-                  </button>
-                  {breadcrumbParts
-                    .filter((part) => part !== '홈')
-                    .map((part, index) => {
-                      const breadcrumbId = breadcrumbIds[index];
+                {!isSearchMode && (
+                  <div className='mt-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-600 dark:text-gray-300'>
+                    <button
+                      type='button'
+                      onClick={() => navigate('/faddit/drive')}
+                      className='rounded px-1.5 py-0.5 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-100'
+                    >
+                      홈
+                    </button>
+                    {visibleBreadcrumbParts.map((part, index) => {
+                      const breadcrumbId = breadcrumbIds[breadcrumbIdStartIndex + index];
+
                       return (
                         <React.Fragment key={`${part}-${index}`}>
                           <span className='text-gray-400'>/</span>
@@ -1013,16 +2058,106 @@ const FadditDrive: React.FC = () => {
                         </React.Fragment>
                       );
                     })}
-                </div>
+                  </div>
+                )}
+                {isSearchMode && (
+                  <div className='mt-2 text-sm text-gray-500 dark:text-gray-400'>
+                    {searchLoading ? '검색 중...' : `총 ${searchTotalCount}개 결과`}
+                  </div>
+                )}
+                {isSearchMode && (
+                  <form onSubmit={submitResultSearch} className='mt-3 w-full max-w-[520px]'>
+                    <div className='relative'>
+                      <input
+                        ref={resultSearchInputRef}
+                        id='drive-result-search'
+                        type='search'
+                        className='form-input w-full pl-9'
+                        placeholder='검색어를 입력하세요'
+                        value={searchInputValue}
+                        onChange={(event) => setSearchInputValue(event.target.value)}
+                      />
+                      <button
+                        type='submit'
+                        className='group absolute inset-0 right-auto cursor-pointer'
+                        aria-label='검색'
+                      >
+                        <svg
+                          className='mr-2 ml-3 shrink-0 fill-current text-gray-400 group-hover:text-gray-500 dark:text-gray-500 dark:group-hover:text-gray-400'
+                          width='16'
+                          height='16'
+                          viewBox='0 0 16 16'
+                          xmlns='http://www.w3.org/2000/svg'
+                        >
+                          <path d='M7 14c-3.86 0-7-3.14-7-7s3.14-7 7-7 7 3.14 7 7-3.14 7-7 7zM7 2C4.243 2 2 4.243 2 7s2.243 5 5 5 5-2.243 5-5-2.243-5-5-5z' />
+                          <path d='M15.707 14.293L13.314 11.9a8.019 8.019 0 01-1.414 1.414l2.393 2.393a.997.997 0 001.414 0 .999.999 0 000-1.414z' />
+                        </svg>
+                      </button>
+                    </div>
+                  </form>
+                )}
               </div>
 
               <div className='grid grid-flow-col justify-start gap-2 sm:auto-cols-max sm:justify-end'>
                 <div className='flex flex-wrap'>
+                  <div ref={resultFilterRef} className='relative'>
+                    <GlobalTooltip content='필터' position='bottom'>
+                      <button
+                        type='button'
+                        onClick={() => setResultFilterOpen((prev) => !prev)}
+                        className='btn inline-flex h-[38px] w-[42px] cursor-pointer items-center justify-center rounded-r-none border-gray-200 bg-white p-0 text-gray-500 hover:bg-gray-50 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-900'
+                        aria-label='검색 필터'
+                      >
+                        <SlidersHorizontal className='h-4 w-4' strokeWidth={2} />
+                      </button>
+                    </GlobalTooltip>
+
+                    {resultFilterOpen && (
+                      <div className='absolute top-full left-0 z-20 mt-2 w-60 rounded-lg border border-gray-200 bg-white p-3 shadow-lg dark:border-gray-700/60 dark:bg-gray-900'>
+                        <div className='mb-2 text-xs font-semibold text-gray-400 uppercase'>
+                          Filters
+                        </div>
+                        <div className='space-y-2'>
+                          {SEARCH_CATEGORY_VALUES.map((category) => (
+                            <label
+                              key={category}
+                              className='flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200'
+                            >
+                              <input
+                                type='checkbox'
+                                className='form-checkbox'
+                                checked={draftSearchCategories.includes(category)}
+                                onChange={() => toggleDraftSearchCategory(category)}
+                              />
+                              <span>{searchFilterLabelMap[category]}</span>
+                            </label>
+                          ))}
+                        </div>
+                        <div className='mt-3 flex items-center justify-between'>
+                          <button
+                            type='button'
+                            className='btn-xs border-gray-200 bg-white text-red-500 hover:border-gray-300 dark:border-gray-700/60 dark:bg-gray-800 dark:hover:border-gray-600'
+                            onClick={clearSearchFilters}
+                          >
+                            리셋
+                          </button>
+                          <button
+                            type='button'
+                            className='btn border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-200'
+                            onClick={applySearchFilters}
+                          >
+                            적용하기
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   <GlobalTooltip content='리스트로 보기' position='bottom'>
                     <button
                       type='button'
                       onClick={() => setViewMode('list')}
-                      className={`btn cursor-pointer rounded-r-none border-gray-200 dark:border-gray-700/60 ${
+                      className={`btn -ml-px inline-flex h-[38px] w-[42px] cursor-pointer items-center justify-center rounded-none border-gray-200 p-0 dark:border-gray-700/60 ${
                         viewMode === 'list'
                           ? 'bg-white text-violet-500 dark:bg-gray-800'
                           : 'bg-white text-gray-500 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-900'
@@ -1037,7 +2172,7 @@ const FadditDrive: React.FC = () => {
                     <button
                       type='button'
                       onClick={() => setViewMode('grid')}
-                      className={`btn -ml-px cursor-pointer rounded-l-none border-gray-200 dark:border-gray-700/60 ${
+                      className={`btn -ml-px inline-flex h-[38px] w-[42px] cursor-pointer items-center justify-center rounded-l-none border-gray-200 p-0 dark:border-gray-700/60 ${
                         viewMode === 'grid'
                           ? 'bg-white text-violet-500 dark:bg-gray-800'
                           : 'bg-white text-gray-500 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-900'
@@ -1064,7 +2199,7 @@ const FadditDrive: React.FC = () => {
 
                 <button
                   type='button'
-                  onClick={() => setAddViewOptionModalOpen(true)}
+                  onClick={() => setTemplateCreateModalOpen(true)}
                   disabled={isCreatingFolder}
                   className='btn bg-gray-900 text-gray-100 hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-800 dark:hover:bg-white'
                 >
@@ -1076,7 +2211,7 @@ const FadditDrive: React.FC = () => {
                   >
                     <path d='M15 7H9V1c0-.6-.4-1-1-1S7 .4 7 1v6H1c-.6 0-1 .4-1 1s.4 1 1 1h6v6c0 .6.4 1 1 1s1-.4 1-1V9h6c.6 0 1-.4 1-1s-.4-1-1-1z' />
                   </svg>
-                  <span className='max-xs:sr-only'>Add View</span>
+                  <span className='max-xs:sr-only'>생성하기</span>
                 </button>
               </div>
             </div>
@@ -1085,7 +2220,7 @@ const FadditDrive: React.FC = () => {
               {viewMode === 'grid' ? (
                 <div className='space-y-6'>
                   <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4'>
-                    {driveFolders.map((folder) => {
+                    {displayedFolders.map((folder) => {
                       const dragSelection = getDragSelection(folder.id, 'folder', folder.name);
                       return (
                         <DriveFolderTile
@@ -1097,16 +2232,19 @@ const FadditDrive: React.FC = () => {
                           onToggleSelect={(checked) => applySelection(folder.id, checked)}
                           onPress={(event) => handleFolderPress(folder.id, event)}
                           onOpen={navigateToFolder}
+                          onMoveFolder={handleOpenMoveDialog}
+                          onRenameFolder={handleOpenRenameFolderDialog}
                         />
                       );
                     })}
                   </div>
 
                   <div className='grid grid-cols-12 gap-5'>
-                    {items.map((item) => {
+                    {displayedItems.map((item) => {
                       const dragSelection = getDragSelection(item.id, 'file', item.title);
                       const linkedMaterials = materialsByFileSystemId[item.id] || [];
                       const primaryMaterial = linkedMaterials[0] || null;
+                      const displayImageSrc = getDisplayImageSrc(item.id, item.imageSrc);
                       const categoryLabel = getCategoryLabel(item.id, item.badge);
                       const attributesCount = linkedMaterials.reduce((count, material) => {
                         const attrs = material.attributes || {};
@@ -1122,7 +2260,9 @@ const FadditDrive: React.FC = () => {
                           ]
                             .filter((value): value is string => Boolean(value))
                             .join(' · ')
-                        : item.subtitle;
+                        : [item.isStarred ? '즐겨찾기된 파일' : '', item.subtitle]
+                            .filter((value): value is string => Boolean(value))
+                            .join(' · ');
                       return (
                         <DriveItemCard
                           key={item.id}
@@ -1132,7 +2272,8 @@ const FadditDrive: React.FC = () => {
                           categoryLabel={categoryLabel}
                           summaryText={summaryText}
                           creatorName={item.owner || currentUserName}
-                          imageSrc={item.imageSrc}
+                          isStarred={Boolean(item.isStarred)}
+                          imageSrc={displayImageSrc}
                           imageAlt={item.imageAlt}
                           title={item.title}
                           subtitle={item.subtitle}
@@ -1143,6 +2284,9 @@ const FadditDrive: React.FC = () => {
                           isActive={activeItemId === item.id}
                           onSelectChange={applySelection}
                           onCardClick={handleFileCardClick}
+                          onEdit={handleOpenFileEditPanel}
+                          onMoveToFolder={handleOpenMoveDialog}
+                          onAddFavorite={handleAddFavoriteFromMenu}
                           dragSelectionIds={dragSelection.ids}
                           dragSelectionEntries={dragSelection.entries}
                           className={
@@ -1309,37 +2453,122 @@ const FadditDrive: React.FC = () => {
               onClick={handleUndoDelete}
               className='shrink-0 cursor-pointer text-sm font-bold text-[var(--color-faddit)] hover:opacity-80'
             >
-              실행취소
+              되돌리기
             </button>
           </div>
         </div>
       </Notification>
 
-      <AddViewOptionModal
-        modalOpen={addViewOptionModalOpen}
-        setModalOpen={setAddViewOptionModalOpen}
-        onSelectFolder={() => {
-          setAddViewOptionModalOpen(false);
-          setCreateFolderModalOpen(true);
-        }}
-        onSelectMaterial={() => {
-          setAddViewOptionModalOpen(false);
-          setCreateMaterialModalOpen(true);
-        }}
-      />
+      <Notification
+        type='warning'
+        open={favoriteToastOpen}
+        setOpen={setFavoriteToastOpen}
+        showAction={false}
+        className='fixed right-4 bottom-4 z-50'
+      >
+        <div className='mb-1 font-medium text-gray-800 dark:text-gray-100'>즐겨찾기</div>
+        <div>
+          <span>{favoriteMessage}</span>
+        </div>
+      </Notification>
 
-      <CreateFolderModal
-        modalOpen={createFolderModalOpen}
-        setModalOpen={setCreateFolderModalOpen}
-        isSubmitting={isCreatingFolder}
-        onSubmit={handleCreateFolder}
-      />
+      {moveDialogOpen ? (
+        <div className='fixed inset-0 z-[90] flex items-center justify-center bg-gray-900/45 px-4'>
+          <div className='w-full max-w-lg rounded-xl border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-700/60 dark:bg-gray-800'>
+            <div className='text-base font-semibold text-gray-800 dark:text-gray-100'>
+              폴더 이동
+            </div>
+            <p className='mt-2 text-sm text-gray-500 dark:text-gray-400'>
+              이동할 폴더를 선택하세요.
+            </p>
 
-      <CreateMaterialModal
-        modalOpen={createMaterialModalOpen}
-        setModalOpen={setCreateMaterialModalOpen}
-        isSubmitting={isCreatingMaterial}
-        onSubmit={handleCreateMaterial}
+            <div className='mt-4 max-h-[320px] overflow-y-auto rounded-lg border border-gray-200 p-2 dark:border-gray-700/60'>
+              <div
+                className={`mb-1 flex cursor-pointer items-center rounded-md px-2 py-1.5 text-sm ${
+                  moveTargetFolderId === (rootFolderId || rootFolderFromAuth || '')
+                    ? 'bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300'
+                    : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700/60'
+                }`}
+                onClick={() => setMoveTargetFolderId(rootFolderId || rootFolderFromAuth || '')}
+              >
+                <svg
+                  className='mr-2 h-4 w-4 shrink-0 fill-gray-500 dark:fill-gray-300'
+                  viewBox='0 0 20 20'
+                >
+                  <path d='M2.5 4.75A2.25 2.25 0 0 1 4.75 2.5h3.21a2 2 0 0 1 1.41.59l.75.75c.19.19.44.29.71.29h4.42a2.25 2.25 0 0 1 2.25 2.25v6.87a2.25 2.25 0 0 1-2.25 2.25H4.75A2.25 2.25 0 0 1 2.5 13.25V4.75Z' />
+                </svg>
+                <span>홈</span>
+              </div>
+              {renderMoveFolderTree(workspaces)}
+            </div>
+
+            <div className='mt-4 flex justify-end gap-2'>
+              <button
+                type='button'
+                onClick={() => setMoveDialogOpen(false)}
+                className='btn border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-200'
+              >
+                취소
+              </button>
+              <button
+                type='button'
+                onClick={handleConfirmMoveFromMenu}
+                className='btn border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-200'
+              >
+                이동
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {renameDialogOpen ? (
+        <div className='fixed inset-0 z-[90] flex items-center justify-center bg-gray-900/45 px-4'>
+          <div className='w-full max-w-sm rounded-xl border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-700/60 dark:bg-gray-800'>
+            <div className='text-base font-semibold text-gray-800 dark:text-gray-100'>
+              폴더 이름 수정
+            </div>
+            <p className='mt-2 text-sm text-gray-500 dark:text-gray-400'>
+              새 폴더 이름을 입력하세요.
+            </p>
+
+            <div className='mt-4'>
+              <input
+                type='text'
+                value={renameFolderName}
+                onChange={(event) => setRenameFolderName(event.target.value)}
+                className='form-input w-full'
+                placeholder='폴더 이름'
+              />
+            </div>
+
+            <div className='mt-4 flex justify-end gap-2'>
+              <button
+                type='button'
+                onClick={() => setRenameDialogOpen(false)}
+                className='btn border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-200'
+              >
+                취소
+              </button>
+              <button
+                type='button'
+                onClick={handleConfirmRenameFolder}
+                className='btn border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-200'
+              >
+                저장
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <TemplateCreateModal
+        modalOpen={templateCreateModalOpen}
+        setModalOpen={setTemplateCreateModalOpen}
+        isSubmittingFolder={isCreatingFolder}
+        isSubmittingMaterial={isCreatingMaterial}
+        onCreateFolder={handleCreateFolder}
+        onCreateMaterial={handleCreateMaterial}
       />
     </div>
   );

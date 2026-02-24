@@ -70,16 +70,19 @@ export const useAuthStore = createAppStore<AuthState>('auth-store', (set, get) =
       user: get().user,
       isAuthenticated,
     };
-    set({ isAuthenticated });
+    persistAuth(nextState);
+    set({ isAuthenticated }, false, 'auth-store/setAuthenticated');
   },
   setUser: (user) => {
     const nextState = {
       user,
       isAuthenticated: Boolean(user),
     };
-    set(nextState);
+    persistAuth(nextState);
+    set(nextState, false, 'auth-store/setUser');
   },
   clearAuth: () => {
-    set({ user: null, isAuthenticated: false });
+    persistAuth({ user: null, isAuthenticated: false });
+    set({ user: null, isAuthenticated: false }, false, 'auth-store/clearAuth');
   },
 }));
