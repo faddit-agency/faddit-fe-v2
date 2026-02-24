@@ -180,6 +180,7 @@ const DriveFolderTile: React.FC<{
   onPress: (event: React.MouseEvent<HTMLDivElement>) => void;
   onOpen: (folderId: string) => void;
   onMoveFolder: (folderId: string) => void;
+  onAddFavorite: (id: string, nextStarred: boolean) => void;
   onRenameFolder: (folderId: string, name: string) => void;
   onDeleteFolder: (folderId: string, name: string) => void;
 }> = ({
@@ -191,6 +192,7 @@ const DriveFolderTile: React.FC<{
   onPress,
   onOpen,
   onMoveFolder,
+  onAddFavorite,
   onRenameFolder,
   onDeleteFolder,
 }) => {
@@ -321,6 +323,16 @@ const DriveFolderTile: React.FC<{
                 }}
               >
                 폴더 이동
+              </button>
+              <button
+                type='button'
+                className='w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
+                onClick={() => {
+                  setMenuOpen(false);
+                  onAddFavorite(folder.id, !folder.isStarred);
+                }}
+              >
+                {folder.isStarred ? '즐겨찾기 취소' : '즐겨 찾기'}
               </button>
               <button
                 type='button'
@@ -488,6 +500,7 @@ const FadditDrive: React.FC = () => {
     setItemsStarred,
     getItemParentId,
     workspaces,
+    favorites,
     loadFolderChildren,
     loadFolderView,
     currentFolderPath,
@@ -536,6 +549,7 @@ const FadditDrive: React.FC = () => {
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameFolderId, setRenameFolderId] = useState('');
   const [renameFolderName, setRenameFolderName] = useState('');
+  const [currentLocationMenuOpen, setCurrentLocationMenuOpen] = useState(false);
   const [expandedMoveFolders, setExpandedMoveFolders] = useState<Record<string, boolean>>({});
   const [favoriteToastOpen, setFavoriteToastOpen] = useState(false);
   const [favoriteMessage, setFavoriteMessage] = useState('즐겨찾기가 완료되었습니다');
@@ -714,6 +728,32 @@ const FadditDrive: React.FC = () => {
   );
 
   const pageTitle = isSearchMode ? '검색결과' : breadcrumbParts[breadcrumbParts.length - 1] || '홈';
+  const effectiveRootFolderId = rootFolderId || rootFolderFromAuth || '';
+
+  const favoriteFolderIdSet = useMemo(() => {
+    const ids = new Set<string>();
+
+    const walk = (nodes: SidebarItem[]) => {
+      nodes.forEach((node) => {
+        if (node.type === 'folder') {
+          ids.add(node.id);
+        }
+        if (node.children?.length) {
+          walk(node.children);
+        }
+      });
+    };
+
+    walk(favorites);
+    return ids;
+  }, [favorites]);
+
+  const currentLocationFolderId = !isSearchMode ? currentFolderId || effectiveRootFolderId : '';
+  const canShowCurrentLocationMenu =
+    Boolean(currentLocationFolderId) && currentLocationFolderId !== effectiveRootFolderId;
+  const isCurrentLocationStarred = canShowCurrentLocationMenu
+    ? favoriteFolderIdSet.has(currentLocationFolderId)
+    : false;
 
   useEffect(() => {
     setDraftSearchCategories(searchCategories);
@@ -768,8 +808,12 @@ const FadditDrive: React.FC = () => {
           category: searchCategories.length === 1 ? searchCategories[0] : undefined,
         });
 
+        const hiddenRootFolderCount = searchResult.data.filter(
+          (node) => node.type === 'folder' && node.isRoot,
+        ).length;
+
         const folders = searchResult.data
-          .filter((node) => node.type === 'folder')
+          .filter((node) => node.type === 'folder' && !node.isRoot)
           .map((node) => ({
             id: node.fileSystemId,
             name: node.name,
@@ -812,7 +856,7 @@ const FadditDrive: React.FC = () => {
 
         setDriveFolders(folders);
         setItems(files);
-        setSearchTotalCount(searchResult.count);
+        setSearchTotalCount(Math.max(0, searchResult.count - hiddenRootFolderCount));
         clearSelectionEffects();
       } catch (error) {
         console.error('Failed to load search results', error);
@@ -1200,7 +1244,10 @@ const FadditDrive: React.FC = () => {
     }
 
     try {
-      await updateDriveItems({ id: [renameFolderId], name: nextName });
+      await updateDriveItems({
+        id: [renameFolderId],
+        name: nextName,
+      });
       setRenameDialogOpen(false);
       await refreshDrive();
     } catch (error) {
@@ -1746,8 +1793,8 @@ const FadditDrive: React.FC = () => {
   }, [editMaterialFieldDefs]);
 
   const cardGridClass = detailPanelOpen
-    ? '[grid-template-columns:repeat(auto-fit,minmax(clamp(160px,30vw,230px),1fr))] 2xl:[grid-template-columns:repeat(auto-fill,minmax(220px,260px))] 2xl:justify-start'
-    : '[grid-template-columns:repeat(auto-fit,minmax(clamp(170px,24vw,260px),1fr))] 2xl:[grid-template-columns:repeat(auto-fill,minmax(240px,280px))] 2xl:justify-start';
+    ? 'grid grid-cols-1 sm:grid-cols-[repeat(auto-fill,minmax(220px,1fr))] xl:grid-cols-[repeat(auto-fill,minmax(220px,300px))]'
+    : 'grid grid-cols-1 sm:grid-cols-[repeat(auto-fill,minmax(240px,1fr))] xl:grid-cols-[repeat(auto-fill,minmax(240px,320px))]';
 
   useEffect(() => {
     if (!detailPanelEditMode || !primaryActiveMaterial) {
@@ -2110,9 +2157,85 @@ const FadditDrive: React.FC = () => {
           >
             <div className='mb-8 sm:flex sm:items-center sm:justify-between'>
               <div className='mb-4 sm:mb-0'>
-                <h1 className='text-2xl font-bold text-gray-800 md:text-3xl dark:text-gray-100'>
-                  {pageTitle}
-                </h1>
+                {!isSearchMode && canShowCurrentLocationMenu ? (
+                  <PopoverPrimitive.Root
+                    open={currentLocationMenuOpen}
+                    onOpenChange={setCurrentLocationMenuOpen}
+                  >
+                    <PopoverPrimitive.Trigger asChild>
+                      <button
+                        type='button'
+                        className='inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-2xl font-bold text-gray-800 hover:bg-gray-100 md:text-3xl dark:text-gray-100 dark:hover:bg-gray-800'
+                        aria-label='현재 폴더 메뉴'
+                      >
+                        <span>{pageTitle}</span>
+                        <svg
+                          className='h-4 w-4 fill-current text-gray-500 dark:text-gray-300'
+                          viewBox='0 0 12 12'
+                          aria-hidden='true'
+                        >
+                          <path d='M2 4h8L6 8z' />
+                        </svg>
+                      </button>
+                    </PopoverPrimitive.Trigger>
+                    <PopoverPrimitive.Portal>
+                      <PopoverPrimitive.Content
+                        align='start'
+                        side='bottom'
+                        sideOffset={6}
+                        className='z-50 w-36 rounded-lg border border-gray-200 bg-white p-1.5 shadow-lg dark:border-gray-700/60 dark:bg-gray-800'
+                      >
+                        <button
+                          type='button'
+                          className='w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
+                          onClick={() => {
+                            setCurrentLocationMenuOpen(false);
+                            handleOpenMoveDialog(currentLocationFolderId);
+                          }}
+                        >
+                          폴더 이동
+                        </button>
+                        <button
+                          type='button'
+                          className='w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
+                          onClick={() => {
+                            setCurrentLocationMenuOpen(false);
+                            handleAddFavoriteFromMenu(
+                              currentLocationFolderId,
+                              !isCurrentLocationStarred,
+                            );
+                          }}
+                        >
+                          {isCurrentLocationStarred ? '즐겨찾기 취소' : '즐겨 찾기'}
+                        </button>
+                        <button
+                          type='button'
+                          className='w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
+                          onClick={() => {
+                            setCurrentLocationMenuOpen(false);
+                            handleOpenRenameFolderDialog(currentLocationFolderId, pageTitle);
+                          }}
+                        >
+                          폴더 이름 수정
+                        </button>
+                        <button
+                          type='button'
+                          className='w-full rounded-md px-2 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-500/10'
+                          onClick={() => {
+                            setCurrentLocationMenuOpen(false);
+                            handleDeleteSingleItem(currentLocationFolderId, pageTitle);
+                          }}
+                        >
+                          삭제하기
+                        </button>
+                      </PopoverPrimitive.Content>
+                    </PopoverPrimitive.Portal>
+                  </PopoverPrimitive.Root>
+                ) : (
+                  <h1 className='text-2xl font-bold text-gray-800 md:text-3xl dark:text-gray-100'>
+                    {pageTitle}
+                  </h1>
+                )}
                 {!isSearchMode && (
                   <div className='mt-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-600 dark:text-gray-300'>
                     <button
@@ -2317,6 +2440,7 @@ const FadditDrive: React.FC = () => {
                           onPress={(event) => handleFolderPress(folder.id, event)}
                           onOpen={navigateToFolder}
                           onMoveFolder={handleOpenMoveDialog}
+                          onAddFavorite={handleAddFavoriteFromMenu}
                           onRenameFolder={handleOpenRenameFolderDialog}
                           onDeleteFolder={handleDeleteSingleItem}
                         />
