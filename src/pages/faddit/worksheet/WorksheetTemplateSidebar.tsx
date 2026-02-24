@@ -69,6 +69,13 @@ export default function WorksheetTemplateSidebar({
   const cards = [...CARD_DEFINITIONS[worksheetActiveTab], ...customCards[worksheetActiveTab]];
   const visMap = cardVisibility[worksheetActiveTab];
 
+  const handleToolTabClick = (tab: ToolTab) => {
+    setActiveTab(tab);
+    if (collapsible) {
+      setContentOpen(true);
+    }
+  };
+
   const addCustomModule = () => {
     addCustomCard(worksheetActiveTab, customTitle);
     setCustomTitle('');
@@ -385,7 +392,7 @@ export default function WorksheetTemplateSidebar({
             <button
               key={key}
               type='button'
-              onClick={() => setActiveTab(key)}
+              onClick={() => handleToolTabClick(key)}
               className={`flex aspect-square cursor-pointer flex-col items-center justify-center gap-0.5 rounded-md p-2 text-[10px] transition-colors ${
                 activeTab === key
                   ? 'bg-gray-100 text-gray-800'
