@@ -58,6 +58,9 @@ const SidebarTreeNode = ({
       type: 'sidebar-item',
       itemType: item.type,
       itemId: item.id,
+      title: item.name,
+      subtitle: item.type === 'folder' ? '폴더' : '파일',
+      shared: false,
       parentId: item.parentId ?? null,
     },
   });
@@ -78,18 +81,6 @@ const SidebarTreeNode = ({
   const isOpen = expandedFolders[item.id] ?? false;
   const isPointed = pointedFolderId === item.id;
 
-  useEffect(() => {
-    if (item.type === 'folder' && isOver && !isOpen) {
-      setExpandedFolders((prev) => ({ ...prev, [item.id]: true }));
-
-      if (item.children === undefined) {
-        loadFolderChildren(item.id).catch((error) => {
-          console.error('Failed to load sidebar folder children', error);
-        });
-      }
-    }
-  }, [isOpen, isOver, item.children, item.id, item.type, loadFolderChildren, setExpandedFolders]);
-
   const toggleFolder = async () => {
     if (item.type !== 'folder') {
       return;
@@ -108,6 +99,7 @@ const SidebarTreeNode = ({
       onOpenFile(item.id, item.parentId ?? null);
       return;
     }
+
     setPointedFolderId(item.id);
     onNavigateFolder(item.id);
   };
@@ -265,6 +257,8 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
     sidebarAutoOpenFolderId,
     setSidebarAutoOpenFolderId,
     loadFolderChildren,
+    getItemParentId,
+    currentFolderIdPath,
   } = useDrive();
 
   const trigger = useRef(null);
@@ -318,30 +312,142 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
       return;
     }
 
-    const applySidebarAutoOpenState = () => {
-      setMyWorkspaceOpen(true);
-      setPointedFolderId(sidebarAutoOpenFolderId);
-      setExpandedFolders((prev) => ({ ...prev, [sidebarAutoOpenFolderId]: true }));
-      setSidebarExpanded(true);
+    const buildFolderChain = (folderId) => {
+      const chain = [];
+      const visited = new Set();
+      let cursor = folderId;
+
+      while (cursor && !visited.has(cursor)) {
+        visited.add(cursor);
+        chain.push(cursor);
+        const parentId = getItemParentId(cursor);
+        if (!parentId) {
+          break;
+        }
+        cursor = parentId;
+      }
+
+      return chain.reverse();
     };
 
-    applySidebarAutoOpenState();
+    const applySidebarAutoOpenState = async () => {
+      const folderChain = buildFolderChain(sidebarAutoOpenFolderId);
 
-    loadFolderChildren(sidebarAutoOpenFolderId)
+      setMyWorkspaceOpen(true);
+      setPointedFolderId(sidebarAutoOpenFolderId);
+      setExpandedFolders((prev) => {
+        const next = { ...prev };
+        folderChain.forEach((folderId) => {
+          next[folderId] = true;
+        });
+        return next;
+      });
+      setSidebarExpanded(true);
+      for (const folderId of folderChain) {
+        await loadFolderChildren(folderId);
+      }
+    };
+
+    applySidebarAutoOpenState()
       .catch((error) => {
         console.error('Failed to load sidebar folder children', error);
       })
       .finally(() => {
         setSidebarAutoOpenFolderId(null);
       });
-  }, [sidebarAutoOpenFolderId, loadFolderChildren, setSidebarAutoOpenFolderId]);
+  }, [
+    getItemParentId,
+    sidebarAutoOpenFolderId,
+    loadFolderChildren,
+    setSidebarAutoOpenFolderId,
+  ]);
+
+  useEffect(() => {
+    if (!pathname.startsWith('/faddit/drive')) {
+      return;
+    }
+
+    const folderIdsInPath = currentFolderIdPath
+      .split('/')
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+
+    if (folderIdsInPath.length === 0) {
+      return;
+    }
+
+    const ancestorFolderIds = folderIdsInPath.slice(0, -1);
+
+    setMyWorkspaceOpen(true);
+    setPointedFolderId(folderIdsInPath[folderIdsInPath.length - 1]);
+    setExpandedFolders((prev) => {
+      let changed = false;
+      const next = { ...prev };
+
+      ancestorFolderIds.forEach((folderId) => {
+        if (!next[folderId]) {
+          next[folderId] = true;
+          changed = true;
+        }
+      });
+
+      return changed ? next : prev;
+    });
+
+    let cancelled = false;
+    const loadAncestors = async () => {
+      for (const folderId of ancestorFolderIds) {
+        if (cancelled) {
+          return;
+        }
+        await loadFolderChildren(folderId);
+      }
+    };
+
+    loadAncestors().catch((error) => {
+      console.error('Failed to sync sidebar folder chain from route', error);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentFolderIdPath, loadFolderChildren, pathname]);
 
   const navigateToFolder = (folderId) => {
     navigate(`/faddit/drive/${folderId}`);
   };
 
+  const findParentFolderIdInTree = (nodes, targetFileId, currentParentId = null) => {
+    for (const node of nodes || []) {
+      if (node.type === 'file' && node.id === targetFileId) {
+        return currentParentId;
+      }
+
+      if (node.type === 'folder') {
+        const nextParentId = node.id;
+        const foundInChildren = findParentFolderIdInTree(
+          node.children || [],
+          targetFileId,
+          nextParentId,
+        );
+        if (foundInChildren) {
+          return foundInChildren;
+        }
+      }
+    }
+
+    return null;
+  };
+
   const openFileDetail = (fileId, parentFolderId) => {
-    const pathname = parentFolderId ? `/faddit/drive/${parentFolderId}` : '/faddit/drive';
+    const resolvedParentFolderId =
+      parentFolderId ||
+      getItemParentId(fileId) ||
+      findParentFolderIdInTree(workspaces, fileId) ||
+      findParentFolderIdInTree(favorites, fileId);
+    const pathname = resolvedParentFolderId
+      ? `/faddit/drive/${resolvedParentFolderId}`
+      : '/faddit/drive';
     navigate({
       pathname,
       search: `?file=${fileId}`,
