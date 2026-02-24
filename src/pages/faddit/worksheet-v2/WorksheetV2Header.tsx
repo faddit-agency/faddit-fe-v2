@@ -7,11 +7,19 @@ import WorksheetV2ScreenEditor from './WorksheetV2ScreenEditor';
 export default function WorksheetV2Header() {
   const activeTab = useWorksheetV2Store((s) => s.activeTab);
   const setActiveTab = useWorksheetV2Store((s) => s.setActiveTab);
+  const worksheetTitle = useWorksheetV2Store((s) => s.worksheetTitle);
+  const isLoadingWorksheet = useWorksheetV2Store((s) => s.isLoadingWorksheet);
+  const worksheetLoadError = useWorksheetV2Store((s) => s.worksheetLoadError);
 
   return (
     <header className='flex shrink-0 items-center justify-between rounded-lg bg-white px-4 py-2'>
       <div className='flex items-center gap-x-6'>
-        <h1 className='text-base font-semibold text-gray-800'>작업지시서 명</h1>
+        <h1 className='text-base font-semibold text-gray-800'>
+          {isLoadingWorksheet ? '불러오는 중...' : worksheetTitle}
+        </h1>
+        {worksheetLoadError ? (
+          <span className='rounded bg-red-50 px-2 py-1 text-xs text-red-500'>{worksheetLoadError}</span>
+        ) : null}
 
         <nav className='flex items-center gap-x-1'>
           {MENU_TABS.map((tab) => (
