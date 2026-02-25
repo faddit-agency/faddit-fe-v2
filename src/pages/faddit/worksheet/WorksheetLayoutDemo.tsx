@@ -379,7 +379,7 @@ export default function WorksheetLayoutDemo() {
   return (
     <div className='flex h-screen w-screen flex-col gap-2 overflow-hidden bg-[#f9f9f9] p-2'>
       {/* Top Bar */}
-      <WorksheetTopBar sidebarOpen={true} onToggleSidebar={() => {}} />
+      <WorksheetTopBar />
 
       {/* Main Content */}
       <section

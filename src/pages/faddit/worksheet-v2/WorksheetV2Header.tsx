@@ -1,5 +1,5 @@
 import React from 'react';
-import { Play } from 'lucide-react';
+import { ChevronDown, Play } from 'lucide-react';
 import { useWorksheetV2Store } from './useWorksheetV2Store';
 import { MENU_TABS } from './worksheetV2Constants';
 
@@ -11,24 +11,30 @@ export default function WorksheetV2Header() {
   const worksheetLoadError = useWorksheetV2Store((s) => s.worksheetLoadError);
 
   return (
-    <header className='flex shrink-0 items-center justify-between rounded-lg bg-white px-4 py-2'>
-      <div className='flex items-center gap-x-6'>
-        <h1 className='text-base font-semibold text-gray-800'>
-          {isLoadingWorksheet ? '불러오는 중...' : worksheetTitle}
-        </h1>
-        {worksheetLoadError ? (
-          <span className='rounded bg-red-50 px-2 py-1 text-xs text-red-500'>{worksheetLoadError}</span>
-        ) : null}
+    <header className='flex shrink-0 flex-col p-2 pr-5'>
+      <div className='flex items-start justify-between'>
+        <div className='min-w-0'>
+          <h1 className='truncate text-[18px] leading-[1.15] font-semibold tracking-[-0.02em] text-gray-800'>
+            {isLoadingWorksheet ? '불러오는 중...' : worksheetTitle}
+          </h1>
+          {worksheetLoadError ? (
+            <span className='mt-1 inline-flex rounded bg-red-50 px-2 py-1 text-xs text-red-500'>
+              {worksheetLoadError}
+            </span>
+          ) : null}
+        </div>
+      </div>
 
-        <nav className='flex items-center gap-x-1'>
+      <div className='flex items-end justify-between'>
+        <nav className='flex items-center gap-x-6'>
           {MENU_TABS.map((tab) => (
             <button
               key={tab.key}
               type='button'
               onClick={() => setActiveTab(tab.key)}
-              className={`cursor-pointer border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+              className={`cursor-pointer border-b-2 text-[14px] font-semibold transition-colors ${
                 activeTab === tab.key
-                  ? 'border-gray-800 text-gray-800'
+                  ? 'border-faddit text-faddit'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -36,22 +42,29 @@ export default function WorksheetV2Header() {
             </button>
           ))}
         </nav>
-      </div>
 
-      <div className='flex items-center gap-x-3'>
-        <button
-          type='button'
-          className='flex cursor-pointer items-center justify-center gap-x-1.5 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-all duration-300 hover:bg-gray-50'
-        >
-          <Play size={14} fill='currentColor' />
-          Play
-        </button>
-        <button
-          type='button'
-          className='flex cursor-pointer items-center justify-center rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition-all duration-300 hover:bg-gray-600'
-        >
-          Share
-        </button>
+        <div className='flex items-center gap-x-2'>
+          <button
+            type='button'
+            className='inline-flex cursor-pointer items-center gap-1 rounded-lg border border-gray-200 bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-200'
+          >
+            화면 편집
+            <ChevronDown size={14} />
+          </button>
+          <button
+            type='button'
+            className='border-faddit inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border bg-white px-4 py-2 text-sm font-medium text-gray-900 transition-colors hover:bg-violet-50'
+          >
+            <Play size={13} fill='currentColor' />
+            Play
+          </button>
+          <button
+            type='button'
+            className='bg-faddit inline-flex cursor-pointer items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90'
+          >
+            Share
+          </button>
+        </div>
       </div>
     </header>
   );

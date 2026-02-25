@@ -721,7 +721,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
   useEffect(() => {
     const canvas = fabricRef.current;
     if (!canvas) return;
-    canvas.backgroundColor = showGrid ? '' : '#ffffff';
+    canvas.backgroundColor = 'transparent';
     canvas.renderAll();
   }, [showGrid]);
 
@@ -1101,9 +1101,8 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
   return (
     <div
       ref={containerRef}
-      className='relative h-full w-full overflow-hidden rounded-md bg-[#e0e0e0]'
+      className='relative h-full w-full overflow-hidden rounded-md'
     >
-      <div className='pointer-events-none absolute inset-0 z-0 bg-white' />
       <div className='pointer-events-none absolute inset-0 z-10' style={gridStyle} />
       <canvas ref={canvasElRef} className='absolute inset-0 z-20' />
       <InteractionOverlay

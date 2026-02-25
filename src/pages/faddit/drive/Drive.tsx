@@ -1633,9 +1633,9 @@ const FadditDrive: React.FC = () => {
       await refreshDrive();
 
       if (worksheetId) {
-        navigate(`/faddit/worksheet-v2/${worksheetId}`);
+        navigate(`/faddit/worksheet/${worksheetId}`);
       } else {
-        navigate('/faddit/worksheet-v2');
+        navigate('/faddit/worksheet');
       }
     } catch (error) {
       console.error('Failed to create worksheet', error);

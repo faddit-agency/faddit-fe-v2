@@ -1,22 +1,24 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { GripHorizontal, Minus, PenLine, Plus, Scissors, Table, Trash2 } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Check, Minus, PenLine, Pencil, Plus, Scissors, Table, Trash2 } from 'lucide-react';
 import ToggleButton from '../../../components/atoms/ToggleButton';
 import WorksheetSketchView from './WorksheetSketchView';
-import WorksheetPatternView from './WorksheetPatternView';
 import WorksheetSizeSpecView from './WorksheetSizeSpecView';
-import {
-  DELETE_ACTION_BUTTON_CLASS,
-  LEFT_ACTION_REVEAL_CLASS,
-  MOVE_ACTION_BUTTON_CLASS,
-  RIGHT_ACTION_REVEAL_CLASS,
-} from './WorksheetActionButtons';
+import { useCanvas } from './CanvasProvider';
+import type {
+  WorksheetEditorDocument,
+  WorksheetEditorPage,
+  WorksheetEditorPageType,
+} from './worksheetEditorSchema';
 
-type PageType = 'sketch' | 'pattern' | 'size-spec';
+type PageType = WorksheetEditorPageType;
+type WorksheetPage = WorksheetEditorPage;
 
-interface WorksheetPage {
-  id: string;
-  label: string;
-  type: PageType;
+interface WorksheetContentPanelProps {
+  editorDocument: WorksheetEditorDocument;
+  onDocumentChange: React.Dispatch<React.SetStateAction<WorksheetEditorDocument>>;
+  readOnly?: boolean;
+  autosaveEnabled: boolean;
+  onToggleAutosave: () => void;
 }
 
 const PAGE_TYPE_META: Record<
@@ -45,12 +47,29 @@ const PAGE_TYPE_META: Record<
 
 const THUMB_W = 120;
 const THUMB_H = 80;
+const PAGE_CARD_TOTAL_H = 112;
 
-const INITIAL_PAGES: WorksheetPage[] = [
-  { id: '1', label: '도식화', type: 'sketch' },
-  { id: '2', label: '패턴', type: 'pattern' },
-  { id: '3', label: '사이즈 스펙', type: 'size-spec' },
-];
+const ADDABLE_PAGE_TYPES: PageType[] = ['sketch', 'pattern'];
+
+const PAGE_TYPE_ORDER: Record<PageType, number> = {
+  sketch: 0,
+  pattern: 1,
+  'size-spec': 2,
+};
+
+const PAGE_TYPE_CHIP_CLASS: Record<PageType, string> = {
+  sketch: 'bg-violet-100 text-violet-700',
+  pattern: 'bg-gray-200 text-gray-700',
+  'size-spec': 'bg-indigo-100 text-indigo-700',
+};
+
+function sortPagesByType(nextPages: WorksheetPage[]): WorksheetPage[] {
+  return [...nextPages].sort((a, b) => PAGE_TYPE_ORDER[a.type] - PAGE_TYPE_ORDER[b.type]);
+}
+
+function isCanvasPageType(type: PageType): boolean {
+  return type === 'sketch' || type === 'pattern';
+}
 
 const makePage = (type: PageType, sameTypeCount: number): WorksheetPage => {
   const meta = PAGE_TYPE_META[type];
@@ -61,226 +80,528 @@ const makePage = (type: PageType, sameTypeCount: number): WorksheetPage => {
   };
 };
 
-export default function WorksheetContentPanel() {
-  const [pages, setPages] = useState<WorksheetPage[]>(INITIAL_PAGES);
-  const [selectedId, setSelectedId] = useState<string>('1');
-  const [pageToggle, setPageToggle] = useState(true);
-  const [zoom, setZoom] = useState(100);
+export default function WorksheetContentPanel({
+  editorDocument,
+  onDocumentChange,
+  readOnly = false,
+  autosaveEnabled,
+  onToggleAutosave,
+}: WorksheetContentPanelProps) {
+  const pages = editorDocument.pages;
+  const selectedId = editorDocument.activePageId;
+  const pageToggle = editorDocument.pageToggle;
+  const zoom = editorDocument.zoom;
+
   const [addMenuOpen, setAddMenuOpen] = useState(false);
-  const [dragPageId, setDragPageId] = useState<string | null>(null);
-  const [dragOverPageId, setDragOverPageId] = useState<string | null>(null);
+  const [editingPageId, setEditingPageId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
   const addMenuRef = useRef<HTMLDivElement>(null);
+  const addMenuPanelRef = useRef<HTMLDivElement>(null);
+  const [addMenuPosition, setAddMenuPosition] = useState<{ left: number; top: number } | null>(null);
+  const previousSelectedIdRef = useRef<string>(selectedId);
+  const sketchPagesRef = useRef(editorDocument.sketchPages);
+  const lastLoadedRef = useRef<{ pageId: string | null; json: string | null; session: string | null }>({
+    pageId: null,
+    json: null,
+    session: null,
+  });
+
+  const { canvasRef, canvasSession, exportCanvasJson, importCanvasJson, clearCanvas } = useCanvas();
+  const orderedPages = useMemo(() => sortPagesByType(pages), [pages]);
+  const protectedPageIds = useMemo(() => {
+    const firstSketchPageId = pages.find((page) => page.type === 'sketch')?.id ?? null;
+    const firstPatternPageId = pages.find((page) => page.type === 'pattern')?.id ?? null;
+
+    return new Set([firstSketchPageId, firstPatternPageId].filter((id): id is string => Boolean(id)));
+  }, [pages]);
 
   const selectedPage = pages.find((p) => p.id === selectedId) ?? pages[0];
 
   useEffect(() => {
+    sketchPagesRef.current = editorDocument.sketchPages;
+  }, [editorDocument.sketchPages]);
+
+  const updateDocument = useCallback(
+    (updater: (prev: WorksheetEditorDocument) => WorksheetEditorDocument) => {
+      onDocumentChange((prev) => updater(prev));
+    },
+    [onDocumentChange],
+  );
+
+  const persistSketchPageSnapshot = useCallback(
+    (pageId: string | null | undefined) => {
+      if (!pageId) return;
+
+      const targetPage = pages.find((page) => page.id === pageId);
+      if (!targetPage || !isCanvasPageType(targetPage.type)) {
+        return;
+      }
+
+      const json = exportCanvasJson();
+      if (!json) return;
+
+      const canvas = canvasRef.current;
+      const thumbnail = canvas
+        ? canvas.toDataURL({
+            format: 'png',
+            multiplier: 1,
+          })
+        : null;
+
+      updateDocument((prev) => {
+        const sameSketchJson = prev.sketchPages[pageId] === json;
+        const sameThumbnail = !thumbnail || prev.pageThumbnails[pageId] === thumbnail;
+        if (sameSketchJson && sameThumbnail) {
+          return prev;
+        }
+
+        const nextThumbnails = thumbnail
+          ? {
+              ...prev.pageThumbnails,
+              [pageId]: thumbnail,
+            }
+          : prev.pageThumbnails;
+
+        return {
+          ...prev,
+          sketchPages: {
+            ...prev.sketchPages,
+            [pageId]: json,
+          },
+          pageThumbnails: nextThumbnails,
+        };
+      });
+    },
+    [pages, canvasRef, exportCanvasJson, updateDocument],
+  );
+
+  const loadSelectedSketchPage = useCallback(async () => {
+    const sessionKey = String(canvasSession ?? '');
+
+    if (!selectedPage) {
+      clearCanvas();
+      lastLoadedRef.current = { pageId: null, json: null, session: sessionKey };
+      return;
+    }
+
+    if (!isCanvasPageType(selectedPage.type)) {
+      clearCanvas();
+      lastLoadedRef.current = { pageId: selectedPage.id, json: null, session: sessionKey };
+      return;
+    }
+
+    const savedJson = sketchPagesRef.current[selectedPage.id];
+
+    if (
+      lastLoadedRef.current.pageId === selectedPage.id &&
+      lastLoadedRef.current.json === (savedJson ?? null) &&
+      lastLoadedRef.current.session === sessionKey
+    ) {
+      return;
+    }
+
+    if (!savedJson) {
+      clearCanvas();
+      lastLoadedRef.current = { pageId: selectedPage.id, json: null, session: sessionKey };
+      return;
+    }
+
+    await importCanvasJson(savedJson);
+    lastLoadedRef.current = { pageId: selectedPage.id, json: savedJson, session: sessionKey };
+  }, [selectedPage, importCanvasJson, clearCanvas, canvasSession]);
+
+  useEffect(() => {
+    if (!selectedPage) return;
+
+    const prev = previousSelectedIdRef.current;
+    if (prev !== selectedId) {
+      persistSketchPageSnapshot(prev);
+    }
+
+    previousSelectedIdRef.current = selectedId;
+
+    void loadSelectedSketchPage();
+  }, [selectedId, selectedPage, persistSketchPageSnapshot, loadSelectedSketchPage, canvasSession]);
+
+  useEffect(() => {
+    return () => {
+      persistSketchPageSnapshot(previousSelectedIdRef.current);
+    };
+  }, [persistSketchPageSnapshot]);
+
+  useEffect(() => {
+    if (!selectedPage || !isCanvasPageType(selectedPage.type)) {
+      return;
+    }
+
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return;
+    }
+
+    let timer: number | null = null;
+    const schedulePersist = () => {
+      if (timer) {
+        window.clearTimeout(timer);
+      }
+
+      timer = window.setTimeout(() => {
+        timer = null;
+        persistSketchPageSnapshot(selectedPage.id);
+      }, 400);
+    };
+
+    canvas.on('object:added', schedulePersist);
+    canvas.on('object:modified', schedulePersist);
+    canvas.on('object:removed', schedulePersist);
+    canvas.on('path:created', schedulePersist);
+
+    return () => {
+      canvas.off('object:added', schedulePersist);
+      canvas.off('object:modified', schedulePersist);
+      canvas.off('object:removed', schedulePersist);
+      canvas.off('path:created', schedulePersist);
+
+      if (timer) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [canvasRef, selectedPage, persistSketchPageSnapshot, canvasSession]);
+
+  useEffect(() => {
     if (!addMenuOpen) return;
+
+    const triggerRect = addMenuRef.current?.getBoundingClientRect();
+    if (triggerRect) {
+      setAddMenuPosition({
+        left: triggerRect.left,
+        top: triggerRect.top - 6,
+      });
+    }
+
     const handler = (e: MouseEvent) => {
-      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const inTrigger = !!addMenuRef.current?.contains(target);
+      const inMenu = !!addMenuPanelRef.current?.contains(target);
+      if (!inTrigger && !inMenu) {
         setAddMenuOpen(false);
       }
     };
+
+    const closeOnViewportChange = () => {
+      setAddMenuOpen(false);
+    };
+
     document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    window.addEventListener('resize', closeOnViewportChange);
+    window.addEventListener('scroll', closeOnViewportChange, true);
+
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      window.removeEventListener('resize', closeOnViewportChange);
+      window.removeEventListener('scroll', closeOnViewportChange, true);
+    };
   }, [addMenuOpen]);
 
   const handleAddPage = useCallback(
     (type: PageType) => {
+      if (readOnly) return;
       const sameTypeCount = pages.filter((p) => p.type === type).length;
       const newPage = makePage(type, sameTypeCount);
-      setPages((prev) => [...prev, newPage]);
-      setSelectedId(newPage.id);
+
+      updateDocument((prev) => {
+        const nextPages = sortPagesByType([...prev.pages, newPage]);
+        return {
+          ...prev,
+          pages: nextPages,
+          activePageId: newPage.id,
+        };
+      });
+
       setAddMenuOpen(false);
     },
-    [pages],
+    [pages, readOnly, updateDocument],
   );
 
   const handleDeletePage = useCallback(
     (pageId: string) => {
+      if (readOnly) return;
       if (pages.length <= 1) return;
-      const nextPages = pages.filter((p) => p.id !== pageId);
-      setPages(nextPages);
-      if (selectedId === pageId && nextPages.length > 0) {
-        setSelectedId(nextPages[0].id);
+      if (protectedPageIds.has(pageId)) return;
+
+      if (pageId === selectedId) {
+        persistSketchPageSnapshot(pageId);
       }
-    },
-    [pages, selectedId],
-  );
 
-  const handlePageDragStart = useCallback((pageId: string) => {
-    setDragPageId(pageId);
-  }, []);
+      updateDocument((prev) => {
+        const nextPages = prev.pages.filter((page) => page.id !== pageId);
+        const nextActivePageId =
+          prev.activePageId === pageId
+            ? (nextPages[0]?.id ?? prev.activePageId)
+            : prev.activePageId;
 
-  const handlePageDrop = useCallback(
-    (targetId: string) => {
-      if (!dragPageId || dragPageId === targetId) return;
-      setPages((prev) => {
-        const from = prev.findIndex((p) => p.id === dragPageId);
-        const to = prev.findIndex((p) => p.id === targetId);
-        if (from < 0 || to < 0) return prev;
-        const next = [...prev];
-        const [moved] = next.splice(from, 1);
-        next.splice(to, 0, moved);
-        return next;
+        const nextSketchPages = { ...prev.sketchPages };
+        delete nextSketchPages[pageId];
+
+        const nextThumbnails = { ...prev.pageThumbnails };
+        delete nextThumbnails[pageId];
+
+        return {
+          ...prev,
+          pages: sortPagesByType(nextPages),
+          activePageId: nextActivePageId,
+          sketchPages: nextSketchPages,
+          pageThumbnails: nextThumbnails,
+        };
       });
-      setDragPageId(null);
-      setDragOverPageId(null);
     },
-    [dragPageId],
+    [pages, protectedPageIds, readOnly, selectedId, persistSketchPageSnapshot, updateDocument],
   );
 
-  const handlePageDragEnd = useCallback(() => {
-    setDragPageId(null);
-    setDragOverPageId(null);
+  const startPageLabelEdit = useCallback((page: WorksheetPage) => {
+    setEditingPageId(page.id);
+    setEditingName(page.label);
   }, []);
+
+  const commitPageLabelEdit = useCallback(() => {
+    if (!editingPageId) return;
+    const nextLabel = editingName.trim();
+    if (!nextLabel) {
+      setEditingPageId(null);
+      setEditingName('');
+      return;
+    }
+
+    updateDocument((prev) => ({
+      ...prev,
+      pages: prev.pages.map((page) =>
+        page.id === editingPageId
+          ? {
+              ...page,
+              label: nextLabel,
+            }
+          : page,
+      ),
+    }));
+
+    setEditingPageId(null);
+    setEditingName('');
+  }, [editingName, editingPageId, updateDocument]);
 
   return (
     <section className='flex h-full min-w-0 flex-1 flex-col gap-2'>
-      <div className='relative min-h-0 flex-1 overflow-hidden rounded-md bg-white'>
-        {pages.map((page) => (
-          <div
-            key={page.id}
-            className={`absolute inset-0 ${page.id === selectedId ? 'block' : 'hidden'}`}
-          >
-            {page.type === 'sketch' && <WorksheetSketchView zoom={zoom} onZoomChange={setZoom} />}
-            {page.type === 'pattern' && <WorksheetPatternView />}
-            {page.type === 'size-spec' && <WorksheetSizeSpecView />}
+      <div className='relative min-h-0 flex-1 overflow-hidden rounded-md'>
+        {!selectedPage && <div className='absolute inset-0' />}
+        {selectedPage && isCanvasPageType(selectedPage.type) && (
+          <div className='absolute inset-0'>
+            <WorksheetSketchView
+              zoom={zoom}
+              onZoomChange={(nextZoom) => {
+                updateDocument((prev) => ({ ...prev, zoom: nextZoom }));
+              }}
+            />
           </div>
-        ))}
+        )}
+        {selectedPage?.type === 'size-spec' && (
+          <div className='absolute inset-0'>
+            <WorksheetSizeSpecView />
+          </div>
+        )}
       </div>
 
-      <div className='flex shrink-0 flex-col rounded-md bg-white px-4 py-3'>
+      <div className='relative z-[120] flex w-full min-w-0 shrink-0 flex-col rounded-md px-4 py-3'>
         <div
-          className='overflow-hidden transition-[max-height,margin] duration-300 ease-in-out'
+          className='w-full min-w-0 transition-[max-height,margin] duration-300 ease-in-out'
           style={{
-            maxHeight: pageToggle ? THUMB_H + 16 : 0,
-            marginBottom: pageToggle ? 8 : 0,
+            maxHeight: pageToggle ? PAGE_CARD_TOTAL_H + 34 : 0,
+            overflow: pageToggle ? 'visible' : 'hidden',
           }}
         >
           <div
-            className='flex items-center gap-2 transition-opacity duration-300 ease-in-out'
+            className='w-full min-w-0 transition-opacity duration-300 ease-in-out'
             style={{ opacity: pageToggle ? 1 : 0 }}
           >
-            {pages.map((page, idx) => {
+            <div className='flex w-full min-w-0 items-start gap-2'>
+              <div className='w-full min-w-0 flex-1 overflow-x-auto overflow-y-hidden'>
+                <div className='flex w-max items-start gap-2 pb-1'>
+                {orderedPages.map((page, idx) => {
               const meta = PAGE_TYPE_META[page.type];
-              const Icon = meta.icon;
-              const isDragged = dragPageId === page.id;
-              const isDragOver = dragOverPageId === page.id;
+              const isEditingName = editingPageId === page.id;
+              const thumbnail = editorDocument.pageThumbnails[page.id];
+              const isProtectedPage = protectedPageIds.has(page.id);
               return (
-                <div
-                  key={page.id}
-                  className='group relative'
-                  onDragOver={(e) => {
-                    if (!dragPageId) return;
-                    e.preventDefault();
-                    setDragOverPageId(page.id);
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    handlePageDrop(page.id);
-                  }}
-                  onDragLeave={() => {
-                    setDragOverPageId((prev) => (prev === page.id ? null : prev));
-                  }}
-                >
-                  <button
-                    type='button'
-                    onClick={() => setSelectedId(page.id)}
-                    className={`relative flex shrink-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg bg-white transition-all ${
-                      selectedId === page.id
-                        ? 'border-2 border-gray-700'
-                        : 'border border-gray-200 hover:border-gray-300'
-                    } ${isDragged ? 'opacity-55' : ''} ${isDragOver ? 'ring-2 ring-blue-200' : ''}`}
-                    style={{ width: THUMB_W, height: THUMB_H }}
-                  >
-                    <span className='absolute top-1 right-1.5 text-[10px] text-gray-400'>
-                      {idx + 1}
-                    </span>
-                    <div
-                      className={`flex h-8 w-8 items-center justify-center rounded-full ${meta.bgColor}`}
+                <div key={page.id} className='relative flex shrink-0 flex-col gap-1'>
+                  <div className='group/thumb relative' style={{ width: THUMB_W, height: THUMB_H }}>
+                    <button
+                      type='button'
+                      onClick={() => {
+                        if (readOnly) return;
+                        updateDocument((prev) => ({ ...prev, activePageId: page.id }));
+                      }}
+                      className={`relative h-full w-full cursor-pointer overflow-hidden rounded-md bg-white transition-all ${
+                        selectedId === page.id
+                          ? 'border-2 border-violet-500'
+                          : 'border border-gray-300 hover:border-gray-400'
+                      }`}
                     >
-                      <Icon size={14} className={meta.iconColor} />
-                    </div>
-                    <span className='text-xs text-gray-700'>{page.label}</span>
-                  </button>
+                      <span
+                        className={`absolute top-2 left-2 z-10 rounded-full px-2 py-0.5 text-[11px] font-semibold ${PAGE_TYPE_CHIP_CLASS[page.type]}`}
+                      >
+                        {meta.defaultLabel}
+                      </span>
+                      <span className='absolute right-2 bottom-2 z-10 text-[10px] leading-none font-semibold text-gray-800'>
+                        {idx + 1}
+                      </span>
 
-                  <button
-                    type='button'
-                    draggable
-                    onDragStart={() => handlePageDragStart(page.id)}
-                    onDragEnd={handlePageDragEnd}
-                    onClick={(e) => e.stopPropagation()}
-                    className={`${LEFT_ACTION_REVEAL_CLASS} cursor-grab active:cursor-grabbing ${MOVE_ACTION_BUTTON_CLASS}`}
-                    title='페이지 이동'
-                  >
-                    <GripHorizontal size={12} strokeWidth={2.2} />
-                  </button>
+                      {thumbnail && (
+                        <img
+                          src={thumbnail}
+                          alt={`${page.label} 썸네일`}
+                          className='h-full w-full object-cover'
+                        />
+                      )}
+                    </button>
 
-                  <button
-                    type='button'
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeletePage(page.id);
-                    }}
-                    className={`${RIGHT_ACTION_REVEAL_CLASS} cursor-pointer ${DELETE_ACTION_BUTTON_CLASS}`}
-                    title='페이지 삭제'
-                  >
-                    <Trash2 size={11} strokeWidth={2.1} />
-                  </button>
+                    {!isProtectedPage && (
+                      <button
+                        type='button'
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeletePage(page.id);
+                        }}
+                        className='absolute top-1/2 right-1.5 z-30 flex h-5 w-6 -translate-y-1/2 translate-x-3 scale-95 cursor-pointer items-center justify-center rounded-md border border-red-200 bg-white text-red-500 opacity-0 shadow-sm transition-all duration-300 ease-out will-change-transform group-hover/thumb:translate-x-0 group-hover/thumb:scale-100 group-hover/thumb:opacity-100 hover:border-red-300 hover:bg-red-50 hover:text-red-600 active:scale-95'
+                        title='페이지 삭제'
+                      >
+                        <Trash2 size={11} strokeWidth={2.1} />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className='group/title relative h-7 w-full'>
+                    {isEditingName ? (
+                      <div className='absolute inset-0 flex items-center gap-1'>
+                        <input
+                          value={editingName}
+                          onChange={(e) => setEditingName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              commitPageLabelEdit();
+                            }
+                            if (e.key === 'Escape') {
+                              setEditingPageId(null);
+                              setEditingName('');
+                            }
+                          }}
+                          onBlur={commitPageLabelEdit}
+                          className='form-input h-7 min-w-0 flex-1 px-2 text-xs'
+                          autoFocus
+                        />
+                        <button
+                          type='button'
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={commitPageLabelEdit}
+                          className='flex h-7 w-7 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-gray-100'
+                          title='시트명 저장'
+                        >
+                          <Check size={13} />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className='absolute inset-0 flex items-center justify-center px-2 transition-all duration-300 ease-out group-hover/title:pr-8'>
+                          <p className='w-full truncate text-center text-base font-semibold text-gray-800'>
+                            {page.label}
+                          </p>
+                        </div>
+                        <button
+                          type='button'
+                          onClick={() => startPageLabelEdit(page)}
+                          className='absolute top-1/2 right-0 flex h-6 w-6 -translate-y-1/2 translate-x-1 items-center justify-center rounded-md text-gray-500 opacity-0 transition-all duration-300 ease-out group-hover/title:translate-x-0 group-hover/title:opacity-100 hover:bg-gray-100 hover:text-gray-700'
+                          title='시트명 수정'
+                        >
+                          <Pencil size={12} />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               );
             })}
 
-            <div className='relative' ref={addMenuRef}>
-              <button
-                type='button'
-                onClick={() => setAddMenuOpen((v) => !v)}
-                className='flex shrink-0 cursor-pointer items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 transition-colors hover:border-gray-300 hover:text-gray-600'
-                aria-label='페이지 추가'
-                style={{ width: THUMB_W, height: THUMB_H }}
-              >
-                <span className='text-2xl leading-none'>+</span>
-              </button>
-
-              {addMenuOpen && (
-                <div className='absolute bottom-full left-0 z-50 mb-1 w-36 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg'>
-                  {(
-                    Object.entries(PAGE_TYPE_META) as [
-                      PageType,
-                      (typeof PAGE_TYPE_META)[PageType],
-                    ][]
-                  ).map(([type, meta]) => {
-                    const Icon = meta.icon;
-                    return (
-                      <button
-                        key={type}
-                        type='button'
-                        onClick={() => handleAddPage(type)}
-                        className='flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50'
-                      >
-                        <Icon size={14} className={meta.iconColor} />
-                        {meta.defaultLabel}
-                      </button>
-                    );
-                  })}
+                  <div className='relative flex h-[112px] shrink-0 items-start' ref={addMenuRef}>
+                    <button
+                      type='button'
+                      disabled={readOnly}
+                      onClick={() => setAddMenuOpen((v) => !v)}
+                      className='flex shrink-0 cursor-pointer items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 transition-colors hover:border-gray-300 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50'
+                      aria-label='페이지 추가'
+                      style={{ width: THUMB_W, height: THUMB_H }}
+                    >
+                      <span className='text-2xl leading-none'>+</span>
+                    </button>
+                  </div>
                 </div>
-              )}
+              </div>
             </div>
           </div>
         </div>
 
-        <div className='flex w-full items-center justify-end gap-3'>
-          <ToggleButton
-            label='페이지'
-            checked={pageToggle}
-            onChange={() => setPageToggle((v) => !v)}
-          />
+        {addMenuOpen && !readOnly && addMenuPosition && (
+          <div
+            ref={addMenuPanelRef}
+            className='fixed z-[260] w-36 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg'
+            style={{ left: addMenuPosition.left, top: addMenuPosition.top, transform: 'translateY(-100%)' }}
+          >
+            {ADDABLE_PAGE_TYPES.map((type) => {
+              const meta = PAGE_TYPE_META[type];
+              const Icon = meta.icon;
+              return (
+                <button
+                  key={type}
+                  type='button'
+                  onClick={() => handleAddPage(type)}
+                  className='flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50'
+                >
+                  <Icon size={14} className={meta.iconColor} />
+                  {meta.defaultLabel}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
-          {selectedPage?.type === 'sketch' && (
-            <div className='flex items-center gap-1'>
+        <div className='mt-2 flex w-full min-w-0 items-center justify-end gap-3'>
+          <div className='shrink-0'>
+            <ToggleButton
+              label='자동저장'
+              checked={autosaveEnabled}
+              onChange={() => {
+                if (readOnly) return;
+                onToggleAutosave();
+              }}
+            />
+          </div>
+
+          <div className='shrink-0'>
+            <ToggleButton
+              label='페이지'
+              checked={pageToggle}
+              onChange={() => {
+                if (readOnly) return;
+                updateDocument((prev) => ({ ...prev, pageToggle: !prev.pageToggle }));
+              }}
+            />
+          </div>
+
+          {selectedPage && isCanvasPageType(selectedPage.type) && (
+            <div className='shrink-0 flex items-center gap-1'>
               <button
                 type='button'
-                onClick={() => setZoom((z) => Math.max(10, z - 10))}
+                onClick={() => {
+                  if (readOnly) return;
+                  updateDocument((prev) => ({ ...prev, zoom: Math.max(10, prev.zoom - 10) }));
+                }}
                 className='flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-gray-600 transition-all duration-300 hover:bg-gray-100'
               >
                 <Minus size={14} />
@@ -288,7 +609,10 @@ export default function WorksheetContentPanel() {
               <span className='min-w-[3.5rem] text-center text-sm text-gray-800'>{zoom}%</span>
               <button
                 type='button'
-                onClick={() => setZoom((z) => Math.min(200, z + 10))}
+                onClick={() => {
+                  if (readOnly) return;
+                  updateDocument((prev) => ({ ...prev, zoom: Math.min(200, prev.zoom + 10) }));
+                }}
                 className='flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-gray-600 transition-all duration-300 hover:bg-gray-100'
               >
                 <Plus size={14} />

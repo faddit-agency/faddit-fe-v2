@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactGridLayout, { useContainerWidth } from 'react-grid-layout';
 import type { Layout, LayoutItem } from 'react-grid-layout';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, LogIn } from 'lucide-react';
+import { useNavigate, useParams } from 'react-router-dom';
 import 'react-grid-layout/css/styles.css';
 
 import { useWorksheetV2Store } from './useWorksheetV2Store';
@@ -19,6 +20,7 @@ import {
   RIB_FABRIC_INFO_STATE,
 } from './worksheetV2Constants';
 import type { CardDefinition } from './worksheetV2Types';
+import type { WorksheetEditorDocument, WorksheetEditorPage } from '../worksheet/worksheetEditorSchema';
 
 const WORKSHEET_MODULE_DRAG_TYPE = 'application/x-faddit-worksheet-card';
 
@@ -97,11 +99,13 @@ function applyCoupledHorizontalResize(
   });
 
   const targetFromCallback = resizedItem ? adjustedById.get(resizedItem.i) : undefined;
-  const target = targetFromCallback ?? changedItems.find((item) => {
-    const prev = prevById.get(item.i);
-    if (!prev) return false;
-    return prev.x !== item.x || prev.w !== item.w;
-  });
+  const target =
+    targetFromCallback ??
+    changedItems.find((item) => {
+      const prev = prevById.get(item.i);
+      if (!prev) return false;
+      return prev.x !== item.x || prev.w !== item.w;
+    });
 
   if (!target) {
     return rebalanceRowsToFillWidth(adjustedLayout, cols);
@@ -137,7 +141,8 @@ function applyCoupledHorizontalResize(
   if ((isRightEdgeResizeFromCallback || nextRight !== prevRight) && nextLeft === prevLeft) {
     const rightCandidates = previousLayout
       .filter(
-        (item) => item.i !== target.i && overlapsVertically(item, prevTarget) && item.x >= prevRight,
+        (item) =>
+          item.i !== target.i && overlapsVertically(item, prevTarget) && item.x >= prevRight,
       )
       .sort((a, b) => a.x - b.x);
     const prevRightNeighbor =
@@ -169,7 +174,9 @@ function applyCoupledHorizontalResize(
     const leftCandidates = previousLayout
       .filter(
         (item) =>
-          item.i !== target.i && overlapsVertically(item, prevTarget) && item.x + item.w <= prevLeft,
+          item.i !== target.i &&
+          overlapsVertically(item, prevTarget) &&
+          item.x + item.w <= prevLeft,
       )
       .sort((a, b) => b.x + b.w - (a.x + a.w));
     const prevLeftNeighbor =
@@ -199,26 +206,95 @@ function applyCoupledHorizontalResize(
   return rebalanceRowsToFillWidth(adjustedLayout, cols);
 }
 
-function DiagramPlaceholder() {
+interface DiagramSheetItem {
+  id: string;
+  label: string;
+  type: WorksheetEditorPage['type'];
+  thumbnail: string | null;
+}
+
+function DiagramPlaceholder({
+  sheets,
+  selectedSheetId,
+  onSelectSheet,
+  onPrev,
+  onNext,
+  canPrev,
+  canNext,
+}: {
+  sheets: DiagramSheetItem[];
+  selectedSheetId: string | null;
+  onSelectSheet: (sheetId: string) => void;
+  onPrev: () => void;
+  onNext: () => void;
+  canPrev: boolean;
+  canNext: boolean;
+}) {
+  const selectedSheet = sheets.find((sheet) => sheet.id === selectedSheetId) ?? sheets[0] ?? null;
+
   return (
-    <div className='flex h-full items-center justify-center bg-[#f6f6f7]'>
-      <button
-        type='button'
-        className='absolute left-4 flex h-8 w-8 items-center justify-center rounded-full bg-white text-gray-400 shadow transition-colors hover:text-gray-600'
-      >
-        <ChevronLeft size={18} />
-      </button>
-      <div className='flex flex-col items-center gap-2 text-gray-400'>
-        <div className='flex h-48 w-64 items-center justify-center rounded-lg border-2 border-dashed border-gray-300'>
-          <p className='text-sm'>도식화 이미지 영역</p>
+    <div className='relative flex h-full flex-col bg-white'>
+      <div className='relative flex min-h-0 flex-1 items-center justify-center px-5 pt-5 pb-3'>
+        <button
+          type='button'
+          onClick={onPrev}
+          disabled={!canPrev}
+          className='absolute top-1/2 left-4 z-10 flex h-14 w-14 -translate-y-1/2 items-center justify-center rounded-2xl bg-white/80 text-gray-300 shadow-sm transition-all duration-200 hover:text-violet-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-35'
+        >
+          <ChevronLeft size={28} strokeWidth={2.2} />
+        </button>
+
+        <div className='flex h-full w-full items-center justify-center overflow-hidden rounded-lg bg-transparent'>
+          {selectedSheet?.thumbnail ? (
+            <img
+              src={selectedSheet.thumbnail}
+              alt={`${selectedSheet.label} 미리보기`}
+              className='h-full w-full object-contain'
+            />
+          ) : (
+            <div className='text-sm text-gray-400'>미리보기 없음</div>
+          )}
+        </div>
+
+        <button
+          type='button'
+          onClick={onNext}
+          disabled={!canNext}
+          className='absolute top-1/2 right-4 z-10 flex h-14 w-14 -translate-y-1/2 items-center justify-center rounded-2xl bg-white/80 text-gray-300 shadow-sm transition-all duration-200 hover:text-violet-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-35'
+        >
+          <ChevronRight size={28} strokeWidth={2.2} />
+        </button>
+      </div>
+
+      <div className='worksheet-v2-no-drag shrink-0 px-4 pb-3'>
+        <div className='flex items-center justify-center gap-2 overflow-x-auto py-1'>
+          {sheets.map((sheet, index) => {
+            const isSelected = sheet.id === selectedSheet?.id;
+            return (
+              <button
+                key={sheet.id}
+                type='button'
+                onClick={() => onSelectSheet(sheet.id)}
+                className={`flex w-[116px] shrink-0 flex-col gap-1 rounded-md bg-white p-1.5 text-left transition-all duration-200 ${
+                  isSelected
+                    ? 'bg-violet-50 shadow-[0_0_0_1px_rgba(118,59,255,0.5)]'
+                    : 'hover:bg-gray-50 active:scale-[0.98]'
+                }`}
+              >
+                <div className='relative h-16 overflow-hidden rounded-sm bg-white'>
+                  {sheet.thumbnail ? (
+                    <img src={sheet.thumbnail} alt={`${sheet.label} 썸네일`} className='h-full w-full object-cover' />
+                  ) : null}
+                  <span className='absolute right-1 bottom-0.5 text-[10px] font-semibold text-gray-700'>
+                    {index + 1}
+                  </span>
+                </div>
+                <div className='truncate text-xs font-medium text-gray-700'>{sheet.label}</div>
+              </button>
+            );
+          })}
         </div>
       </div>
-      <button
-        type='button'
-        className='absolute right-4 flex h-8 w-8 items-center justify-center rounded-full bg-white text-gray-400 shadow transition-colors hover:text-gray-600'
-      >
-        <ChevronRight size={18} />
-      </button>
     </div>
   );
 }
@@ -287,17 +363,46 @@ function CardBodyRenderer({
   card,
   customCardContent,
   onChangeCustomContent,
+  diagramSheets,
+  selectedDiagramSheetId,
+  onSelectDiagramSheet,
+  onPrevDiagramSheet,
+  onNextDiagramSheet,
 }: {
   card: CardDefinition;
   customCardContent: Record<string, string>;
   onChangeCustomContent: (cardId: string, content: string) => void;
+  diagramSheets: DiagramSheetItem[];
+  selectedDiagramSheetId: string | null;
+  onSelectDiagramSheet: (sheetId: string) => void;
+  onPrevDiagramSheet: () => void;
+  onNextDiagramSheet: () => void;
 }) {
   const cardId = card.id;
   const sizeSpecUnit = useWorksheetV2Store((s) => s.sizeSpecUnit);
 
   switch (cardId) {
     case 'diagram-view':
-      return <DiagramPlaceholder />;
+      return (
+        <DiagramPlaceholder
+          sheets={diagramSheets}
+          selectedSheetId={selectedDiagramSheetId}
+          onSelectSheet={onSelectDiagramSheet}
+          onPrev={onPrevDiagramSheet}
+          onNext={onNextDiagramSheet}
+          canPrev={
+            !!selectedDiagramSheetId &&
+            diagramSheets.findIndex((sheet) => sheet.id === selectedDiagramSheetId) > 0
+          }
+          canNext={
+            !!selectedDiagramSheetId &&
+            (() => {
+              const idx = diagramSheets.findIndex((sheet) => sheet.id === selectedDiagramSheetId);
+              return idx >= 0 && idx < diagramSheets.length - 1;
+            })()
+          }
+        />
+      );
     case 'notice':
       return <WorksheetNoticeEditor />;
     case 'size-spec':
@@ -371,8 +476,14 @@ function CardBodyRenderer({
   }
 }
 
-export default function WorksheetV2GridContent() {
+export default function WorksheetV2GridContent({
+  editorDocument,
+}: {
+  editorDocument: WorksheetEditorDocument;
+}) {
   const { width, containerRef, mounted } = useContainerWidth();
+  const navigate = useNavigate();
+  const { worksheetId } = useParams<{ worksheetId?: string }>();
 
   const activeTab = useWorksheetV2Store((s) => s.activeTab);
   const tabLayouts = useWorksheetV2Store((s) => s.tabLayouts);
@@ -399,6 +510,50 @@ export default function WorksheetV2GridContent() {
     h: number;
   } | null>(null);
   const interactionStartLayoutRef = useRef<LayoutItem[] | null>(null);
+
+  const diagramSheets = useMemo<DiagramSheetItem[]>(() => {
+    return editorDocument.pages
+      .filter((page) => page.type === 'sketch' || page.type === 'pattern')
+      .map((page) => ({
+        id: page.id,
+        label: page.label,
+        type: page.type,
+        thumbnail: editorDocument.pageThumbnails[page.id] ?? null,
+      }));
+  }, [editorDocument.pages, editorDocument.pageThumbnails]);
+
+  const [selectedDiagramSheetId, setSelectedDiagramSheetId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (diagramSheets.length === 0) {
+      setSelectedDiagramSheetId(null);
+      return;
+    }
+
+    const hasCurrent =
+      selectedDiagramSheetId && diagramSheets.some((sheet) => sheet.id === selectedDiagramSheetId);
+    if (hasCurrent) {
+      return;
+    }
+
+    const preferred = diagramSheets.find((sheet) => sheet.id === editorDocument.activePageId);
+    setSelectedDiagramSheetId(preferred?.id ?? diagramSheets[0].id);
+  }, [diagramSheets, editorDocument.activePageId, selectedDiagramSheetId]);
+
+  const selectedDiagramIndex = useMemo(() => {
+    if (!selectedDiagramSheetId) return -1;
+    return diagramSheets.findIndex((sheet) => sheet.id === selectedDiagramSheetId);
+  }, [diagramSheets, selectedDiagramSheetId]);
+
+  const handlePrevDiagramSheet = useCallback(() => {
+    if (selectedDiagramIndex <= 0) return;
+    setSelectedDiagramSheetId(diagramSheets[selectedDiagramIndex - 1].id);
+  }, [diagramSheets, selectedDiagramIndex]);
+
+  const handleNextDiagramSheet = useCallback(() => {
+    if (selectedDiagramIndex < 0 || selectedDiagramIndex >= diagramSheets.length - 1) return;
+    setSelectedDiagramSheetId(diagramSheets[selectedDiagramIndex + 1].id);
+  }, [diagramSheets, selectedDiagramIndex]);
 
   const currentLayout = tabLayouts[activeTab];
   const visMap = cardVisibility[activeTab];
@@ -449,12 +604,9 @@ export default function WorksheetV2GridContent() {
     };
   }, [width, gridRowHeight]);
 
-  const handleLayoutChange = useCallback(
-    (newLayout: Layout) => {
-      setPendingLayout(cloneLayout(newLayout));
-    },
-    [],
-  );
+  const handleLayoutChange = useCallback((newLayout: Layout) => {
+    setPendingLayout(cloneLayout(newLayout));
+  }, []);
 
   useEffect(() => {
     setPendingLayout(null);
@@ -532,10 +684,39 @@ export default function WorksheetV2GridContent() {
     () =>
       visibleCards.map((card) => (
         <div key={card.id} style={{ pointerEvents: isInteracting ? 'none' : 'auto' }}>
+          {(() => {
+            const selectedPageQuery = selectedDiagramSheetId
+              ? `?pageId=${encodeURIComponent(selectedDiagramSheetId)}`
+              : '';
+            const handleEnterEditMode = () => {
+              if (worksheetId) {
+                navigate(`/faddit/worksheet/edit/${worksheetId}${selectedPageQuery}`);
+                return;
+              }
+
+              navigate(`/faddit/worksheet/edit${selectedPageQuery}`);
+            };
+
+            return (
           <WorksheetV2GridCard
             cardId={card.id}
             title={card.title}
             headerExtra={card.id === 'size-spec' ? <SizeSpecUnitSelector /> : undefined}
+            headerActions={
+              card.id === 'diagram-view' ? (
+                <button
+                  type='button'
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleEnterEditMode();
+                  }}
+                  className='worksheet-v2-no-drag inline-flex h-7 items-center gap-1 rounded-md bg-gray-800 px-2.5 text-xs font-medium text-white transition-colors hover:bg-gray-700'
+                >
+                  <LogIn size={13} />
+                  Edit Mode
+                </button>
+              ) : undefined
+            }
             onClose={card.id === 'diagram-view' ? undefined : () => removeCard(activeTab, card.id)}
             isActive={activeCardId === card.id}
             onActivate={(cardId) => setActiveCard(activeTab, cardId)}
@@ -544,8 +725,15 @@ export default function WorksheetV2GridContent() {
               card={card}
               customCardContent={customCardContent}
               onChangeCustomContent={updateCustomCardContent}
+              diagramSheets={diagramSheets}
+              selectedDiagramSheetId={selectedDiagramSheetId}
+              onSelectDiagramSheet={setSelectedDiagramSheetId}
+              onPrevDiagramSheet={handlePrevDiagramSheet}
+              onNextDiagramSheet={handleNextDiagramSheet}
             />
           </WorksheetV2GridCard>
+            );
+          })()}
         </div>
       )),
     [
@@ -557,13 +745,19 @@ export default function WorksheetV2GridContent() {
       setActiveCard,
       customCardContent,
       updateCustomCardContent,
+      navigate,
+      worksheetId,
+      diagramSheets,
+      selectedDiagramSheetId,
+      handlePrevDiagramSheet,
+      handleNextDiagramSheet,
     ],
   );
 
   return (
     <div
       ref={containerRef}
-      className='relative min-h-0 flex-1 overflow-hidden rounded-lg bg-[#ebebec] p-1.5'
+      className='relative min-h-0 flex-1 overflow-hidden rounded-lg'
       onDragOver={(event) => {
         const draggedCardId = resolveDraggedCardId(event);
         if (!draggedCardId) {
@@ -611,8 +805,7 @@ export default function WorksheetV2GridContent() {
           style={{
             left: 6 + dropPreview.x * (gridMetrics.colWidth + gridMetrics.marginX),
             top: 6 + dropPreview.y * (gridMetrics.rowHeight + gridMetrics.marginY),
-            width:
-              dropPreview.w * gridMetrics.colWidth + (dropPreview.w - 1) * gridMetrics.marginX,
+            width: dropPreview.w * gridMetrics.colWidth + (dropPreview.w - 1) * gridMetrics.marginX,
             height:
               dropPreview.h * gridMetrics.rowHeight + (dropPreview.h - 1) * gridMetrics.marginY,
           }}
