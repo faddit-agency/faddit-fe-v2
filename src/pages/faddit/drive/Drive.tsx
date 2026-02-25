@@ -14,6 +14,8 @@ import TemplateCreateModal, {
   CreateMaterialFormValue,
   CreateWorksheetFormValue,
 } from './components/TemplateCreateModal';
+import CreateFolderModal from './components/CreateFolderModal';
+import CreateWorksheetModal from './components/CreateWorksheetModal';
 import {
   createMaterial,
   getMaterialFieldDefs,
@@ -283,7 +285,16 @@ const DriveFolderTile: React.FC<{
             <path d='M2.5 4.75A2.25 2.25 0 0 1 4.75 2.5h3.21a2 2 0 0 1 1.41.59l.75.75c.19.19.44.29.71.29h4.42a2.25 2.25 0 0 1 2.25 2.25v6.87a2.25 2.25 0 0 1-2.25 2.25H4.75A2.25 2.25 0 0 1 2.5 13.25V4.75Z' />
           </svg>
         )}
-        <span className='text-xl font-medium text-gray-800 dark:text-gray-100'>{folder.name}</span>
+        <span className='text-md font-medium text-gray-800 dark:text-gray-100'>{folder.name}</span>
+        {folder.isStarred ? (
+          <svg
+            className='h-4 w-4 shrink-0 fill-amber-400'
+            viewBox='0 0 20 20'
+            aria-label='즐겨찾기 폴더'
+          >
+            <path d='M9.05 2.93a1 1 0 0 1 1.9 0l1.33 4.1a1 1 0 0 0 .95.69h4.32a1 1 0 0 1 .59 1.81l-3.5 2.55a1 1 0 0 0-.36 1.12l1.33 4.1a1 1 0 0 1-1.54 1.12L10.6 16a1 1 0 0 0-1.18 0l-3.48 2.52a1 1 0 0 1-1.54-1.12l1.33-4.1a1 1 0 0 0-.36-1.12l-3.5-2.55a1 1 0 0 1 .59-1.81h4.32a1 1 0 0 0 .95-.69l1.33-4.1Z' />
+          </svg>
+        ) : null}
       </div>
 
       <div
@@ -521,6 +532,9 @@ const FadditDrive: React.FC = () => {
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [isCreatingMaterial, setIsCreatingMaterial] = useState(false);
   const [isCreatingWorksheet, setIsCreatingWorksheet] = useState(false);
+  const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  const [createFolderModalOpen, setCreateFolderModalOpen] = useState(false);
+  const [createWorksheetModalOpen, setCreateWorksheetModalOpen] = useState(false);
   const [templateCreateModalOpen, setTemplateCreateModalOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activeItemId, setActiveItemId] = useState<string>('');
@@ -2169,6 +2183,15 @@ const FadditDrive: React.FC = () => {
                         aria-label='현재 폴더 메뉴'
                       >
                         <span>{pageTitle}</span>
+                        {isCurrentLocationStarred && (
+                          <svg
+                            className='ml-1 h-4 w-4 shrink-0 fill-amber-400 md:h-5 md:w-5'
+                            viewBox='0 0 20 20'
+                            aria-hidden='true'
+                          >
+                            <path d='M9.05 2.93a1 1 0 0 1 1.9 0l1.33 4.1a1 1 0 0 0 .95.69h4.32a1 1 0 0 1 .59 1.81l-3.5 2.55a1 1 0 0 0-.36 1.12l1.33 4.1a1 1 0 0 1-1.54 1.12L10.6 16a1 1 0 0 0-1.18 0l-3.48 2.52a1 1 0 0 1-1.54-1.12l1.33-4.1a1 1 0 0 0-.36-1.12l-3.5-2.55a1 1 0 0 1 .59-1.81h4.32a1 1 0 0 0 .95-.69l1.33-4.1Z' />
+                          </svg>
+                        )}
                         <svg
                           className='h-4 w-4 fill-current text-gray-500 dark:text-gray-300'
                           viewBox='0 0 12 12'
@@ -2404,22 +2427,64 @@ const FadditDrive: React.FC = () => {
                   </button>
                 )}
 
-                <button
-                  type='button'
-                  onClick={() => setTemplateCreateModalOpen(true)}
-                  disabled={isCreatingFolder}
-                  className='btn bg-gray-900 text-gray-100 hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-800 dark:hover:bg-white'
-                >
-                  <svg
-                    className='xs:hidden shrink-0 fill-current'
-                    width='16'
-                    height='16'
-                    viewBox='0 0 16 16'
-                  >
-                    <path d='M15 7H9V1c0-.6-.4-1-1-1S7 .4 7 1v6H1c-.6 0-1 .4-1 1s.4 1 1 1h6v6c0 .6.4 1 1 1s1-.4 1-1V9h6c.6 0 1-.4 1-1s-.4-1-1-1z' />
-                  </svg>
-                  <span className='max-xs:sr-only'>생성하기</span>
-                </button>
+                <PopoverPrimitive.Root open={createMenuOpen} onOpenChange={setCreateMenuOpen}>
+                  <PopoverPrimitive.Trigger asChild>
+                    <button
+                      type='button'
+                      disabled={isCreatingFolder || isCreatingWorksheet || isCreatingMaterial}
+                      className='btn bg-gray-900 text-gray-100 hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-800 dark:hover:bg-white'
+                    >
+                      <svg
+                        className='xs:hidden shrink-0 fill-current'
+                        width='16'
+                        height='16'
+                        viewBox='0 0 16 16'
+                      >
+                        <path d='M15 7H9V1c0-.6-.4-1-1-1S7 .4 7 1v6H1c-.6 0-1 .4-1 1s.4 1 1 1h6v6c0 .6.4 1 1 1s1-.4 1-1V9h6c.6 0 1-.4 1-1s-.4-1-1-1z' />
+                      </svg>
+                      <span className='max-xs:sr-only'>생성하기</span>
+                    </button>
+                  </PopoverPrimitive.Trigger>
+                  <PopoverPrimitive.Portal>
+                    <PopoverPrimitive.Content
+                      align='end'
+                      side='bottom'
+                      sideOffset={8}
+                      className='z-50 w-56 rounded-lg border border-gray-200 bg-white p-2 shadow-lg dark:border-gray-700/60 dark:bg-gray-800'
+                    >
+                      <button
+                        type='button'
+                        className='w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
+                        onClick={() => {
+                          setCreateMenuOpen(false);
+                          setCreateFolderModalOpen(true);
+                        }}
+                      >
+                        폴더 생성
+                      </button>
+                      <button
+                        type='button'
+                        className='w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
+                        onClick={() => {
+                          setCreateMenuOpen(false);
+                          setCreateWorksheetModalOpen(true);
+                        }}
+                      >
+                        작업지시서 생성
+                      </button>
+                      <button
+                        type='button'
+                        className='w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
+                        onClick={() => {
+                          setCreateMenuOpen(false);
+                          setTemplateCreateModalOpen(true);
+                        }}
+                      >
+                        기타 파일 업로드
+                      </button>
+                    </PopoverPrimitive.Content>
+                  </PopoverPrimitive.Portal>
+                </PopoverPrimitive.Root>
               </div>
             </div>
 
@@ -2824,6 +2889,20 @@ const FadditDrive: React.FC = () => {
         </div>
       ) : null}
 
+      <CreateFolderModal
+        modalOpen={createFolderModalOpen}
+        setModalOpen={setCreateFolderModalOpen}
+        isSubmitting={isCreatingFolder}
+        onSubmit={handleCreateFolder}
+      />
+
+      <CreateWorksheetModal
+        modalOpen={createWorksheetModalOpen}
+        setModalOpen={setCreateWorksheetModalOpen}
+        isSubmitting={isCreatingWorksheet}
+        onSubmit={handleCreateWorksheet}
+      />
+
       <TemplateCreateModal
         modalOpen={templateCreateModalOpen}
         setModalOpen={setTemplateCreateModalOpen}
@@ -2833,6 +2912,7 @@ const FadditDrive: React.FC = () => {
         onCreateFolder={handleCreateFolder}
         onCreateMaterial={handleCreateMaterial}
         onCreateWorksheet={handleCreateWorksheet}
+        hiddenTemplateKeys={['folder', 'worksheet']}
       />
     </div>
   );
