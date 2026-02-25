@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=fallback');
+@import url('https://cdn.jsdelivr.net/npm/pretendard/dist/web/static/pretendard.css');
 
 @import 'tailwindcss';
 @import './additional-styles/utility-patterns.css' layer(components);
@@ -86,7 +86,10 @@
   --color-yellow-900: #4f3d0e;
   --color-yellow-950: #342809;
 
-  --font-inter: 'Inter', 'sans-serif';
+  --font-inter: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo',
+    'Noto Sans KR', 'Segoe UI', 'Malgun Gothic', sans-serif;
+  --font-pretendard: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo',
+    'Noto Sans KR', 'Segoe UI', 'Malgun Gothic', sans-serif;
 
   --text-xs: 0.75rem;
   --text-xs--line-height: 1.5;
@@ -135,5 +138,11 @@
   ::backdrop,
   ::file-selector-button {
     border-color: var(--color-gray-200, currentColor);
+  }
+
+  html,
+  body,
+  #root {
+    font-family: var(--font-pretendard);
   }
 }
