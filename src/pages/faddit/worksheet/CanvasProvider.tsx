@@ -24,7 +24,8 @@ export type ToolType =
   | 'triangle'
   | 'line'
   | 'arrow'
-  | 'draw';
+  | 'draw'
+  | 'pen';
 
 export type AlignType = 'left' | 'centerH' | 'right' | 'top' | 'centerV' | 'bottom';
 
@@ -100,7 +101,7 @@ const LAYER_NAME_MAP: Record<string, string> = {
   triangle: '삼각형',
   line: '선',
   'i-text': '텍스트',
-  path: '펜',
+  path: '브러쉬',
   image: '이미지',
   arrow: '화살표',
   group: '그룹',

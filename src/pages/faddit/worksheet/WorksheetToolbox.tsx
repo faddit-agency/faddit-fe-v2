@@ -7,28 +7,29 @@ import {
   AlignStartHorizontal,
   AlignStartVertical,
   ArrowRight,
-  Box,
   ChevronDown,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
   Circle,
   Check,
-  CloudUpload,
   Eye,
   EyeOff,
   Layers,
   LayoutGrid,
   Lock,
   Minus,
+  Paintbrush,
+  PenTool,
   Pencil,
-  Settings,
+  Scissors,
   Square,
   Trash2,
   Triangle,
   Type,
   Ungroup,
   Unlock,
+  Wrench,
 } from 'lucide-react';
 import { useCanvas, type AlignType, type ToolType } from './CanvasProvider';
 
@@ -37,10 +38,10 @@ const GAP_X = 12;
 
 const TOOL_ITEMS = [
   { key: 'template', label: '템플릿', icon: LayoutGrid },
-  { key: 'element', label: '요소', icon: Box },
-  { key: 'upload', label: '업로드', icon: CloudUpload },
+  { key: 'brush', label: '브러쉬', icon: Paintbrush },
+  { key: 'sewing', label: '봉제', icon: Scissors },
   { key: 'text', label: '텍스트', icon: Type },
-  { key: 'tools', label: '도구', icon: Settings },
+  { key: 'tools', label: '도구', icon: Wrench },
   { key: 'layer', label: '레이어', icon: Layers },
 ];
 
@@ -70,7 +71,8 @@ const SHAPE_ITEMS: { tool: ToolType; label: string; icon: React.ReactNode }[] = 
   { tool: 'triangle', label: '삼각형 (Y)', icon: <Triangle size={18} strokeWidth={1.5} /> },
   { tool: 'line', label: '선 (L)', icon: <Minus size={18} strokeWidth={1.5} /> },
   { tool: 'arrow', label: '화살표 (A)', icon: <ArrowRight size={18} strokeWidth={1.5} /> },
-  { tool: 'draw', label: '펜 (P)', icon: <Pencil size={18} strokeWidth={1.5} /> },
+  { tool: 'draw', label: '브러쉬 (B)', icon: <Paintbrush size={18} strokeWidth={1.5} /> },
+  { tool: 'pen', label: '펜 (P)', icon: <PenTool size={18} strokeWidth={1.5} /> },
   { tool: 'text', label: '텍스트 (T)', icon: <Type size={18} strokeWidth={1.5} /> },
 ];
 
@@ -183,10 +185,10 @@ export default function WorksheetToolbox() {
             className='flex min-h-0 min-w-56 flex-1 flex-col gap-y-2 pl-3 transition-opacity duration-150 ease-out'
             style={{ opacity: contentOpen ? 1 : 0 }}
           >
-            {activePanelKey === 'element' ? (
+            {activePanelKey === 'tools' ? (
               <div className='flex min-h-0 flex-1 flex-col gap-y-3 overflow-y-auto'>
                 <p className='shrink-0 text-[11px] font-semibold tracking-wider text-gray-400 uppercase'>
-                  도형 & 요소
+                  도구
                 </p>
                 <div className='grid grid-cols-3 gap-2'>
                   {SHAPE_ITEMS.map(({ tool, label, icon }) => (

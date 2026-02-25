@@ -10,7 +10,8 @@ import {
   ImageUp,
   Minus,
   MousePointer2,
-  Pencil,
+  Paintbrush,
+  PenTool,
   Redo2,
   RefreshCw,
   Square,
@@ -291,9 +292,17 @@ export default function SketchBottomBar({ zoom, onZoomChange }: SketchBottomBarP
         <ToolButton
           active={activeTool === 'draw'}
           onClick={() => setActiveTool('draw')}
+          title='브러쉬 (B)'
+        >
+          <Paintbrush size={16} strokeWidth={1.5} />
+        </ToolButton>
+
+        <ToolButton
+          active={activeTool === 'pen'}
+          onClick={() => setActiveTool('pen')}
           title='펜 (P)'
         >
-          <Pencil size={16} strokeWidth={1.5} />
+          <PenTool size={16} strokeWidth={1.5} />
         </ToolButton>
 
         <ToolButton
