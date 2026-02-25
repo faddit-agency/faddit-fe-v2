@@ -2194,6 +2194,18 @@ const FadditDrive: React.FC = () => {
                 </div>
               )}
             </div>
+
+            {isWorksheetDriveItem(activeItem) ? (
+              <div className='mt-5 flex justify-end'>
+                <button
+                  type='button'
+                  onClick={() => handleOpenWorksheetFromDrive(activeItem.id)}
+                  className='btn cursor-pointer border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-200'
+                >
+                  작업지시서 열기
+                </button>
+              </div>
+            ) : null}
           </>
         )}
       </>
