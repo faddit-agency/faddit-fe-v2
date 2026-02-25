@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Control,
   Canvas,
@@ -33,7 +33,7 @@ const LAYER_NAME_MAP: Record<string, string> = {
   triangle: '삼각형',
   line: '선',
   'i-text': '텍스트',
-  path: '펜',
+  path: '브러쉬',
   image: '이미지',
   arrow: '화살표',
 };
@@ -47,7 +47,52 @@ function makeData(type: string) {
 type Mat6 = [number, number, number, number, number, number];
 type ArrowPoint = { x: number; y: number };
 type ArrowObjectData = { id?: string; name?: string; kind?: string };
+type PenAnchor = {
+  x: number;
+  y: number;
+  inHandle?: ArrowPoint;
+  outHandle?: ArrowPoint;
+};
 const GRID_UNIT = 10;
+const MIN_ZOOM_SCALE = 0.1;
+const MAX_ZOOM_SCALE = 5;
+
+function clampZoomScale(value: number): number {
+  return Math.max(MIN_ZOOM_SCALE, Math.min(MAX_ZOOM_SCALE, value));
+}
+
+function clampZoomPercent(value: number): number {
+  return Math.max(MIN_ZOOM_SCALE * 100, Math.min(MAX_ZOOM_SCALE * 100, value));
+}
+
+function getTouchDistance(a: { x: number; y: number }, b: { x: number; y: number }): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function getTouchCenter(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): { x: number; y: number } {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+
+function getEventClientPoint(event: TPointerEvent): ArrowPoint | null {
+  if ('clientX' in event && typeof event.clientX === 'number' && typeof event.clientY === 'number') {
+    return { x: event.clientX, y: event.clientY };
+  }
+
+  if ('touches' in event && event.touches && event.touches.length > 0) {
+    return { x: event.touches[0].clientX, y: event.touches[0].clientY };
+  }
+
+  if ('changedTouches' in event && event.changedTouches && event.changedTouches.length > 0) {
+    return { x: event.changedTouches[0].clientX, y: event.changedTouches[0].clientY };
+  }
+
+  return null;
+}
 
 function snapToGrid(value: number): number {
   return Math.round(value / GRID_UNIT) * GRID_UNIT;
@@ -94,6 +139,43 @@ function buildArrowPathCommands(tail: ArrowPoint, tip: ArrowPoint): TSimplePathD
     ['L', tip.x, tip.y],
     ['L', wing2.x, wing2.y],
   ];
+}
+
+function samePoint(a: ArrowPoint, b: ArrowPoint): boolean {
+  return Math.abs(a.x - b.x) < 0.001 && Math.abs(a.y - b.y) < 0.001;
+}
+
+function buildPenPathCommands(anchors: PenAnchor[], closePath = false): TSimplePathData {
+  if (anchors.length === 0) {
+    return [];
+  }
+
+  const [first, ...rest] = anchors;
+  const commands: TSimplePathData = [['M', first.x, first.y]];
+
+  let prev = first;
+  for (const anchor of rest) {
+    const c1 = prev.outHandle ?? { x: prev.x, y: prev.y };
+    const c2 = anchor.inHandle ?? { x: anchor.x, y: anchor.y };
+
+    if (samePoint(c1, { x: prev.x, y: prev.y }) && samePoint(c2, { x: anchor.x, y: anchor.y })) {
+      commands.push(['L', anchor.x, anchor.y]);
+    } else {
+      commands.push(['C', c1.x, c1.y, c2.x, c2.y, anchor.x, anchor.y]);
+    }
+
+    prev = anchor;
+  }
+
+  if (closePath && anchors.length >= 3) {
+    const last = anchors[anchors.length - 1];
+    const c1 = last.outHandle ?? { x: last.x, y: last.y };
+    const c2 = first.inHandle ?? { x: first.x, y: first.y };
+    commands.push(['C', c1.x, c1.y, c2.x, c2.y, first.x, first.y]);
+    commands.push(['Z']);
+  }
+
+  return commands;
 }
 
 function getArrowEndpoints(path: Path): { tail: ArrowPoint; tip: ArrowPoint } | null {
@@ -381,6 +463,24 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
   const activeShapeRef = useRef<FabricObject | null>(null);
   const interactionControllerRef = useRef<InteractionControllerApi | null>(null);
   const snapKeyDownRef = useRef(false);
+  const penPointsRef = useRef<PenAnchor[]>([]);
+  const penDraftRef = useRef<Path | null>(null);
+  const penGuideRef = useRef<Line | null>(null);
+  const penHandleInGuideRef = useRef<Line | null>(null);
+  const penHandleOutGuideRef = useRef<Line | null>(null);
+  const penDragRef = useRef<{
+    down: boolean;
+    anchorIndex: number;
+    moved: boolean;
+    startX: number;
+    startY: number;
+  }>({
+    down: false,
+    anchorIndex: -1,
+    moved: false,
+    startX: 0,
+    startY: 0,
+  });
 
   const {
     canvasRef,
@@ -407,6 +507,19 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     guides: [],
     hud: [],
   });
+  const onZoomChangeRef = useRef(onZoomChange);
+
+  useEffect(() => {
+    onZoomChangeRef.current = onZoomChange;
+  }, [onZoomChange]);
+
+  const syncZoomState = useCallback((nextScale: number) => {
+    const clampedScale = clampZoomScale(nextScale);
+    const zoomPct = clampZoomPercent(Math.round(clampedScale * 100));
+    setLocalZoom(zoomPct);
+    onZoomChangeRef.current(zoomPct);
+    return clampedScale;
+  }, []);
 
   const gridStyle = (() => {
     const canvas = fabricRef.current;
@@ -440,13 +553,36 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
   );
 
   const handleZoomChange = (z: number) => {
-    setLocalZoom(z);
-    onZoomChange(z);
+    const clamped = clampZoomPercent(z);
+    const canvas = fabricRef.current;
+    if (canvas) {
+      const cx = canvas.getWidth() / 2;
+      const cy = canvas.getHeight() / 2;
+      canvas.zoomToPoint(new Point(cx, cy), clampZoomScale(clamped / 100));
+      canvas.requestRenderAll();
+    }
+    setLocalZoom(clamped);
+    onZoomChangeRef.current(clamped);
   };
 
   useEffect(() => {
-    setLocalZoom(zoom);
-  }, [zoom]);
+    const normalizedZoom = clampZoomPercent(zoom);
+    if (Math.abs(normalizedZoom - localZoom) < 0.001) {
+      return;
+    }
+
+    setLocalZoom(normalizedZoom);
+
+    const canvas = fabricRef.current;
+    if (!canvas) {
+      return;
+    }
+
+    const cx = canvas.getWidth() / 2;
+    const cy = canvas.getHeight() / 2;
+    canvas.zoomToPoint(new Point(cx, cy), clampZoomScale(normalizedZoom / 100));
+    canvas.requestRenderAll();
+  }, [zoom, localZoom]);
 
   useEffect(() => {
     const el = canvasElRef.current;
@@ -465,6 +601,10 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     fabricRef.current = canvas;
     canvasRef.current = canvas;
     registerCanvas(canvas);
+    const upperCanvasEl = (canvas as unknown as { upperCanvasEl?: HTMLCanvasElement }).upperCanvasEl;
+    if (upperCanvasEl) {
+      upperCanvasEl.style.touchAction = 'none';
+    }
     if (ENABLE_CANVA_INTERACTION_ENGINE) {
       interactionControllerRef.current = createInteractionController(canvas);
       setInteractionOverlayModel(interactionControllerRef.current.getOverlayModel());
@@ -481,6 +621,11 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     };
 
     resizeCanvas();
+    const initialScale = clampZoomScale(localZoom / 100);
+    const initialCx = canvas.getWidth() / 2;
+    const initialCy = canvas.getHeight() / 2;
+    canvas.zoomToPoint(new Point(initialCx, initialCy), initialScale);
+    canvas.requestRenderAll();
     const resizeObserver = new ResizeObserver(resizeCanvas);
     resizeObserver.observe(container);
 
@@ -495,32 +640,255 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
   }, []);
 
   useEffect(() => {
-    const canvas = fabricRef.current;
-    if (!canvas) return;
-    const cx = canvas.getWidth() / 2;
-    const cy = canvas.getHeight() / 2;
-    canvas.zoomToPoint(new Point(cx, cy), localZoom / 100);
-    canvas.renderAll();
-  }, [localZoom]);
-
-  useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
       const canvas = fabricRef.current;
       if (!canvas) return;
-      let zoom = canvas.getZoom() * Math.exp(-e.deltaY * 0.001);
-      zoom = Math.max(0.1, Math.min(5, zoom));
-      canvas.zoomToPoint(new Point(e.offsetX, e.offsetY), zoom);
-      const zoomPct = Math.round(zoom * 100);
-      setLocalZoom(zoomPct);
-      onZoomChange(zoomPct);
-      canvas.renderAll();
+      const nextScale = clampZoomScale(canvas.getZoom() * Math.exp(-e.deltaY * 0.001));
+      canvas.zoomToPoint(new Point(e.offsetX, e.offsetY), nextScale);
+      syncZoomState(nextScale);
+      canvas.requestRenderAll();
     };
     container.addEventListener('wheel', handleWheel, { passive: false });
     return () => container.removeEventListener('wheel', handleWheel);
-  }, [onZoomChange]);
+  }, [syncZoomState]);
+
+  useEffect(() => {
+    const canvas = fabricRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+
+    const upperCanvasEl = (canvas as unknown as { upperCanvasEl?: HTMLCanvasElement }).upperCanvasEl;
+    if (!upperCanvasEl) return;
+
+    const gesture = {
+      active: false,
+      startDistance: 0,
+      startZoom: 1,
+      lastCenter: null as { x: number; y: number } | null,
+    };
+    const textTap = {
+      tracking: false,
+      moved: false,
+      startX: 0,
+      startY: 0,
+    };
+
+    const stopEvent = (event: TouchEvent) => {
+      event.preventDefault();
+      if (typeof event.stopImmediatePropagation === 'function') {
+        event.stopImmediatePropagation();
+      } else {
+        event.stopPropagation();
+      }
+    };
+
+    const getPairFromTouches = (touches: TouchList) => {
+      if (touches.length < 2) return null;
+      const a = touches[0];
+      const b = touches[1];
+      return [
+        { x: a.clientX, y: a.clientY },
+        { x: b.clientX, y: b.clientY },
+      ] as const;
+    };
+
+    const clientToScenePoint = (clientX: number, clientY: number) => {
+      const currentCanvas = fabricRef.current;
+      if (!currentCanvas) {
+        return { x: 0, y: 0 };
+      }
+
+      const rect = container.getBoundingClientRect();
+      const viewportPoint = { x: clientX - rect.left, y: clientY - rect.top };
+      const vpt = (currentCanvas.viewportTransform ?? [1, 0, 0, 1, 0, 0]) as Mat6;
+      const inv = invertMat(vpt);
+      return {
+        x: inv[0] * viewportPoint.x + inv[2] * viewportPoint.y + inv[4],
+        y: inv[1] * viewportPoint.x + inv[3] * viewportPoint.y + inv[5],
+      };
+    };
+
+    const restoreCanvasInteraction = () => {
+      const currentCanvas = fabricRef.current;
+      if (!currentCanvas) return;
+
+      if (currentCanvas.viewportTransform) {
+        currentCanvas.setViewportTransform(currentCanvas.viewportTransform as Mat6);
+      }
+
+      if (pathEditingPath) {
+        currentCanvas.selection = false;
+        currentCanvas.defaultCursor = 'default';
+      } else {
+        currentCanvas.selection = activeTool === 'select';
+        currentCanvas.defaultCursor = activeTool === 'select' ? 'default' : 'crosshair';
+      }
+
+      currentCanvas.requestRenderAll();
+    };
+
+    const beginGesture = (touches: TouchList) => {
+      const currentCanvas = fabricRef.current;
+      const pair = getPairFromTouches(touches);
+      if (!currentCanvas || !pair) return;
+
+      const [a, b] = pair;
+      const distance = getTouchDistance(a, b);
+      if (distance <= 0) return;
+
+      gesture.active = true;
+      gesture.startDistance = distance;
+      gesture.startZoom = currentCanvas.getZoom();
+      gesture.lastCenter = getTouchCenter(a, b);
+
+      currentCanvas.discardActiveObject();
+      currentCanvas.selection = false;
+      currentCanvas.isDrawingMode = false;
+      currentCanvas.defaultCursor = 'grabbing';
+      currentCanvas.requestRenderAll();
+    };
+
+    const endGesture = () => {
+      gesture.active = false;
+      gesture.startDistance = 0;
+      gesture.startZoom = 1;
+      gesture.lastCenter = null;
+      restoreCanvasInteraction();
+    };
+
+    const handleTouchStart = (event: TouchEvent) => {
+      if (!gesture.active && activeTool === 'text' && event.touches.length === 1) {
+        const t = event.touches[0];
+        textTap.tracking = true;
+        textTap.moved = false;
+        textTap.startX = t.clientX;
+        textTap.startY = t.clientY;
+        stopEvent(event);
+        return;
+      }
+
+      if (event.touches.length < 2) return;
+      stopEvent(event);
+      if (!gesture.active) {
+        beginGesture(event.touches);
+      }
+    };
+
+    const handleTouchMove = (event: TouchEvent) => {
+      if (textTap.tracking && event.touches.length === 1) {
+        const t = event.touches[0];
+        const dx = t.clientX - textTap.startX;
+        const dy = t.clientY - textTap.startY;
+        if (Math.sqrt(dx * dx + dy * dy) > 6) {
+          textTap.moved = true;
+        }
+        stopEvent(event);
+      }
+
+      if (!gesture.active) return;
+      stopEvent(event);
+      if (event.touches.length < 2) return;
+
+      const currentCanvas = fabricRef.current;
+      const pair = getPairFromTouches(event.touches);
+      if (!currentCanvas || !pair || gesture.startDistance <= 0) return;
+
+      const [a, b] = pair;
+      const distance = getTouchDistance(a, b);
+      if (distance <= 0) return;
+
+      const center = getTouchCenter(a, b);
+      const rect = container.getBoundingClientRect();
+      const scaleRatio = distance / gesture.startDistance;
+      const nextScale = clampZoomScale(gesture.startZoom * scaleRatio);
+
+      currentCanvas.zoomToPoint(new Point(center.x - rect.left, center.y - rect.top), nextScale);
+
+      if (gesture.lastCenter) {
+        const dx = center.x - gesture.lastCenter.x;
+        const dy = center.y - gesture.lastCenter.y;
+        if (dx !== 0 || dy !== 0) {
+          currentCanvas.relativePan(new Point(dx, dy));
+        }
+      }
+
+      gesture.lastCenter = center;
+      syncZoomState(nextScale);
+      currentCanvas.requestRenderAll();
+    };
+
+    const handleTouchEnd = (event: TouchEvent) => {
+      if (textTap.tracking && !gesture.active && activeTool === 'text' && event.changedTouches.length > 0) {
+        const touch = event.changedTouches[0];
+        if (!textTap.moved) {
+          stopEvent(event);
+          const currentCanvas = fabricRef.current;
+          if (currentCanvas) {
+            const point = clientToScenePoint(touch.clientX, touch.clientY);
+            const text = new IText('텍스트', {
+              left: point.x,
+              top: point.y,
+              fontSize: 20,
+              fill: fillColor,
+              fontFamily: 'sans-serif',
+            });
+            (text as unknown as { data: unknown }).data = makeData('i-text');
+            currentCanvas.add(text);
+            currentCanvas.setActiveObject(text);
+            text.enterEditing();
+            text.selectAll();
+            currentCanvas.requestRenderAll();
+            saveHistory();
+            refreshLayers();
+            setActiveTool('select');
+          }
+        }
+
+        textTap.tracking = false;
+        textTap.moved = false;
+      }
+
+      if (!gesture.active) return;
+      stopEvent(event);
+      if (event.touches.length === 0) {
+        endGesture();
+      }
+    };
+
+    upperCanvasEl.addEventListener('touchstart', handleTouchStart, {
+      passive: false,
+      capture: true,
+    });
+    upperCanvasEl.addEventListener('touchmove', handleTouchMove, {
+      passive: false,
+      capture: true,
+    });
+    upperCanvasEl.addEventListener('touchend', handleTouchEnd, {
+      passive: false,
+      capture: true,
+    });
+    upperCanvasEl.addEventListener('touchcancel', handleTouchEnd, {
+      passive: false,
+      capture: true,
+    });
+
+    return () => {
+      upperCanvasEl.removeEventListener('touchstart', handleTouchStart, true);
+      upperCanvasEl.removeEventListener('touchmove', handleTouchMove, true);
+      upperCanvasEl.removeEventListener('touchend', handleTouchEnd, true);
+      upperCanvasEl.removeEventListener('touchcancel', handleTouchEnd, true);
+
+      if (gesture.active) {
+        endGesture();
+      }
+
+      textTap.tracking = false;
+      textTap.moved = false;
+    };
+  }, [activeTool, fillColor, pathEditingPath, refreshLayers, saveHistory, setActiveTool, syncZoomState]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -704,9 +1072,12 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         } else if (e.code === 'KeyA') {
           e.preventDefault();
           setActiveTool('arrow');
-        } else if (e.code === 'KeyP') {
+        } else if (e.code === 'KeyB') {
           e.preventDefault();
           setActiveTool('draw');
+        } else if (e.code === 'KeyP') {
+          e.preventDefault();
+          setActiveTool('pen');
         } else if (e.code === 'KeyT') {
           e.preventDefault();
           setActiveTool('text');
@@ -729,6 +1100,32 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     const canvas = fabricRef.current;
     if (!canvas) return;
 
+    const hoverStrokeMap = new WeakMap<FabricObject, unknown>();
+    const mainColor =
+      getComputedStyle(document.documentElement).getPropertyValue('--color-faddit').trim() || '#763bff';
+
+    const applyHoverHighlight = (target: FabricObject) => {
+      if (!target.evented) {
+        return;
+      }
+
+      if (target.type !== 'i-text' && target.type !== 'image') {
+        if (!hoverStrokeMap.has(target)) {
+          hoverStrokeMap.set(target, target.get('stroke') ?? null);
+        }
+        target.set({ stroke: mainColor });
+      }
+      canvas.requestRenderAll();
+    };
+
+    const clearHoverHighlight = (target: FabricObject) => {
+      if (hoverStrokeMap.has(target)) {
+        target.set({ stroke: hoverStrokeMap.get(target) as FabricObject['stroke'] });
+      }
+
+      canvas.requestRenderAll();
+    };
+
     const handleObjectAdded = (e: { target?: FabricObject }) => {
       if (!e.target) return;
       if (ENABLE_CANVA_INTERACTION_ENGINE) {
@@ -743,6 +1140,16 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         selected.forEach((obj) => interactionControllerRef.current?.applyObjectControls(obj));
       }
       selected.forEach(setupEndpointEditingIfNeeded);
+    };
+
+    const handleMouseOver = (e: { target?: FabricObject }) => {
+      if (!e.target) return;
+      applyHoverHighlight(e.target);
+    };
+
+    const handleMouseOut = (e: { target?: FabricObject }) => {
+      if (!e.target) return;
+      clearHoverHighlight(e.target);
     };
 
     const handleObjectMoving = (e: { target?: FabricObject; e?: TPointerEvent }) => {
@@ -799,6 +1206,8 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     canvas.on('selection:updated', handleSelection);
     canvas.on('object:moving', handleObjectMoving);
     canvas.on('object:scaling', handleObjectScaling);
+    canvas.on('mouse:over', handleMouseOver);
+    canvas.on('mouse:out', handleMouseOut);
 
     return () => {
       canvas.off('object:added', handleObjectAdded);
@@ -806,6 +1215,8 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       canvas.off('selection:updated', handleSelection);
       canvas.off('object:moving', handleObjectMoving);
       canvas.off('object:scaling', handleObjectScaling);
+      canvas.off('mouse:over', handleMouseOver);
+      canvas.off('mouse:out', handleMouseOut);
     };
   }, []);
 
@@ -813,6 +1224,9 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     const canvas = fabricRef.current;
     if (!canvas) return;
     const handleDblClick = (opt: TPointerEventInfo<TPointerEvent>) => {
+      if (activeTool === 'pen') {
+        return;
+      }
       const target = opt.target;
       if (target instanceof Path && !pathEditingPath && !isArrowPathObject(target)) {
         setPathEditingPath(target);
@@ -826,7 +1240,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     return () => {
       canvas.off('mouse:dblclick', handleDblClick);
     };
-  }, [pathEditingPath, setActiveTool]);
+  }, [activeTool, pathEditingPath, setActiveTool]);
 
   useEffect(() => {
     const canvas = fabricRef.current;
@@ -1077,6 +1491,344 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       };
     }
 
+    if (activeTool === 'pen') {
+      canvas.selection = false;
+      canvas.defaultCursor = 'crosshair';
+
+      const getPenCloseThreshold = () => 8 / Math.max(canvas.getZoom(), 0.001);
+      const getPenDragThreshold = () => 8;
+
+      const isNearFirstPoint = (point: ArrowPoint, points: PenAnchor[]) => {
+        if (points.length < 2) {
+          return false;
+        }
+        const first = points[0];
+        const dx = point.x - first.x;
+        const dy = point.y - first.y;
+        return Math.sqrt(dx * dx + dy * dy) <= getPenCloseThreshold();
+      };
+
+      const clearGuide = () => {
+        if (!penGuideRef.current) return;
+        canvas.remove(penGuideRef.current);
+        penGuideRef.current = null;
+      };
+
+      const clearDraft = () => {
+        if (!penDraftRef.current) return;
+        canvas.remove(penDraftRef.current);
+        penDraftRef.current = null;
+      };
+
+      const clearHandleGuides = () => {
+        if (penHandleInGuideRef.current) {
+          canvas.remove(penHandleInGuideRef.current);
+          penHandleInGuideRef.current = null;
+        }
+        if (penHandleOutGuideRef.current) {
+          canvas.remove(penHandleOutGuideRef.current);
+          penHandleOutGuideRef.current = null;
+        }
+      };
+
+      const updateGuideLine = (
+        ref: { current: Line | null },
+        x1: number,
+        y1: number,
+        x2: number,
+        y2: number,
+      ) => {
+        if (!ref.current) {
+          ref.current = new Line([x1, y1, x2, y2], {
+            stroke: strokeColor,
+            strokeWidth: Math.max(1, strokeWidth * 0.75),
+            selectable: false,
+            evented: false,
+            objectCaching: false,
+            strokeDashArray: [4, 4],
+            strokeUniform: true,
+          });
+          canvas.add(ref.current);
+          return;
+        }
+
+        ref.current.set({
+          x1,
+          y1,
+          x2,
+          y2,
+          stroke: strokeColor,
+          strokeWidth: Math.max(1, strokeWidth * 0.75),
+        });
+      };
+
+      const updateHandleGuides = (anchor: PenAnchor | null) => {
+        if (!anchor) {
+          clearHandleGuides();
+          return;
+        }
+
+        if (anchor.inHandle) {
+          updateGuideLine(
+            penHandleInGuideRef,
+            anchor.x,
+            anchor.y,
+            anchor.inHandle.x,
+            anchor.inHandle.y,
+          );
+        } else if (penHandleInGuideRef.current) {
+          canvas.remove(penHandleInGuideRef.current);
+          penHandleInGuideRef.current = null;
+        }
+
+        if (anchor.outHandle) {
+          updateGuideLine(
+            penHandleOutGuideRef,
+            anchor.x,
+            anchor.y,
+            anchor.outHandle.x,
+            anchor.outHandle.y,
+          );
+        } else if (penHandleOutGuideRef.current) {
+          canvas.remove(penHandleOutGuideRef.current);
+          penHandleOutGuideRef.current = null;
+        }
+
+        if (penHandleInGuideRef.current) {
+          canvas.bringObjectToFront(penHandleInGuideRef.current);
+        }
+        if (penHandleOutGuideRef.current) {
+          canvas.bringObjectToFront(penHandleOutGuideRef.current);
+        }
+      };
+
+      const renderDraftPath = (points: PenAnchor[], closePath = false) => {
+        if (points.length < 2) {
+          clearDraft();
+          canvas.requestRenderAll();
+          return;
+        }
+
+        const commands = buildPenPathCommands(points, closePath);
+
+        if (!penDraftRef.current) {
+          const path = new Path(commands, {
+            stroke: strokeColor,
+            strokeWidth,
+            fill: '',
+            selectable: false,
+            evented: false,
+            objectCaching: false,
+            strokeUniform: true,
+            strokeLineCap: cornerRadius > 0 ? 'round' : 'butt',
+            strokeLineJoin: cornerRadius > 0 ? 'round' : 'miter',
+          });
+          penDraftRef.current = path;
+          canvas.add(path);
+        } else {
+          (penDraftRef.current as unknown as { path: TSimplePathData }).path = commands;
+          penDraftRef.current.set({
+            stroke: strokeColor,
+            strokeWidth,
+            strokeLineCap: cornerRadius > 0 ? 'round' : 'butt',
+            strokeLineJoin: cornerRadius > 0 ? 'round' : 'miter',
+          });
+          penDraftRef.current.setCoords();
+        }
+
+        if (penHandleInGuideRef.current) {
+          canvas.bringObjectToFront(penHandleInGuideRef.current);
+        }
+        if (penHandleOutGuideRef.current) {
+          canvas.bringObjectToFront(penHandleOutGuideRef.current);
+        }
+
+        canvas.requestRenderAll();
+      };
+
+      const resetPenState = () => {
+        clearGuide();
+        clearDraft();
+        clearHandleGuides();
+        penPointsRef.current = [];
+        penDragRef.current = { down: false, anchorIndex: -1, moved: false, startX: 0, startY: 0 };
+      };
+
+      const finalizePenPath = (closePath = false) => {
+        const points = penPointsRef.current;
+        if (points.length < 2) {
+          resetPenState();
+          return;
+        }
+
+        const shouldClose = closePath && points.length >= 3;
+
+        const finalPath = new Path(buildPenPathCommands(points, shouldClose), {
+          stroke: strokeColor,
+          strokeWidth,
+          fill: '',
+          selectable: true,
+          evented: true,
+          objectCaching: false,
+          strokeUniform: true,
+          strokeLineCap: cornerRadius > 0 ? 'round' : 'butt',
+          strokeLineJoin: cornerRadius > 0 ? 'round' : 'miter',
+        });
+        (finalPath as unknown as { data: unknown }).data = { ...makeData('path'), name: '펜' };
+
+        resetPenState();
+        canvas.add(finalPath);
+        canvas.setActiveObject(finalPath);
+        canvas.requestRenderAll();
+        saveHistory();
+        refreshLayers();
+        setActiveTool('select');
+      };
+
+      const cancelPenPath = () => {
+        resetPenState();
+        canvas.requestRenderAll();
+      };
+
+      const handlePenMouseDown = (opt: TPointerEventInfo<TPointerEvent>) => {
+        const pointer = canvas.getScenePoint(opt.e);
+        const clientPoint = getEventClientPoint(opt.e);
+        const nextPoint = { x: pointer.x, y: pointer.y };
+        const points = penPointsRef.current;
+
+        if (isNearFirstPoint(nextPoint, points)) {
+          finalizePenPath(true);
+          return;
+        }
+
+        const anchor: PenAnchor = { x: nextPoint.x, y: nextPoint.y };
+        penPointsRef.current = [...points, anchor];
+        penDragRef.current = {
+          down: true,
+          anchorIndex: penPointsRef.current.length - 1,
+          moved: false,
+          startX: clientPoint?.x ?? nextPoint.x,
+          startY: clientPoint?.y ?? nextPoint.y,
+        };
+        clearGuide();
+        renderDraftPath(penPointsRef.current);
+      };
+
+      const handlePenMouseMove = (opt: TPointerEventInfo<TPointerEvent>) => {
+        const points = penPointsRef.current;
+        if (points.length === 0) return;
+
+        const pointer = canvas.getScenePoint(opt.e);
+        const last = points[points.length - 1];
+
+        if (penDragRef.current.down && penDragRef.current.anchorIndex >= 0) {
+          const idx = penDragRef.current.anchorIndex;
+          const anchor = points[idx];
+          if (!anchor) return;
+
+          const clientPoint = getEventClientPoint(opt.e);
+          const moveDx = (clientPoint?.x ?? pointer.x) - penDragRef.current.startX;
+          const moveDy = (clientPoint?.y ?? pointer.y) - penDragRef.current.startY;
+          const moved = Math.sqrt(moveDx * moveDx + moveDy * moveDy) > getPenDragThreshold();
+          penDragRef.current.moved = penDragRef.current.moved || moved;
+
+          if (penDragRef.current.moved) {
+            const dx = pointer.x - anchor.x;
+            const dy = pointer.y - anchor.y;
+            anchor.inHandle = { x: anchor.x - dx, y: anchor.y - dy };
+            anchor.outHandle = { x: anchor.x + dx, y: anchor.y + dy };
+          } else {
+            delete anchor.inHandle;
+            delete anchor.outHandle;
+          }
+
+          penPointsRef.current = [...points];
+          renderDraftPath(penPointsRef.current);
+          clearGuide();
+          updateHandleGuides(anchor);
+          canvas.requestRenderAll();
+          return;
+        }
+
+        const closeCandidate = isNearFirstPoint({ x: pointer.x, y: pointer.y }, points);
+        const previewTarget: PenAnchor = closeCandidate
+          ? { x: points[0].x, y: points[0].y }
+          : { x: pointer.x, y: pointer.y };
+
+        renderDraftPath([...points, previewTarget], closeCandidate);
+
+        if (!penGuideRef.current) {
+          penGuideRef.current = new Line([last.x, last.y, previewTarget.x, previewTarget.y], {
+            stroke: strokeColor,
+            strokeWidth,
+            selectable: false,
+            evented: false,
+            objectCaching: false,
+            strokeDashArray: [4, 4],
+            strokeUniform: true,
+          });
+          canvas.add(penGuideRef.current);
+        } else {
+          penGuideRef.current.set({
+            x1: last.x,
+            y1: last.y,
+            x2: previewTarget.x,
+            y2: previewTarget.y,
+          });
+        }
+
+        canvas.bringObjectToFront(penGuideRef.current);
+        canvas.requestRenderAll();
+      };
+
+      const handlePenDblClick = () => {
+        finalizePenPath(false);
+      };
+
+      const handlePenMouseUp = () => {
+        if (!penDragRef.current.down) {
+          return;
+        }
+
+        penDragRef.current.down = false;
+        penDragRef.current.anchorIndex = -1;
+        penDragRef.current.moved = false;
+        penDragRef.current.startX = 0;
+        penDragRef.current.startY = 0;
+        clearGuide();
+        renderDraftPath(penPointsRef.current);
+        updateHandleGuides(penPointsRef.current[penPointsRef.current.length - 1] ?? null);
+      };
+
+      const handlePenKeyDown = (event: KeyboardEvent) => {
+        if (event.code === 'Enter') {
+          event.preventDefault();
+          finalizePenPath();
+          return;
+        }
+
+        if (event.code === 'Escape') {
+          event.preventDefault();
+          cancelPenPath();
+        }
+      };
+
+      canvas.on('mouse:down', handlePenMouseDown);
+      canvas.on('mouse:move', handlePenMouseMove);
+      canvas.on('mouse:up', handlePenMouseUp);
+      canvas.on('mouse:dblclick', handlePenDblClick);
+      window.addEventListener('keydown', handlePenKeyDown);
+
+      return () => {
+        canvas.off('mouse:down', handlePenMouseDown);
+        canvas.off('mouse:move', handlePenMouseMove);
+        canvas.off('mouse:up', handlePenMouseUp);
+        canvas.off('mouse:dblclick', handlePenDblClick);
+        window.removeEventListener('keydown', handlePenKeyDown);
+        resetPenState();
+      };
+    }
+
     canvas.on('mouse:down', handleMouseDown);
     canvas.on('mouse:move', handleMouseMove);
     canvas.on('mouse:up', handleMouseUp);
@@ -1102,6 +1854,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     <div
       ref={containerRef}
       className='relative h-full w-full overflow-hidden rounded-md'
+      style={{ touchAction: 'none' }}
     >
       <div className='pointer-events-none absolute inset-0 z-10' style={gridStyle} />
       <canvas ref={canvasElRef} className='absolute inset-0 z-20' />

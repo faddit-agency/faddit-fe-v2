@@ -40,6 +40,7 @@ type ViewMode = 'grid' | 'list';
 type DriveListEntry = {
   id: string;
   kind: 'folder' | 'file';
+  nodeType?: DriveNode['type'];
   title: string;
   subtitle?: string;
   date: string;
@@ -381,6 +382,7 @@ const DriveListRow: React.FC<{
   dragSelectionEntries: DragSelectionEntry[];
   onToggleSelect: (checked: boolean) => void;
   onRowClick: (entry: DriveListEntry, event: React.MouseEvent<HTMLTableRowElement>) => void;
+  onRowDoubleClick: (entry: DriveListEntry, event: React.MouseEvent<HTMLTableRowElement>) => void;
 }> = ({
   entry,
   isSelected,
@@ -389,6 +391,7 @@ const DriveListRow: React.FC<{
   dragSelectionEntries,
   onToggleSelect,
   onRowClick,
+  onRowDoubleClick,
 }) => {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: entry.id,
@@ -433,6 +436,7 @@ const DriveListRow: React.FC<{
       data-selectable-item='true'
       data-item-id={entry.id}
       onClick={(event) => onRowClick(entry, event)}
+      onDoubleClick={(event) => onRowDoubleClick(entry, event)}
       className={`cursor-grab border-t active:cursor-grabbing dark:border-gray-700/60 ${
         isSelected || isActive
           ? 'border-violet-200 bg-violet-50/40 dark:border-violet-500/40 dark:bg-violet-500/10'
@@ -848,6 +852,7 @@ const FadditDrive: React.FC = () => {
 
               return {
                 id: node.fileSystemId,
+                nodeType: node.type,
                 imageSrc: previewUrl || ChildClothImage,
                 imageAlt: node.name,
                 title: node.name,
@@ -1086,6 +1091,28 @@ const FadditDrive: React.FC = () => {
     setActiveItemId(itemId);
     setDetailPanelEditMode(false);
     setDetailPanelOpen(true);
+  };
+
+  const isWorksheetDriveItem = (item: Pick<DriveItem, 'nodeType' | 'badge'>) => {
+    if (item.nodeType === 'worksheet') {
+      return true;
+    }
+
+    const normalizedTag = String(item.badge || '').trim().toLowerCase();
+    return normalizedTag === 'worksheet' || normalizedTag === 'faddit';
+  };
+
+  const handleOpenWorksheetFromDrive = (itemId: string) => {
+    navigate(`/faddit/worksheet/${itemId}`);
+  };
+
+  const handleFileCardDoubleClick = (itemId: string) => {
+    const targetItem = items.find((item) => item.id === itemId);
+    if (!targetItem || !isWorksheetDriveItem(targetItem)) {
+      return;
+    }
+
+    handleOpenWorksheetFromDrive(itemId);
   };
 
   const handleOpenFileEditPanel = (itemId: string) => {
@@ -1368,6 +1395,7 @@ const FadditDrive: React.FC = () => {
       ...displayedItems.map((item) => ({
         id: item.id,
         kind: 'file' as const,
+        nodeType: item.nodeType,
         title: item.title,
         subtitle: item.subtitle,
         date: `${item.date || '-'} ${item.owner || ''}`.trim(),
@@ -1423,6 +1451,25 @@ const FadditDrive: React.FC = () => {
     }
 
     handleToggleWithGesture(entry.id, event);
+  };
+
+  const handleListRowDoubleClick = (
+    entry: DriveListEntry,
+    event: React.MouseEvent<HTMLTableRowElement>,
+  ) => {
+    if (entry.kind !== 'file') {
+      return;
+    }
+    if (isMultiSelectGesture(event)) {
+      return;
+    }
+
+    const targetItem = items.find((item) => item.id === entry.id);
+    if (!targetItem || !isWorksheetDriveItem(targetItem)) {
+      return;
+    }
+
+    handleOpenWorksheetFromDrive(entry.id);
   };
 
   const handleCloseDetailPanel = () => {
@@ -2147,6 +2194,18 @@ const FadditDrive: React.FC = () => {
                 </div>
               )}
             </div>
+
+            {isWorksheetDriveItem(activeItem) ? (
+              <div className='mt-5 flex justify-end'>
+                <button
+                  type='button'
+                  onClick={() => handleOpenWorksheetFromDrive(activeItem.id)}
+                  className='btn cursor-pointer border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-200'
+                >
+                  작업지시서 열기
+                </button>
+              </div>
+            ) : null}
           </>
         )}
       </>
@@ -2558,6 +2617,7 @@ const FadditDrive: React.FC = () => {
                           isActive={activeItemId === item.id}
                           onSelectChange={applySelection}
                           onCardClick={handleFileCardClick}
+                          onCardDoubleClick={handleFileCardDoubleClick}
                           onEdit={handleOpenFileEditPanel}
                           onMoveToFolder={handleOpenMoveDialog}
                           onAddFavorite={handleAddFavoriteFromMenu}
@@ -2599,6 +2659,7 @@ const FadditDrive: React.FC = () => {
                             dragSelectionEntries={dragSelection.entries}
                             onToggleSelect={(checked) => applySelection(entry.id, checked)}
                             onRowClick={handleListRowClick}
+                            onRowDoubleClick={handleListRowDoubleClick}
                           />
                         );
                       })}

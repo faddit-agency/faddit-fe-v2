@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   AlignCenterHorizontal,
   AlignCenterVertical,
@@ -7,27 +7,29 @@ import {
   AlignStartHorizontal,
   AlignStartVertical,
   ArrowRight,
-  Box,
   ChevronDown,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
   Circle,
-  CloudUpload,
+  Check,
   Eye,
   EyeOff,
   Layers,
   LayoutGrid,
   Lock,
   Minus,
+  Paintbrush,
+  PenTool,
   Pencil,
-  Settings,
+  Scissors,
   Square,
   Trash2,
   Triangle,
   Type,
   Ungroup,
   Unlock,
+  Wrench,
 } from 'lucide-react';
 import { useCanvas, type AlignType, type ToolType } from './CanvasProvider';
 
@@ -36,10 +38,10 @@ const GAP_X = 12;
 
 const TOOL_ITEMS = [
   { key: 'template', label: '템플릿', icon: LayoutGrid },
-  { key: 'element', label: '요소', icon: Box },
-  { key: 'upload', label: '업로드', icon: CloudUpload },
+  { key: 'brush', label: '브러쉬', icon: Paintbrush },
+  { key: 'sewing', label: '봉제', icon: Scissors },
   { key: 'text', label: '텍스트', icon: Type },
-  { key: 'tools', label: '도구', icon: Settings },
+  { key: 'tools', label: '도구', icon: Wrench },
   { key: 'layer', label: '레이어', icon: Layers },
 ];
 
@@ -69,13 +71,17 @@ const SHAPE_ITEMS: { tool: ToolType; label: string; icon: React.ReactNode }[] = 
   { tool: 'triangle', label: '삼각형 (Y)', icon: <Triangle size={18} strokeWidth={1.5} /> },
   { tool: 'line', label: '선 (L)', icon: <Minus size={18} strokeWidth={1.5} /> },
   { tool: 'arrow', label: '화살표 (A)', icon: <ArrowRight size={18} strokeWidth={1.5} /> },
-  { tool: 'draw', label: '펜 (P)', icon: <Pencil size={18} strokeWidth={1.5} /> },
+  { tool: 'draw', label: '브러쉬 (B)', icon: <Paintbrush size={18} strokeWidth={1.5} /> },
+  { tool: 'pen', label: '펜 (P)', icon: <PenTool size={18} strokeWidth={1.5} /> },
   { tool: 'text', label: '텍스트 (T)', icon: <Type size={18} strokeWidth={1.5} /> },
 ];
 
 export default function WorksheetToolbox() {
   const [activePanelKey, setActivePanelKey] = useState('template');
   const [contentOpen, setContentOpen] = useState(true);
+  const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
+  const [editingLayerName, setEditingLayerName] = useState('');
+  const touchActionLockRef = useRef(false);
 
   const {
     layers,
@@ -87,10 +93,50 @@ export default function WorksheetToolbox() {
     setActiveTool,
     activeLayerId,
     selectLayer,
+    renameLayer,
     deleteSelected,
     groupSelected,
     ungroupSelected,
   } = useCanvas();
+
+  const beginLayerRename = (layerId: string, currentName: string) => {
+    setEditingLayerId(layerId);
+    setEditingLayerName(currentName);
+  };
+
+  const commitLayerRename = () => {
+    if (!editingLayerId) return;
+    renameLayer(editingLayerId, editingLayerName);
+    setEditingLayerId(null);
+    setEditingLayerName('');
+  };
+
+  const handleFastPress = (
+    event: React.PointerEvent<HTMLButtonElement>,
+    action: () => void,
+  ) => {
+    if (event.pointerType !== 'touch') {
+      return;
+    }
+
+    event.preventDefault();
+    touchActionLockRef.current = true;
+    action();
+  };
+
+  const runClickAction = (action: () => void) => {
+    if (touchActionLockRef.current) {
+      touchActionLockRef.current = false;
+      return;
+    }
+
+    action();
+  };
+
+  const handleToolTabClick = (tab: string) => {
+    setActivePanelKey(tab);
+    setContentOpen(true);
+  };
 
   return (
     <div className='flex h-full shrink-0 overflow-hidden rounded-lg bg-white p-3 shadow-sm'>
@@ -100,8 +146,9 @@ export default function WorksheetToolbox() {
             <button
               key={key}
               type='button'
-              onClick={() => setActivePanelKey(key)}
-              className={`flex aspect-square cursor-pointer flex-col items-center justify-center gap-0.5 rounded-md p-2 text-[10px] transition-colors ${
+              onPointerDown={(event) => handleFastPress(event, () => handleToolTabClick(key))}
+              onClick={() => runClickAction(() => handleToolTabClick(key))}
+              className={`flex touch-manipulation aspect-square cursor-pointer flex-col items-center justify-center gap-0.5 rounded-md p-2 text-[10px] transition-colors ${
                 activePanelKey === key
                   ? 'bg-gray-100 text-gray-800'
                   : 'text-gray-600 hover:bg-gray-200/60'
@@ -114,8 +161,11 @@ export default function WorksheetToolbox() {
           <div className='mt-auto flex justify-center py-2'>
             <button
               type='button'
-              onClick={() => setContentOpen((open) => !open)}
-              className='cursor-pointer rounded p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-700'
+              onPointerDown={(event) =>
+                handleFastPress(event, () => setContentOpen((open) => !open))
+              }
+              onClick={() => runClickAction(() => setContentOpen((open) => !open))}
+              className='touch-manipulation cursor-pointer rounded p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-700'
               aria-label={contentOpen ? '도구모음 접기' : '도구모음 펼치기'}
             >
               {contentOpen ? (
@@ -128,26 +178,27 @@ export default function WorksheetToolbox() {
         </nav>
 
         <div
-          className='flex shrink-0 flex-col overflow-hidden transition-[width] duration-300 ease-in-out'
+          className='flex shrink-0 flex-col overflow-hidden transition-[width] duration-150 ease-out'
           style={{ width: contentOpen ? CONTENT_PANEL_WIDTH + GAP_X : 0 }}
         >
           <div
-            className='flex min-h-0 min-w-56 flex-1 flex-col gap-y-2 pl-3 transition-opacity duration-300 ease-in-out'
+            className='flex min-h-0 min-w-56 flex-1 flex-col gap-y-2 pl-3 transition-opacity duration-150 ease-out'
             style={{ opacity: contentOpen ? 1 : 0 }}
           >
-            {activePanelKey === 'element' ? (
+            {activePanelKey === 'tools' ? (
               <div className='flex min-h-0 flex-1 flex-col gap-y-3 overflow-y-auto'>
                 <p className='shrink-0 text-[11px] font-semibold tracking-wider text-gray-400 uppercase'>
-                  도형 & 요소
+                  도구
                 </p>
                 <div className='grid grid-cols-3 gap-2'>
                   {SHAPE_ITEMS.map(({ tool, label, icon }) => (
                     <button
                       key={tool}
                       type='button'
-                      onClick={() => setActiveTool(tool)}
+                      onPointerDown={(event) => handleFastPress(event, () => setActiveTool(tool))}
+                      onClick={() => runClickAction(() => setActiveTool(tool))}
                       title={label}
-                      className={`flex flex-col items-center gap-1 rounded-lg px-2 py-3 text-[10px] transition-colors ${
+                      className={`flex touch-manipulation flex-col items-center gap-1 rounded-lg px-2 py-3 text-[10px] transition-colors ${
                         activeTool === tool
                           ? 'bg-gray-800 text-white'
                           : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'
@@ -268,9 +319,56 @@ export default function WorksheetToolbox() {
                           title={layer.previewColor}
                         />
 
-                        <span className='min-w-0 flex-1 truncate text-xs text-gray-700'>
-                          {layer.name}
-                        </span>
+                        {editingLayerId === layer.id ? (
+                          <input
+                            value={editingLayerName}
+                            onChange={(e) => setEditingLayerName(e.target.value)}
+                            onBlur={commitLayerRename}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                commitLayerRename();
+                              }
+                              if (e.key === 'Escape') {
+                                setEditingLayerId(null);
+                                setEditingLayerName('');
+                              }
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className='form-input h-6 min-w-0 flex-1 px-1 text-xs'
+                            autoFocus
+                          />
+                        ) : (
+                          <span
+                            className='min-w-0 flex-1 truncate text-xs text-gray-700'
+                            onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              beginLayerRename(layer.id, layer.name);
+                            }}
+                          >
+                            {layer.name}
+                          </span>
+                        )}
+
+                        <button
+                          type='button'
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (editingLayerId === layer.id) {
+                              commitLayerRename();
+                              return;
+                            }
+                            beginLayerRename(layer.id, layer.name);
+                          }}
+                          title={editingLayerId === layer.id ? '수정 완료' : '이름 수정'}
+                          className='shrink-0 cursor-pointer text-gray-400 hover:text-gray-700'
+                        >
+                          {editingLayerId === layer.id ? (
+                            <Check size={13} strokeWidth={1.7} />
+                          ) : (
+                            <Pencil size={13} strokeWidth={1.7} />
+                          )}
+                        </button>
 
                         <button
                           type='button'

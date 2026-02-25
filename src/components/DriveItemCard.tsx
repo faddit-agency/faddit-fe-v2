@@ -34,6 +34,7 @@ export interface DriveItemCardProps {
   isActive?: boolean;
   onSelectChange?: (id: string, checked: boolean) => void;
   onCardClick?: (id: string, event: React.MouseEvent<HTMLDivElement>) => void;
+  onCardDoubleClick?: (id: string, event: React.MouseEvent<HTMLDivElement>) => void;
   dragSelectionIds?: string[];
   dragSelectionEntries?: Array<{ id: string; type: 'file' | 'folder'; name: string }>;
   fileSystemId?: string;
@@ -367,6 +368,7 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
   isActive = false,
   onSelectChange,
   onCardClick,
+  onCardDoubleClick,
   dragSelectionIds,
   dragSelectionEntries,
   materialAttributesCount,
@@ -540,6 +542,12 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
           return;
         }
         onCardClick(id, event);
+      }}
+      onDoubleClick={(event) => {
+        if (!id || !onCardDoubleClick) {
+          return;
+        }
+        onCardDoubleClick(id, event);
       }}
       className={`group ${className} cursor-pointer touch-none overflow-hidden rounded-xl border bg-white shadow-xs transition-all dark:bg-gray-800 ${
         isSelected
