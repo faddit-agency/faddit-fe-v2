@@ -592,6 +592,12 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       startZoom: 1,
       lastCenter: null as { x: number; y: number } | null,
     };
+    const textTap = {
+      tracking: false,
+      moved: false,
+      startX: 0,
+      startY: 0,
+    };
 
     const stopEvent = (event: TouchEvent) => {
       event.preventDefault();
@@ -610,6 +616,22 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         { x: a.clientX, y: a.clientY },
         { x: b.clientX, y: b.clientY },
       ] as const;
+    };
+
+    const clientToScenePoint = (clientX: number, clientY: number) => {
+      const currentCanvas = fabricRef.current;
+      if (!currentCanvas) {
+        return { x: 0, y: 0 };
+      }
+
+      const rect = container.getBoundingClientRect();
+      const viewportPoint = { x: clientX - rect.left, y: clientY - rect.top };
+      const vpt = (currentCanvas.viewportTransform ?? [1, 0, 0, 1, 0, 0]) as Mat6;
+      const inv = invertMat(vpt);
+      return {
+        x: inv[0] * viewportPoint.x + inv[2] * viewportPoint.y + inv[4],
+        y: inv[1] * viewportPoint.x + inv[3] * viewportPoint.y + inv[5],
+      };
     };
 
     const restoreCanvasInteraction = () => {
@@ -661,6 +683,16 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     };
 
     const handleTouchStart = (event: TouchEvent) => {
+      if (!gesture.active && activeTool === 'text' && event.touches.length === 1) {
+        const t = event.touches[0];
+        textTap.tracking = true;
+        textTap.moved = false;
+        textTap.startX = t.clientX;
+        textTap.startY = t.clientY;
+        stopEvent(event);
+        return;
+      }
+
       if (event.touches.length < 2) return;
       stopEvent(event);
       if (!gesture.active) {
@@ -669,6 +701,16 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     };
 
     const handleTouchMove = (event: TouchEvent) => {
+      if (textTap.tracking && event.touches.length === 1) {
+        const t = event.touches[0];
+        const dx = t.clientX - textTap.startX;
+        const dy = t.clientY - textTap.startY;
+        if (Math.sqrt(dx * dx + dy * dy) > 6) {
+          textTap.moved = true;
+        }
+        stopEvent(event);
+      }
+
       if (!gesture.active) return;
       stopEvent(event);
       if (event.touches.length < 2) return;
@@ -702,6 +744,36 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     };
 
     const handleTouchEnd = (event: TouchEvent) => {
+      if (textTap.tracking && !gesture.active && activeTool === 'text' && event.changedTouches.length > 0) {
+        const touch = event.changedTouches[0];
+        if (!textTap.moved) {
+          stopEvent(event);
+          const currentCanvas = fabricRef.current;
+          if (currentCanvas) {
+            const point = clientToScenePoint(touch.clientX, touch.clientY);
+            const text = new IText('텍스트', {
+              left: point.x,
+              top: point.y,
+              fontSize: 20,
+              fill: fillColor,
+              fontFamily: 'sans-serif',
+            });
+            (text as unknown as { data: unknown }).data = makeData('i-text');
+            currentCanvas.add(text);
+            currentCanvas.setActiveObject(text);
+            text.enterEditing();
+            text.selectAll();
+            currentCanvas.requestRenderAll();
+            saveHistory();
+            refreshLayers();
+            setActiveTool('select');
+          }
+        }
+
+        textTap.tracking = false;
+        textTap.moved = false;
+      }
+
       if (!gesture.active) return;
       stopEvent(event);
       if (event.touches.length === 0) {
@@ -726,34 +798,20 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       capture: true,
     });
 
-    document.addEventListener('touchmove', handleTouchMove, {
-      passive: false,
-      capture: true,
-    });
-    document.addEventListener('touchend', handleTouchEnd, {
-      passive: false,
-      capture: true,
-    });
-    document.addEventListener('touchcancel', handleTouchEnd, {
-      passive: false,
-      capture: true,
-    });
-
     return () => {
       upperCanvasEl.removeEventListener('touchstart', handleTouchStart, true);
       upperCanvasEl.removeEventListener('touchmove', handleTouchMove, true);
       upperCanvasEl.removeEventListener('touchend', handleTouchEnd, true);
       upperCanvasEl.removeEventListener('touchcancel', handleTouchEnd, true);
 
-      document.removeEventListener('touchmove', handleTouchMove, true);
-      document.removeEventListener('touchend', handleTouchEnd, true);
-      document.removeEventListener('touchcancel', handleTouchEnd, true);
-
       if (gesture.active) {
         endGesture();
       }
+
+      textTap.tracking = false;
+      textTap.moved = false;
     };
-  }, [activeTool, pathEditingPath, syncZoomState]);
+  }, [activeTool, fillColor, pathEditingPath, refreshLayers, saveHistory, setActiveTool, syncZoomState]);
 
   useEffect(() => {
     const container = containerRef.current;

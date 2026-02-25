@@ -83,6 +83,7 @@ interface CanvasCtx {
   uploadToCanvas: (file: File) => void;
   activeLayerId: string | null;
   selectLayer: (id: string) => void;
+  renameLayer: (id: string, name: string) => void;
   deleteSelected: () => void;
   duplicateSelected: () => void;
   copySelected: () => void;
@@ -142,9 +143,20 @@ function buildLayerTree(
   return [...objs].reverse().map((obj) => {
     counter.n += 1;
     const type = obj.type ?? 'object';
-    const data = (obj as ObjWithData).data ?? {};
-    const id = data.id ?? `obj-${counter.n}`;
-    const name = data.name ?? LAYER_NAME_MAP[type] ?? type;
+    const currentData = (obj as ObjWithData).data;
+    const fallbackId = `obj-${Date.now()}-${counter.n}`;
+    const fallbackName = LAYER_NAME_MAP[type] ?? type;
+    const normalizedData = {
+      id: currentData?.id ?? fallbackId,
+      name: currentData?.name ?? fallbackName,
+    };
+
+    if (!currentData?.id || !currentData?.name) {
+      (obj as ObjWithData).data = normalizedData;
+    }
+
+    const id = normalizedData.id;
+    const name = normalizedData.name;
     const isGroup = obj instanceof Group;
     const isExpanded = expandedIds.has(id);
 
@@ -583,8 +595,28 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
       if (!item) return;
       canvas.setActiveObject(item.obj);
       canvas.renderAll();
+      syncSelectionProps(item.obj);
     },
-    [findLayerById],
+    [findLayerById, syncSelectionProps],
+  );
+
+  const renameLayer = useCallback(
+    (id: string, name: string) => {
+      const item = findLayerById(id);
+      if (!item) return;
+      const nextName = name.trim();
+      if (!nextName) return;
+
+      const data = (item.obj as ObjWithData).data;
+      (item.obj as ObjWithData).data = {
+        id: data?.id ?? id,
+        name: nextName,
+      };
+
+      refreshLayers();
+      saveHistory();
+    },
+    [findLayerById, refreshLayers, saveHistory],
   );
 
   const deleteSelected = useCallback(() => {
@@ -903,6 +935,7 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
         uploadToCanvas,
         activeLayerId,
         selectLayer,
+        renameLayer,
         deleteSelected,
         duplicateSelected,
         copySelected,
