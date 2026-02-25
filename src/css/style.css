@@ -88,10 +88,9 @@
   --color-yellow-900: #4f3d0e;
   --color-yellow-950: #342809;
 
-  --font-inter: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo',
-    'Noto Sans KR', 'Segoe UI', 'Malgun Gothic', sans-serif;
-  --font-pretendard: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo',
-    'Noto Sans KR', 'Segoe UI', 'Malgun Gothic', sans-serif;
+  --font-pretendard:
+    'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR',
+    'Segoe UI', 'Malgun Gothic', sans-serif;
 
   --text-xs: 0.75rem;
   --text-xs--line-height: 1.5;
