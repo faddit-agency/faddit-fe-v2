@@ -48,6 +48,29 @@ type Mat6 = [number, number, number, number, number, number];
 type ArrowPoint = { x: number; y: number };
 type ArrowObjectData = { id?: string; name?: string; kind?: string };
 const GRID_UNIT = 10;
+const MIN_ZOOM_SCALE = 0.1;
+const MAX_ZOOM_SCALE = 5;
+
+function clampZoomScale(value: number): number {
+  return Math.max(MIN_ZOOM_SCALE, Math.min(MAX_ZOOM_SCALE, value));
+}
+
+function clampZoomPercent(value: number): number {
+  return Math.max(MIN_ZOOM_SCALE * 100, Math.min(MAX_ZOOM_SCALE * 100, value));
+}
+
+function getTouchDistance(a: { x: number; y: number }, b: { x: number; y: number }): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function getTouchCenter(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): { x: number; y: number } {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
 
 function snapToGrid(value: number): number {
   return Math.round(value / GRID_UNIT) * GRID_UNIT;
@@ -407,6 +430,19 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     guides: [],
     hud: [],
   });
+  const onZoomChangeRef = useRef(onZoomChange);
+
+  useEffect(() => {
+    onZoomChangeRef.current = onZoomChange;
+  }, [onZoomChange]);
+
+  const syncZoomState = useCallback((nextScale: number) => {
+    const clampedScale = clampZoomScale(nextScale);
+    const zoomPct = clampZoomPercent(Math.round(clampedScale * 100));
+    setLocalZoom(zoomPct);
+    onZoomChangeRef.current(zoomPct);
+    return clampedScale;
+  }, []);
 
   const gridStyle = (() => {
     const canvas = fabricRef.current;
@@ -440,13 +476,36 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
   );
 
   const handleZoomChange = (z: number) => {
-    setLocalZoom(z);
-    onZoomChange(z);
+    const clamped = clampZoomPercent(z);
+    const canvas = fabricRef.current;
+    if (canvas) {
+      const cx = canvas.getWidth() / 2;
+      const cy = canvas.getHeight() / 2;
+      canvas.zoomToPoint(new Point(cx, cy), clampZoomScale(clamped / 100));
+      canvas.requestRenderAll();
+    }
+    setLocalZoom(clamped);
+    onZoomChangeRef.current(clamped);
   };
 
   useEffect(() => {
-    setLocalZoom(zoom);
-  }, [zoom]);
+    const normalizedZoom = clampZoomPercent(zoom);
+    if (Math.abs(normalizedZoom - localZoom) < 0.001) {
+      return;
+    }
+
+    setLocalZoom(normalizedZoom);
+
+    const canvas = fabricRef.current;
+    if (!canvas) {
+      return;
+    }
+
+    const cx = canvas.getWidth() / 2;
+    const cy = canvas.getHeight() / 2;
+    canvas.zoomToPoint(new Point(cx, cy), clampZoomScale(normalizedZoom / 100));
+    canvas.requestRenderAll();
+  }, [zoom, localZoom]);
 
   useEffect(() => {
     const el = canvasElRef.current;
@@ -465,6 +524,10 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     fabricRef.current = canvas;
     canvasRef.current = canvas;
     registerCanvas(canvas);
+    const upperCanvasEl = (canvas as unknown as { upperCanvasEl?: HTMLCanvasElement }).upperCanvasEl;
+    if (upperCanvasEl) {
+      upperCanvasEl.style.touchAction = 'none';
+    }
     if (ENABLE_CANVA_INTERACTION_ENGINE) {
       interactionControllerRef.current = createInteractionController(canvas);
       setInteractionOverlayModel(interactionControllerRef.current.getOverlayModel());
@@ -481,6 +544,11 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     };
 
     resizeCanvas();
+    const initialScale = clampZoomScale(localZoom / 100);
+    const initialCx = canvas.getWidth() / 2;
+    const initialCy = canvas.getHeight() / 2;
+    canvas.zoomToPoint(new Point(initialCx, initialCy), initialScale);
+    canvas.requestRenderAll();
     const resizeObserver = new ResizeObserver(resizeCanvas);
     resizeObserver.observe(container);
 
@@ -495,32 +563,197 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
   }, []);
 
   useEffect(() => {
-    const canvas = fabricRef.current;
-    if (!canvas) return;
-    const cx = canvas.getWidth() / 2;
-    const cy = canvas.getHeight() / 2;
-    canvas.zoomToPoint(new Point(cx, cy), localZoom / 100);
-    canvas.renderAll();
-  }, [localZoom]);
-
-  useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
       const canvas = fabricRef.current;
       if (!canvas) return;
-      let zoom = canvas.getZoom() * Math.exp(-e.deltaY * 0.001);
-      zoom = Math.max(0.1, Math.min(5, zoom));
-      canvas.zoomToPoint(new Point(e.offsetX, e.offsetY), zoom);
-      const zoomPct = Math.round(zoom * 100);
-      setLocalZoom(zoomPct);
-      onZoomChange(zoomPct);
-      canvas.renderAll();
+      const nextScale = clampZoomScale(canvas.getZoom() * Math.exp(-e.deltaY * 0.001));
+      canvas.zoomToPoint(new Point(e.offsetX, e.offsetY), nextScale);
+      syncZoomState(nextScale);
+      canvas.requestRenderAll();
     };
     container.addEventListener('wheel', handleWheel, { passive: false });
     return () => container.removeEventListener('wheel', handleWheel);
-  }, [onZoomChange]);
+  }, [syncZoomState]);
+
+  useEffect(() => {
+    const canvas = fabricRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+
+    const upperCanvasEl = (canvas as unknown as { upperCanvasEl?: HTMLCanvasElement }).upperCanvasEl;
+    if (!upperCanvasEl) return;
+
+    const gesture = {
+      active: false,
+      startDistance: 0,
+      startZoom: 1,
+      lastCenter: null as { x: number; y: number } | null,
+    };
+
+    const stopEvent = (event: TouchEvent) => {
+      event.preventDefault();
+      if (typeof event.stopImmediatePropagation === 'function') {
+        event.stopImmediatePropagation();
+      } else {
+        event.stopPropagation();
+      }
+    };
+
+    const getPairFromTouches = (touches: TouchList) => {
+      if (touches.length < 2) return null;
+      const a = touches[0];
+      const b = touches[1];
+      return [
+        { x: a.clientX, y: a.clientY },
+        { x: b.clientX, y: b.clientY },
+      ] as const;
+    };
+
+    const restoreCanvasInteraction = () => {
+      const currentCanvas = fabricRef.current;
+      if (!currentCanvas) return;
+
+      if (currentCanvas.viewportTransform) {
+        currentCanvas.setViewportTransform(currentCanvas.viewportTransform as Mat6);
+      }
+
+      if (pathEditingPath) {
+        currentCanvas.selection = false;
+        currentCanvas.defaultCursor = 'default';
+      } else {
+        currentCanvas.selection = activeTool === 'select';
+        currentCanvas.defaultCursor = activeTool === 'select' ? 'default' : 'crosshair';
+      }
+
+      currentCanvas.requestRenderAll();
+    };
+
+    const beginGesture = (touches: TouchList) => {
+      const currentCanvas = fabricRef.current;
+      const pair = getPairFromTouches(touches);
+      if (!currentCanvas || !pair) return;
+
+      const [a, b] = pair;
+      const distance = getTouchDistance(a, b);
+      if (distance <= 0) return;
+
+      gesture.active = true;
+      gesture.startDistance = distance;
+      gesture.startZoom = currentCanvas.getZoom();
+      gesture.lastCenter = getTouchCenter(a, b);
+
+      currentCanvas.discardActiveObject();
+      currentCanvas.selection = false;
+      currentCanvas.isDrawingMode = false;
+      currentCanvas.defaultCursor = 'grabbing';
+      currentCanvas.requestRenderAll();
+    };
+
+    const endGesture = () => {
+      gesture.active = false;
+      gesture.startDistance = 0;
+      gesture.startZoom = 1;
+      gesture.lastCenter = null;
+      restoreCanvasInteraction();
+    };
+
+    const handleTouchStart = (event: TouchEvent) => {
+      if (event.touches.length < 2) return;
+      stopEvent(event);
+      if (!gesture.active) {
+        beginGesture(event.touches);
+      }
+    };
+
+    const handleTouchMove = (event: TouchEvent) => {
+      if (!gesture.active) return;
+      stopEvent(event);
+      if (event.touches.length < 2) return;
+
+      const currentCanvas = fabricRef.current;
+      const pair = getPairFromTouches(event.touches);
+      if (!currentCanvas || !pair || gesture.startDistance <= 0) return;
+
+      const [a, b] = pair;
+      const distance = getTouchDistance(a, b);
+      if (distance <= 0) return;
+
+      const center = getTouchCenter(a, b);
+      const rect = container.getBoundingClientRect();
+      const scaleRatio = distance / gesture.startDistance;
+      const nextScale = clampZoomScale(gesture.startZoom * scaleRatio);
+
+      currentCanvas.zoomToPoint(new Point(center.x - rect.left, center.y - rect.top), nextScale);
+
+      if (gesture.lastCenter) {
+        const dx = center.x - gesture.lastCenter.x;
+        const dy = center.y - gesture.lastCenter.y;
+        if (dx !== 0 || dy !== 0) {
+          currentCanvas.relativePan(new Point(dx, dy));
+        }
+      }
+
+      gesture.lastCenter = center;
+      syncZoomState(nextScale);
+      currentCanvas.requestRenderAll();
+    };
+
+    const handleTouchEnd = (event: TouchEvent) => {
+      if (!gesture.active) return;
+      stopEvent(event);
+      if (event.touches.length === 0) {
+        endGesture();
+      }
+    };
+
+    upperCanvasEl.addEventListener('touchstart', handleTouchStart, {
+      passive: false,
+      capture: true,
+    });
+    upperCanvasEl.addEventListener('touchmove', handleTouchMove, {
+      passive: false,
+      capture: true,
+    });
+    upperCanvasEl.addEventListener('touchend', handleTouchEnd, {
+      passive: false,
+      capture: true,
+    });
+    upperCanvasEl.addEventListener('touchcancel', handleTouchEnd, {
+      passive: false,
+      capture: true,
+    });
+
+    document.addEventListener('touchmove', handleTouchMove, {
+      passive: false,
+      capture: true,
+    });
+    document.addEventListener('touchend', handleTouchEnd, {
+      passive: false,
+      capture: true,
+    });
+    document.addEventListener('touchcancel', handleTouchEnd, {
+      passive: false,
+      capture: true,
+    });
+
+    return () => {
+      upperCanvasEl.removeEventListener('touchstart', handleTouchStart, true);
+      upperCanvasEl.removeEventListener('touchmove', handleTouchMove, true);
+      upperCanvasEl.removeEventListener('touchend', handleTouchEnd, true);
+      upperCanvasEl.removeEventListener('touchcancel', handleTouchEnd, true);
+
+      document.removeEventListener('touchmove', handleTouchMove, true);
+      document.removeEventListener('touchend', handleTouchEnd, true);
+      document.removeEventListener('touchcancel', handleTouchEnd, true);
+
+      if (gesture.active) {
+        endGesture();
+      }
+    };
+  }, [activeTool, pathEditingPath, syncZoomState]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -1102,6 +1335,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     <div
       ref={containerRef}
       className='relative h-full w-full overflow-hidden rounded-md'
+      style={{ touchAction: 'none' }}
     >
       <div className='pointer-events-none absolute inset-0 z-10' style={gridStyle} />
       <canvas ref={canvasElRef} className='absolute inset-0 z-20' />
