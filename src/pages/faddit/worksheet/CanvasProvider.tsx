@@ -43,6 +43,7 @@ export interface LayerItem {
 
 interface CanvasCtx {
   canvasRef: MutableRefObject<Canvas | null>;
+  canvasSession: number;
   registerCanvas: (c: Canvas) => void;
   activeTool: ToolType;
   setActiveTool: (t: ToolType) => void;
@@ -68,6 +69,9 @@ interface CanvasCtx {
   undo: () => void;
   redo: () => void;
   saveHistory: () => void;
+  exportCanvasJson: () => string | null;
+  importCanvasJson: (json: string) => Promise<boolean>;
+  clearCanvas: () => void;
   layers: LayerItem[];
   refreshLayers: () => void;
   toggleLayerVisibility: (id: string) => void;
@@ -217,6 +221,7 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const [layers, setLayers] = useState<LayerItem[]>([]);
+  const [canvasSession, setCanvasSession] = useState(0);
 
   const syncUndoRedo = useCallback(() => {
     setCanUndo(historyIdxRef.current > 0);
@@ -281,9 +286,51 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
     setActiveLayerId((obj as ObjWithData).data?.id ?? null);
   }, []);
 
+  const exportCanvasJson = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    return JSON.stringify(canvas.toObject(['data', 'selectable', 'evented', 'visible']));
+  }, []);
+
+  const importCanvasJson = useCallback(
+    async (json: string) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return false;
+
+      await canvas.loadFromJSON(json);
+      canvas.renderAll();
+      refreshLayers();
+      syncSelectionProps(null);
+
+      historyRef.current = [json];
+      historyIdxRef.current = 0;
+      syncUndoRedo();
+
+      return true;
+    },
+    [refreshLayers, syncSelectionProps, syncUndoRedo],
+  );
+
+  const clearCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    canvas.clear();
+    canvas.backgroundColor = 'transparent';
+    canvas.renderAll();
+    refreshLayers();
+    syncSelectionProps(null);
+
+    const json = JSON.stringify(canvas.toObject(['data', 'selectable', 'evented', 'visible']));
+    historyRef.current = [json];
+    historyIdxRef.current = 0;
+    syncUndoRedo();
+  }, [refreshLayers, syncSelectionProps, syncUndoRedo]);
+
   const registerCanvas = useCallback(
     (c: Canvas) => {
       canvasRef.current = c;
+      setCanvasSession((v) => v + 1);
       saveHistory();
       refreshLayers();
       c.on('object:added', refreshLayers);
@@ -816,6 +863,7 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
     <CanvasContext.Provider
       value={{
         canvasRef,
+        canvasSession,
         registerCanvas,
         activeTool,
         setActiveTool,
@@ -841,6 +889,9 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
         undo,
         redo,
         saveHistory,
+        exportCanvasJson,
+        importCanvasJson,
+        clearCanvas,
         layers,
         refreshLayers,
         toggleLayerVisibility,

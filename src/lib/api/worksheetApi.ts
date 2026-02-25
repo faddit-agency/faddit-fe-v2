@@ -27,6 +27,11 @@ export type WorksheetDetailResponse = {
     name?: string;
     ui_info_json?: string | null;
     size_spec?: string | null;
+    schematic?: {
+      schematic_id?: string;
+      schematic_json?: string | null;
+      file_system_id?: string;
+    } | null;
     [key: string]: unknown;
   };
   is_owner?: boolean;
@@ -50,4 +55,36 @@ export const getWorksheetDetail = async (worksheetId: string, userId?: string) =
     data: userId ? { userId } : undefined,
   });
   return response.data;
+};
+
+export type UpdateWorksheetPayload = {
+  userId: string;
+  ui_info_json?: string;
+  accessory_json?: string;
+  fabric_json?: string;
+  color_size_json?: string;
+  size_spec_json?: string;
+  labels_temp_json?: string;
+  fabrics_temp_json?: string;
+  pattern_temp_json?: string;
+  work_precautions?: string;
+};
+
+export const updateWorksheet = async (
+  worksheetId: string,
+  payload: UpdateWorksheetPayload,
+) => {
+  const response = await baseHttpClient.patch(`/worksheet/${worksheetId}`, payload);
+  return response.data;
+};
+
+export const saveWorksheetUiInfo = async (
+  worksheetId: string,
+  userId: string,
+  uiInfo: unknown,
+) => {
+  return updateWorksheet(worksheetId, {
+    userId,
+    ui_info_json: JSON.stringify(uiInfo ?? {}),
+  });
 };

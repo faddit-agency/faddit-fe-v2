@@ -5,6 +5,7 @@ interface WorksheetV2GridCardProps {
   cardId: string;
   title: string;
   headerExtra?: React.ReactNode;
+  headerActions?: React.ReactNode;
   onClose?: () => void;
   isActive?: boolean;
   onActivate?: (cardId: string) => void;
@@ -15,6 +16,7 @@ const WorksheetV2GridCard: React.FC<WorksheetV2GridCardProps> = ({
   cardId,
   title,
   headerExtra,
+  headerActions,
   onClose,
   isActive = false,
   onActivate,
@@ -42,18 +44,21 @@ const WorksheetV2GridCard: React.FC<WorksheetV2GridCardProps> = ({
           <h3 className='text-[13px] font-semibold text-gray-700'>{title}</h3>
           {headerExtra}
         </div>
-        {onClose ? (
-          <button
-            type='button'
-            onClick={(e) => {
-              e.stopPropagation();
-              onClose();
-            }}
-            className='worksheet-v2-no-drag shrink-0 rounded p-0.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700'
-          >
-            <X size={13} strokeWidth={2} />
-          </button>
-        ) : null}
+        <div className='flex shrink-0 items-center gap-1'>
+          {headerActions}
+          {onClose ? (
+            <button
+              type='button'
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose();
+              }}
+              className='worksheet-v2-no-drag rounded p-0.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700'
+            >
+              <X size={13} strokeWidth={2} />
+            </button>
+          ) : null}
+        </div>
       </header>
       <div className='min-h-0 flex-1 overflow-hidden'>{children}</div>
     </section>
