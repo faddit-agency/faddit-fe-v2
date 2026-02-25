@@ -123,7 +123,7 @@ const WorksheetV2: React.FC = () => {
       <aside className='shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-white'>
         <WorksheetTemplateSidebar collapsible />
       </aside>
-      <main className='flex min-w-0 flex-1 flex-col gap-2'>
+      <main className='flex min-w-0 flex-1 flex-col gap-y-4 p-4'>
         <WorksheetV2Header />
         <WorksheetV2GridContent />
       </main>
