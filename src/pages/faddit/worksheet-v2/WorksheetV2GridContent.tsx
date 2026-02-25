@@ -97,11 +97,13 @@ function applyCoupledHorizontalResize(
   });
 
   const targetFromCallback = resizedItem ? adjustedById.get(resizedItem.i) : undefined;
-  const target = targetFromCallback ?? changedItems.find((item) => {
-    const prev = prevById.get(item.i);
-    if (!prev) return false;
-    return prev.x !== item.x || prev.w !== item.w;
-  });
+  const target =
+    targetFromCallback ??
+    changedItems.find((item) => {
+      const prev = prevById.get(item.i);
+      if (!prev) return false;
+      return prev.x !== item.x || prev.w !== item.w;
+    });
 
   if (!target) {
     return rebalanceRowsToFillWidth(adjustedLayout, cols);
@@ -137,7 +139,8 @@ function applyCoupledHorizontalResize(
   if ((isRightEdgeResizeFromCallback || nextRight !== prevRight) && nextLeft === prevLeft) {
     const rightCandidates = previousLayout
       .filter(
-        (item) => item.i !== target.i && overlapsVertically(item, prevTarget) && item.x >= prevRight,
+        (item) =>
+          item.i !== target.i && overlapsVertically(item, prevTarget) && item.x >= prevRight,
       )
       .sort((a, b) => a.x - b.x);
     const prevRightNeighbor =
@@ -169,7 +172,9 @@ function applyCoupledHorizontalResize(
     const leftCandidates = previousLayout
       .filter(
         (item) =>
-          item.i !== target.i && overlapsVertically(item, prevTarget) && item.x + item.w <= prevLeft,
+          item.i !== target.i &&
+          overlapsVertically(item, prevTarget) &&
+          item.x + item.w <= prevLeft,
       )
       .sort((a, b) => b.x + b.w - (a.x + a.w));
     const prevLeftNeighbor =
@@ -449,12 +454,9 @@ export default function WorksheetV2GridContent() {
     };
   }, [width, gridRowHeight]);
 
-  const handleLayoutChange = useCallback(
-    (newLayout: Layout) => {
-      setPendingLayout(cloneLayout(newLayout));
-    },
-    [],
-  );
+  const handleLayoutChange = useCallback((newLayout: Layout) => {
+    setPendingLayout(cloneLayout(newLayout));
+  }, []);
 
   useEffect(() => {
     setPendingLayout(null);
@@ -563,7 +565,7 @@ export default function WorksheetV2GridContent() {
   return (
     <div
       ref={containerRef}
-      className='relative min-h-0 flex-1 overflow-hidden rounded-lg bg-[#ebebec] p-1.5'
+      className='relative min-h-0 flex-1 overflow-hidden rounded-lg'
       onDragOver={(event) => {
         const draggedCardId = resolveDraggedCardId(event);
         if (!draggedCardId) {
@@ -611,8 +613,7 @@ export default function WorksheetV2GridContent() {
           style={{
             left: 6 + dropPreview.x * (gridMetrics.colWidth + gridMetrics.marginX),
             top: 6 + dropPreview.y * (gridMetrics.rowHeight + gridMetrics.marginY),
-            width:
-              dropPreview.w * gridMetrics.colWidth + (dropPreview.w - 1) * gridMetrics.marginX,
+            width: dropPreview.w * gridMetrics.colWidth + (dropPreview.w - 1) * gridMetrics.marginX,
             height:
               dropPreview.h * gridMetrics.rowHeight + (dropPreview.h - 1) * gridMetrics.marginY,
           }}

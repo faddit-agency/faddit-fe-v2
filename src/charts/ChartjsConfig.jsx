@@ -6,7 +6,8 @@ import { adjustColorOpacity, getCssVariable } from '../utils/Utils';
 Chart.register(Tooltip);
 
 // Define Chart.js default settings
-Chart.defaults.font.family = '"Inter", sans-serif';
+Chart.defaults.font.family =
+  '"Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", "Malgun Gothic", sans-serif';
 Chart.defaults.font.weight = 500;
 Chart.defaults.plugins.tooltip.borderWidth = 1;
 Chart.defaults.plugins.tooltip.displayColors = false;
