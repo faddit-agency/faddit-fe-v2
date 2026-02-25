@@ -49,6 +49,7 @@ type Props = {
   onCreateFolder: (folderName: string) => Promise<void> | void;
   onCreateMaterial: (value: CreateMaterialFormValue) => Promise<void> | void;
   onCreateWorksheet: (value: CreateWorksheetFormValue) => Promise<void> | void;
+  hiddenTemplateKeys?: TemplateKey[];
 };
 
 const TEMPLATE_ITEMS: TemplateItem[] = [
@@ -207,6 +208,7 @@ const TemplateCreateModal = ({
   onCreateFolder,
   onCreateMaterial,
   onCreateWorksheet,
+  hiddenTemplateKeys = [],
 }: Props) => {
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateKey | null>(null);
   const [mobileStep, setMobileStep] = useState<'select' | 'form'>('select');
@@ -303,6 +305,10 @@ const TemplateCreateModal = ({
 
   const isMaterial = selectedTemplate ? isMaterialTemplate(selectedTemplate) : false;
   const isFolder = selectedTemplate === 'folder';
+  const visibleTemplateItems = useMemo(
+    () => TEMPLATE_ITEMS.filter((item) => !hiddenTemplateKeys.includes(item.key)),
+    [hiddenTemplateKeys],
+  );
 
   const isSubmitting = isSubmittingFolder || isSubmittingMaterial || isSubmittingWorksheet;
 
@@ -510,6 +516,17 @@ const TemplateCreateModal = ({
       return;
     }
 
+    if (selectedTemplate && hiddenTemplateKeys.includes(selectedTemplate)) {
+      setSelectedTemplate(null);
+      setMobileStep('select');
+    }
+  }, [hiddenTemplateKeys, modalOpen, selectedTemplate]);
+
+  useEffect(() => {
+    if (!modalOpen) {
+      return;
+    }
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setModalOpen(false);
@@ -566,7 +583,7 @@ const TemplateCreateModal = ({
                     </h3>
                     <div className='min-h-0 flex-1 overflow-y-auto pr-1'>
                       <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3'>
-                        {TEMPLATE_ITEMS.map((template) => {
+                        {visibleTemplateItems.map((template) => {
                           const isActive = selectedTemplate === template.key;
                           return (
                             <button
