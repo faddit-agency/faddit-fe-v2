@@ -442,22 +442,23 @@ export default function WorksheetContentPanel({
         )}
       </div>
 
-      <div className='relative z-[120] flex w-full min-w-0 shrink-0 flex-col rounded-md px-4 py-3'>
-        <div
-          className='w-full min-w-0 transition-[max-height,margin] duration-300 ease-in-out'
-          style={{
-            maxHeight: pageToggle ? PAGE_CARD_TOTAL_H + 34 : 0,
-            overflow: pageToggle ? 'visible' : 'hidden',
-          }}
-        >
+      <div className='relative z-[120] flex w-full min-w-0 shrink-0 items-end gap-3 rounded-md px-4 py-3'>
+        <div className='min-w-0 flex-1'>
           <div
-            className='w-full min-w-0 transition-opacity duration-300 ease-in-out'
-            style={{ opacity: pageToggle ? 1 : 0 }}
+            className='w-full min-w-0 transition-[max-height,margin] duration-300 ease-in-out'
+            style={{
+              maxHeight: pageToggle ? PAGE_CARD_TOTAL_H + 34 : 0,
+              overflow: pageToggle ? 'visible' : 'hidden',
+            }}
           >
-            <div className='flex w-full min-w-0 items-start gap-2'>
-              <div className='w-full min-w-0 flex-1 overflow-x-auto overflow-y-hidden'>
-                <div className='flex w-max items-start gap-2 pb-1'>
-                {orderedPages.map((page, idx) => {
+            <div
+              className='w-full min-w-0 transition-opacity duration-300 ease-in-out'
+              style={{ opacity: pageToggle ? 1 : 0 }}
+            >
+              <div className='flex w-full min-w-0 items-start gap-2'>
+                <div className='w-full min-w-0 flex-1 overflow-x-auto overflow-y-hidden'>
+                  <div className='flex w-max items-start gap-2 pb-1'>
+                  {orderedPages.map((page, idx) => {
               const meta = PAGE_TYPE_META[page.type];
               const isEditingName = editingPageId === page.id;
               const thumbnail = editorDocument.pageThumbnails[page.id];
@@ -562,17 +563,18 @@ export default function WorksheetContentPanel({
               );
             })}
 
-                  <div className='relative flex h-[112px] shrink-0 items-start' ref={addMenuRef}>
-                    <button
-                      type='button'
-                      disabled={readOnly}
-                      onClick={() => setAddMenuOpen((v) => !v)}
-                      className='flex shrink-0 cursor-pointer items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 transition-colors hover:border-gray-300 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50'
-                      aria-label='페이지 추가'
-                      style={{ width: THUMB_W, height: THUMB_H }}
-                    >
-                      <span className='text-2xl leading-none'>+</span>
-                    </button>
+                    <div className='relative flex h-[112px] shrink-0 items-start' ref={addMenuRef}>
+                      <button
+                        type='button'
+                        disabled={readOnly}
+                        onClick={() => setAddMenuOpen((v) => !v)}
+                        className='flex shrink-0 cursor-pointer items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 transition-colors hover:border-gray-300 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50'
+                        aria-label='페이지 추가'
+                        style={{ width: THUMB_W, height: THUMB_H }}
+                      >
+                        <span className='text-2xl leading-none'>+</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -604,7 +606,7 @@ export default function WorksheetContentPanel({
           </div>
         )}
 
-        <div className='mt-2 flex w-full min-w-0 items-center justify-end gap-3'>
+        <div className='flex shrink-0 items-end gap-3 pb-1'>
           <div className='shrink-0'>
             <ToggleButton
               label='단축키 가이드'

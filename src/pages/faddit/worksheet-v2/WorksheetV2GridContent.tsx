@@ -589,7 +589,8 @@ export default function WorksheetV2GridContent({
   }, [visibleLayout]);
 
   const gridRowHeight = useMemo(() => {
-    const innerHeight = Math.max(0, containerHeight - 12);
+    const paddingY = GRID_CONFIG.containerPadding[1];
+    const innerHeight = Math.max(0, containerHeight - paddingY * 2);
     const marginY = GRID_CONFIG.margin[1];
     const totalMargins = Math.max(0, usedRows - 1) * marginY;
     const availableHeight = innerHeight - totalMargins;
@@ -603,7 +604,8 @@ export default function WorksheetV2GridContent({
 
   const gridMetrics = useMemo(() => {
     const [marginX, marginY] = GRID_CONFIG.margin;
-    const gridWidth = Math.max(0, width - 12);
+    const paddingX = GRID_CONFIG.containerPadding[0];
+    const gridWidth = Math.max(0, width - paddingX * 2);
     const colWidth = (gridWidth - marginX * (GRID_CONFIG.cols - 1)) / GRID_CONFIG.cols;
 
     return {
@@ -676,8 +678,8 @@ export default function WorksheetV2GridContent({
       }
 
       const rect = event.currentTarget.getBoundingClientRect();
-      const relX = Math.max(0, event.clientX - rect.left - 6);
-      const relY = Math.max(0, event.clientY - rect.top - 6);
+      const relX = Math.max(0, event.clientX - rect.left - GRID_CONFIG.containerPadding[0]);
+      const relY = Math.max(0, event.clientY - rect.top - GRID_CONFIG.containerPadding[1]);
 
       const w = Math.min(card.defaultLayout.w, cols);
       const h = card.defaultLayout.h;
@@ -720,9 +722,9 @@ export default function WorksheetV2GridContent({
                         event.stopPropagation();
                         handleEnterEditMode();
                       }}
-                      className='worksheet-v2-no-drag inline-flex h-7 items-center gap-1 rounded-md bg-gray-800 px-2.5 text-xs font-medium text-white transition-colors hover:bg-gray-700'
+                      className='worksheet-v2-no-drag inline-flex h-9 items-center gap-1.5 rounded-md bg-gray-800 px-3 text-sm font-medium text-white transition-colors hover:bg-gray-700'
                     >
-                      <LogIn size={13} />
+                      <LogIn size={14} />
                       Edit Mode
                     </button>
                   ) : undefined
@@ -815,8 +817,12 @@ export default function WorksheetV2GridContent({
         <div
           className='pointer-events-none absolute z-[210] rounded-md border-2 border-dashed border-blue-400 bg-blue-100/45'
           style={{
-            left: 6 + dropPreview.x * (gridMetrics.colWidth + gridMetrics.marginX),
-            top: 6 + dropPreview.y * (gridMetrics.rowHeight + gridMetrics.marginY),
+            left:
+              GRID_CONFIG.containerPadding[0] +
+              dropPreview.x * (gridMetrics.colWidth + gridMetrics.marginX),
+            top:
+              GRID_CONFIG.containerPadding[1] +
+              dropPreview.y * (gridMetrics.rowHeight + gridMetrics.marginY),
             width: dropPreview.w * gridMetrics.colWidth + (dropPreview.w - 1) * gridMetrics.marginX,
             height:
               dropPreview.h * gridMetrics.rowHeight + (dropPreview.h - 1) * gridMetrics.marginY,
@@ -827,11 +833,12 @@ export default function WorksheetV2GridContent({
         <ReactGridLayout
           key={activeTab}
           layout={visibleLayout}
-          width={width - 12}
+          width={gridMetrics.colWidth * GRID_CONFIG.cols + gridMetrics.marginX * (GRID_CONFIG.cols - 1)}
           gridConfig={{
             cols: GRID_CONFIG.cols,
             rowHeight: gridMetrics.rowHeight,
             margin: GRID_CONFIG.margin,
+            containerPadding: GRID_CONFIG.containerPadding,
           }}
           dragConfig={{
             enabled: true,

@@ -10,7 +10,7 @@ export default function WorksheetV2Header() {
   const worksheetLoadError = useWorksheetV2Store((s) => s.worksheetLoadError);
 
   return (
-    <header className='flex shrink-0 flex-col p-2 pr-5'>
+    <header className='flex shrink-0 flex-col'>
       <div className='flex items-start justify-between'>
         <div className='min-w-0'>
           <h1 className='truncate text-[18px] leading-[1.15] font-semibold tracking-[-0.02em] text-gray-800'>
@@ -45,14 +45,14 @@ export default function WorksheetV2Header() {
         <div className='flex items-center gap-x-2'>
           <button
             type='button'
-            className='border-faddit inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border bg-white px-4 py-2 text-sm font-medium text-gray-900 transition-colors hover:bg-violet-50'
+            className='border-faddit inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-lg border bg-white px-4 text-sm font-medium text-gray-900 transition-colors hover:bg-violet-50'
           >
             <Play size={13} fill='currentColor' />
             Play
           </button>
           <button
             type='button'
-            className='bg-faddit inline-flex cursor-pointer items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90'
+            className='bg-faddit inline-flex h-9 cursor-pointer items-center justify-center rounded-lg px-4 text-sm font-semibold text-white transition-opacity hover:opacity-90'
           >
             Share
           </button>
