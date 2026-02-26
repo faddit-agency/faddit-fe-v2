@@ -32,6 +32,17 @@ import {
   Unlock,
   Wrench,
 } from 'lucide-react';
+import {
+  CgPathBack,
+  CgPathCrop,
+  CgPathDivide,
+  CgPathExclude,
+  CgPathFront,
+  CgPathIntersect,
+  CgPathOutline,
+  CgPathTrim,
+  CgPathUnite,
+} from 'react-icons/cg';
 import { useCanvas, type AlignType, type ToolType } from './CanvasProvider';
 import type { PathfinderOp } from './pathfinder';
 
@@ -77,112 +88,19 @@ const PATHFINDER_BUTTONS: { op: PathfinderOp; title: string }[] = [
 ];
 
 function PathfinderGlyph({ op }: { op: PathfinderOp }) {
-  const stroke = {
-    fill: 'none',
-    stroke: 'currentColor',
-    strokeWidth: 1.4,
-    strokeLinecap: 'round' as const,
-    strokeLinejoin: 'round' as const,
-  };
+  const iconClass = 'h-[20px] w-[20px] text-current';
 
-  const glyphClass = 'h-[20px] w-[20px] text-current';
-  const back = { x: 2.5, y: 2.5, w: 7, h: 7 };
-  const front = { x: 6.5, y: 6.5, w: 7, h: 7 };
-  const overlap = { x: 6.5, y: 6.5, w: 3, h: 3 };
+  if (op === 'unite') return <CgPathUnite className={iconClass} />;
+  if (op === 'intersect') return <CgPathIntersect className={iconClass} />;
+  if (op === 'exclude') return <CgPathExclude className={iconClass} />;
+  if (op === 'divide') return <CgPathDivide className={iconClass} />;
+  if (op === 'trim') return <CgPathTrim className={iconClass} />;
+  if (op === 'crop') return <CgPathCrop className={iconClass} />;
+  if (op === 'outline') return <CgPathOutline className={iconClass} />;
+  if (op === 'minusBack') return <CgPathBack className={iconClass} />;
+  if (op === 'minusFront') return <CgPathFront className={iconClass} />;
 
-  if (op === 'unite') {
-    return (
-      <svg viewBox='0 0 16 16' className={glyphClass}>
-        <rect x={back.x} y={back.y} width={back.w} height={back.h} rx='0.8' fill='currentColor' opacity='0.58' />
-        <rect x={front.x} y={front.y} width={front.w} height={front.h} rx='0.8' fill='currentColor' opacity='0.98' />
-      </svg>
-    );
-  }
-
-  if (op === 'minusFront') {
-    return (
-      <svg viewBox='0 0 16 16' className={glyphClass}>
-        <rect x={back.x} y={back.y} width={back.w} height={back.h} rx='0.8' fill='currentColor' opacity='0.98' />
-        <rect x={front.x} y={front.y} width={front.w} height={front.h} rx='0.8' {...stroke} />
-        <rect x={overlap.x} y={overlap.y} width={overlap.w} height={overlap.h} fill='white' />
-      </svg>
-    );
-  }
-
-  if (op === 'intersect') {
-    return (
-      <svg viewBox='0 0 16 16' className={glyphClass}>
-        <rect x={back.x} y={back.y} width={back.w} height={back.h} rx='0.8' {...stroke} />
-        <rect x={front.x} y={front.y} width={front.w} height={front.h} rx='0.8' {...stroke} />
-        <rect x={overlap.x} y={overlap.y} width={overlap.w} height={overlap.h} rx='0.25' fill='currentColor' opacity='0.98' />
-      </svg>
-    );
-  }
-
-  if (op === 'exclude') {
-    return (
-      <svg viewBox='0 0 16 16' className={glyphClass}>
-        <rect x={back.x} y={back.y} width={back.w} height={back.h} rx='0.8' fill='currentColor' opacity='0.98' />
-        <rect x={front.x} y={front.y} width={front.w} height={front.h} rx='0.8' fill='currentColor' opacity='0.98' />
-        <rect x={overlap.x} y={overlap.y} width={overlap.w} height={overlap.h} fill='white' />
-      </svg>
-    );
-  }
-
-  if (op === 'divide') {
-    return (
-      <svg viewBox='0 0 16 16' className={glyphClass}>
-        <rect x={back.x} y={back.y} width={back.w} height={back.h} rx='0.8' {...stroke} />
-        <rect x={front.x} y={front.y} width={front.w} height={front.h} rx='0.8' {...stroke} />
-        <path d='M6.9 9.1 9.1 6.9M6.9 6.9 9.1 9.1' {...stroke} />
-      </svg>
-    );
-  }
-
-  if (op === 'trim') {
-    return (
-      <svg viewBox='0 0 16 16' className={glyphClass}>
-        <rect x={back.x} y={back.y} width={back.w} height={back.h} rx='0.8' fill='currentColor' opacity='0.98' />
-        <rect x={front.x} y={front.y} width={front.w} height={front.h} rx='0.8' fill='currentColor' opacity='0.98' />
-        <rect x={overlap.x} y={overlap.y} width={overlap.w} height={overlap.h} fill='white' />
-        <rect x='10.5' y='10.5' width='2.2' height='2.2' fill='currentColor' opacity='0.98' />
-      </svg>
-    );
-  }
-
-  if (op === 'merge') {
-    return (
-      <svg viewBox='0 0 16 16' className={glyphClass}>
-        <path d='M2.5 2.5h7v4h4v7h-7v-4h-4z' fill='currentColor' opacity='0.98' />
-      </svg>
-    );
-  }
-
-  if (op === 'crop') {
-    return (
-      <svg viewBox='0 0 16 16' className={glyphClass}>
-        <path d='M4 2.5v8h8M2.5 4h8v8' {...stroke} />
-        <rect x='7' y='7' width='3.3' height='3.3' fill='currentColor' opacity='0.98' />
-      </svg>
-    );
-  }
-
-  if (op === 'outline') {
-    return (
-      <svg viewBox='0 0 16 16' className={glyphClass}>
-        <rect x={back.x} y={back.y} width={back.w} height={back.h} rx='0.8' {...stroke} />
-        <rect x={front.x} y={front.y} width={front.w} height={front.h} rx='0.8' {...stroke} />
-      </svg>
-    );
-  }
-
-  return (
-    <svg viewBox='0 0 16 16' className={glyphClass}>
-      <rect x={front.x} y={front.y} width={front.w} height={front.h} rx='0.8' fill='currentColor' opacity='0.98' />
-      <rect x={back.x} y={back.y} width={back.w} height={back.h} rx='0.8' {...stroke} />
-      <rect x={overlap.x} y={overlap.y} width={overlap.w} height={overlap.h} fill='white' />
-    </svg>
-  );
+  return <CgPathUnite className={iconClass} />;
 }
 
 function SidePanelTooltip({
@@ -269,7 +187,7 @@ function IconGridTooltipButton({
         onClick={onClick}
         title={title}
         aria-label={title}
-        className={`flex h-8 w-full cursor-pointer items-center justify-center rounded-md text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900 ${className ?? ''}`}
+        className={`flex h-8 w-full cursor-pointer items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 ${className ?? ''}`}
       >
         {children}
       </button>
