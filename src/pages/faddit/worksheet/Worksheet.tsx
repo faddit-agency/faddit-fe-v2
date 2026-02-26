@@ -72,6 +72,7 @@ const Worksheet: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [autosaveEnabled, setAutosaveEnabled] = useState(false);
+  const [guideModeEnabled, setGuideModeEnabled] = useState(false);
 
   const autosaveTimerRef = useRef<number | null>(null);
   const lastSavedDocJsonRef = useRef<string>(JSON.stringify(editorDoc));
@@ -217,6 +218,8 @@ const Worksheet: React.FC = () => {
               readOnly={isInitialLoading}
               autosaveEnabled={autosaveEnabled}
               onToggleAutosave={() => setAutosaveEnabled((prev) => !prev)}
+              guideModeEnabled={guideModeEnabled}
+              onToggleGuideMode={() => setGuideModeEnabled((prev) => !prev)}
             />
           </main>
         </section>

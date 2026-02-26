@@ -19,7 +19,29 @@ interface WorksheetContentPanelProps {
   readOnly?: boolean;
   autosaveEnabled: boolean;
   onToggleAutosave: () => void;
+  guideModeEnabled: boolean;
+  onToggleGuideMode: () => void;
 }
+
+const GUIDE_MANUAL_ITEMS: Array<{ title: string; shortcut: string; usage: string }> = [
+  { title: '선택 모드', shortcut: 'V', usage: '객체 선택/이동/크기 조절' },
+  { title: '브러쉬', shortcut: 'B', usage: '자유 드로잉 경로 생성' },
+  { title: '펜툴', shortcut: 'P', usage: '클릭은 직선, 드래그는 곡선 앵커 생성' },
+  { title: '텍스트', shortcut: 'T', usage: '캔버스 클릭으로 텍스트 박스 생성' },
+  { title: '사각형', shortcut: 'R', usage: '드래그로 사각형 생성' },
+  { title: '원', shortcut: 'O', usage: '드래그로 원/타원 생성' },
+  { title: '삼각형', shortcut: 'Y', usage: '드래그로 삼각형 생성' },
+  { title: '선', shortcut: 'L', usage: '드래그로 직선 생성' },
+  { title: '화살표', shortcut: 'A', usage: '드래그로 화살표 생성' },
+  { title: '그룹화', shortcut: 'Cmd/Ctrl+G', usage: '선택 객체 그룹화' },
+  { title: '그룹 해제', shortcut: 'Cmd/Ctrl+Alt+G', usage: '그룹 해제' },
+  { title: '복사/붙여넣기', shortcut: 'Cmd/Ctrl+C, V', usage: '선택 객체 복사/붙여넣기' },
+  { title: '실행 취소/다시 실행', shortcut: 'Cmd/Ctrl+Z, Y', usage: '최근 작업 되돌리기/복원' },
+  { title: '팬', shortcut: 'Space + Drag', usage: '캔버스 이동(패닝)' },
+  { title: '각도 스냅', shortcut: 'Shift', usage: '선/펜 핸들 각도 스냅' },
+  { title: '펜 비대칭 핸들', shortcut: 'Alt + Drag', usage: '펜 핸들을 한쪽만 조절' },
+  { title: '펜 앵커 삭제', shortcut: 'Backspace', usage: '마지막 펜 앵커 제거' },
+];
 
 const PAGE_TYPE_META: Record<
   PageType,
@@ -86,6 +108,8 @@ export default function WorksheetContentPanel({
   readOnly = false,
   autosaveEnabled,
   onToggleAutosave,
+  guideModeEnabled,
+  onToggleGuideMode,
 }: WorksheetContentPanelProps) {
   const pages = editorDocument.pages;
   const selectedId = editorDocument.activePageId;
@@ -574,6 +598,17 @@ export default function WorksheetContentPanel({
         <div className='mt-2 flex w-full min-w-0 items-center justify-end gap-3'>
           <div className='shrink-0'>
             <ToggleButton
+              label='단축키 가이드'
+              checked={guideModeEnabled}
+              onChange={() => {
+                if (readOnly) return;
+                onToggleGuideMode();
+              }}
+            />
+          </div>
+
+          <div className='shrink-0'>
+            <ToggleButton
               label='자동저장'
               checked={autosaveEnabled}
               onChange={() => {
@@ -621,6 +656,27 @@ export default function WorksheetContentPanel({
           )}
         </div>
       </div>
+
+      {guideModeEnabled && (
+        <aside className='pointer-events-auto fixed top-[72px] right-3 z-[240] w-[320px] rounded-xl border border-gray-200 bg-white/70 p-3 opacity-70 shadow-lg backdrop-blur-[2px] transition-opacity duration-200 hover:opacity-100'>
+          <h3 className='mb-2 text-sm font-semibold text-gray-800'>단축키 가이드</h3>
+          <div className='max-h-[70vh] overflow-y-auto pr-1'>
+            <div className='space-y-1.5'>
+              {GUIDE_MANUAL_ITEMS.map((item) => (
+                <div key={`${item.title}-${item.shortcut}`} className='rounded-md bg-white/70 px-2 py-1.5'>
+                  <div className='flex items-center justify-between gap-2'>
+                    <span className='text-xs font-semibold text-gray-800'>{item.title}</span>
+                    <span className='rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600'>
+                      {item.shortcut}
+                    </span>
+                  </div>
+                  <p className='mt-1 text-[11px] leading-4 text-gray-600'>{item.usage}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </aside>
+      )}
     </section>
   );
 }

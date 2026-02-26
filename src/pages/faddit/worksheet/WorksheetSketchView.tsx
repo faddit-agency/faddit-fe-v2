@@ -468,6 +468,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
   const penGuideRef = useRef<Line | null>(null);
   const penHandleInGuideRef = useRef<Line | null>(null);
   const penHandleOutGuideRef = useRef<Line | null>(null);
+  const penCompletionHintRef = useRef<Ellipse | null>(null);
   const penDragRef = useRef<{
     down: boolean;
     anchorIndex: number;
@@ -1224,7 +1225,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     const canvas = fabricRef.current;
     if (!canvas) return;
     const handleDblClick = (opt: TPointerEventInfo<TPointerEvent>) => {
-      if (activeTool === 'pen') {
+      if (activeTool === 'pen' && penPointsRef.current.length > 0) {
         return;
       }
       const target = opt.target;
@@ -1245,18 +1246,32 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
   useEffect(() => {
     const canvas = fabricRef.current;
     if (!canvas) return;
+    const upperCanvasEl = (canvas as unknown as { upperCanvasEl?: HTMLCanvasElement }).upperCanvasEl;
     if (pathEditingPath) {
       canvas.selection = false;
       canvas.defaultCursor = 'default';
+      if (upperCanvasEl) {
+        upperCanvasEl.style.pointerEvents = 'none';
+      }
     } else {
       canvas.selection = activeTool === 'select';
       canvas.defaultCursor = activeTool === 'select' ? 'default' : 'crosshair';
+      if (upperCanvasEl) {
+        upperCanvasEl.style.pointerEvents = 'auto';
+      }
     }
   }, [pathEditingPath, activeTool]);
 
   useEffect(() => {
     const canvas = fabricRef.current;
     if (!canvas) return;
+
+    if (pathEditingPath) {
+      canvas.isDrawingMode = false;
+      canvas.selection = false;
+      canvas.defaultCursor = 'default';
+      return;
+    }
 
     canvas.isDrawingMode = false;
     canvas.selection = activeTool === 'select';
@@ -1496,7 +1511,22 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       canvas.defaultCursor = 'crosshair';
 
       const getPenCloseThreshold = () => 8 / Math.max(canvas.getZoom(), 0.001);
-      const getPenDragThreshold = () => 8;
+      const getPenDragThreshold = () => 12;
+      const getPenAnchorHitThreshold = () => 18 / Math.max(canvas.getZoom(), 0.001);
+
+      const getConstrainedPenPoint = (base: ArrowPoint, moving: ArrowPoint, event: TPointerEvent) => {
+        if (!('shiftKey' in event) || !event.shiftKey) {
+          return moving;
+        }
+
+        return snapPointToAngle(base, moving);
+      };
+
+      const isNearAnchorPoint = (point: ArrowPoint, anchor: PenAnchor, threshold: number) => {
+        const dx = point.x - anchor.x;
+        const dy = point.y - anchor.y;
+        return Math.sqrt(dx * dx + dy * dy) <= threshold;
+      };
 
       const isNearFirstPoint = (point: ArrowPoint, points: PenAnchor[]) => {
         if (points.length < 2) {
@@ -1529,6 +1559,43 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
           canvas.remove(penHandleOutGuideRef.current);
           penHandleOutGuideRef.current = null;
         }
+      };
+
+      const clearCompletionHint = () => {
+        if (!penCompletionHintRef.current) {
+          return;
+        }
+        canvas.remove(penCompletionHintRef.current);
+        penCompletionHintRef.current = null;
+      };
+
+      const updateCompletionHint = (anchor: PenAnchor | null) => {
+        if (!anchor) {
+          clearCompletionHint();
+          return;
+        }
+
+        if (!penCompletionHintRef.current) {
+          penCompletionHintRef.current = new Ellipse({
+            rx: 9,
+            ry: 9,
+            fill: 'rgba(255,255,255,0.9)',
+            stroke: '#763bff',
+            strokeWidth: 2.2,
+            selectable: false,
+            evented: false,
+            objectCaching: false,
+            originX: 'center',
+            originY: 'center',
+          });
+          canvas.add(penCompletionHintRef.current);
+        }
+
+        penCompletionHintRef.current.set({
+          left: anchor.x,
+          top: anchor.y,
+        });
+        canvas.bringObjectToFront(penCompletionHintRef.current);
       };
 
       const updateGuideLine = (
@@ -1650,6 +1717,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         clearGuide();
         clearDraft();
         clearHandleGuides();
+        clearCompletionHint();
         penPointsRef.current = [];
         penDragRef.current = { down: false, anchorIndex: -1, moved: false, startX: 0, startY: 0 };
       };
@@ -1693,8 +1761,25 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       const handlePenMouseDown = (opt: TPointerEventInfo<TPointerEvent>) => {
         const pointer = canvas.getScenePoint(opt.e);
         const clientPoint = getEventClientPoint(opt.e);
-        const nextPoint = { x: pointer.x, y: pointer.y };
         const points = penPointsRef.current;
+        const lastAnchor = points[points.length - 1];
+        const rawNextPoint = { x: pointer.x, y: pointer.y };
+        const nextPoint = lastAnchor
+          ? getConstrainedPenPoint({ x: lastAnchor.x, y: lastAnchor.y }, rawNextPoint, opt.e)
+          : rawNextPoint;
+
+        if (lastAnchor && points.length >= 2 && isNearAnchorPoint(nextPoint, lastAnchor, getPenAnchorHitThreshold())) {
+          const hadOutHandle = Boolean(lastAnchor.outHandle);
+          if (hadOutHandle) {
+            delete lastAnchor.outHandle;
+            penPointsRef.current = [...points];
+            clearGuide();
+            renderDraftPath(penPointsRef.current);
+            updateHandleGuides(lastAnchor);
+            clearCompletionHint();
+            return;
+          }
+        }
 
         if (isNearFirstPoint(nextPoint, points)) {
           finalizePenPath(true);
@@ -1720,6 +1805,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
 
         const pointer = canvas.getScenePoint(opt.e);
         const last = points[points.length - 1];
+        const constrainedPointer = getConstrainedPenPoint(last, { x: pointer.x, y: pointer.y }, opt.e);
 
         if (penDragRef.current.down && penDragRef.current.anchorIndex >= 0) {
           const idx = penDragRef.current.anchorIndex;
@@ -1733,10 +1819,16 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
           penDragRef.current.moved = penDragRef.current.moved || moved;
 
           if (penDragRef.current.moved) {
-            const dx = pointer.x - anchor.x;
-            const dy = pointer.y - anchor.y;
-            anchor.inHandle = { x: anchor.x - dx, y: anchor.y - dy };
-            anchor.outHandle = { x: anchor.x + dx, y: anchor.y + dy };
+            const dx = constrainedPointer.x - anchor.x;
+            const dy = constrainedPointer.y - anchor.y;
+
+            if ('altKey' in opt.e && opt.e.altKey) {
+              delete anchor.inHandle;
+              anchor.outHandle = { x: anchor.x + dx, y: anchor.y + dy };
+            } else {
+              anchor.inHandle = { x: anchor.x - dx, y: anchor.y - dy };
+              anchor.outHandle = { x: anchor.x + dx, y: anchor.y + dy };
+            }
           } else {
             delete anchor.inHandle;
             delete anchor.outHandle;
@@ -1745,15 +1837,39 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
           penPointsRef.current = [...points];
           renderDraftPath(penPointsRef.current);
           clearGuide();
+          clearCompletionHint();
           updateHandleGuides(anchor);
+          return;
+        }
+
+        const cornerResetCandidate =
+          points.length >= 2 &&
+          Boolean(last.outHandle) &&
+          isNearAnchorPoint(constrainedPointer, last, getPenAnchorHitThreshold());
+
+        if (cornerResetCandidate) {
+          const previewLast: PenAnchor = {
+            ...last,
+            inHandle: last.inHandle ? { ...last.inHandle } : undefined,
+            outHandle: undefined,
+          };
+          const previewPoints = [...points.slice(0, -1), previewLast];
+          clearGuide();
+          renderDraftPath(previewPoints);
+          clearHandleGuides();
+          updateCompletionHint(previewLast);
+          canvas.defaultCursor = 'pointer';
           canvas.requestRenderAll();
           return;
         }
 
-        const closeCandidate = isNearFirstPoint({ x: pointer.x, y: pointer.y }, points);
+        clearCompletionHint();
+        canvas.defaultCursor = 'crosshair';
+
+        const closeCandidate = isNearFirstPoint(constrainedPointer, points);
         const previewTarget: PenAnchor = closeCandidate
           ? { x: points[0].x, y: points[0].y }
-          : { x: pointer.x, y: pointer.y };
+          : { x: constrainedPointer.x, y: constrainedPointer.y };
 
         renderDraftPath([...points, previewTarget], closeCandidate);
 
@@ -1781,10 +1897,6 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         canvas.requestRenderAll();
       };
 
-      const handlePenDblClick = () => {
-        finalizePenPath(false);
-      };
-
       const handlePenMouseUp = () => {
         if (!penDragRef.current.down) {
           return;
@@ -1796,6 +1908,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         penDragRef.current.startX = 0;
         penDragRef.current.startY = 0;
         clearGuide();
+        clearCompletionHint();
         renderDraftPath(penPointsRef.current);
         updateHandleGuides(penPointsRef.current[penPointsRef.current.length - 1] ?? null);
       };
@@ -1804,6 +1917,20 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         if (event.code === 'Enter') {
           event.preventDefault();
           finalizePenPath();
+          return;
+        }
+
+        if (event.code === 'Backspace') {
+          event.preventDefault();
+          const points = penPointsRef.current;
+          if (points.length === 0) {
+            return;
+          }
+
+          penPointsRef.current = points.slice(0, -1);
+          clearGuide();
+          renderDraftPath(penPointsRef.current);
+          updateHandleGuides(penPointsRef.current[penPointsRef.current.length - 1] ?? null);
           return;
         }
 
@@ -1816,14 +1943,12 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       canvas.on('mouse:down', handlePenMouseDown);
       canvas.on('mouse:move', handlePenMouseMove);
       canvas.on('mouse:up', handlePenMouseUp);
-      canvas.on('mouse:dblclick', handlePenDblClick);
       window.addEventListener('keydown', handlePenKeyDown);
 
       return () => {
         canvas.off('mouse:down', handlePenMouseDown);
         canvas.off('mouse:move', handlePenMouseMove);
         canvas.off('mouse:up', handlePenMouseUp);
-        canvas.off('mouse:dblclick', handlePenDblClick);
         window.removeEventListener('keydown', handlePenKeyDown);
         resetPenState();
       };
@@ -1841,6 +1966,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     };
   }, [
     activeTool,
+    pathEditingPath,
     fillColor,
     strokeColor,
     strokeWidth,

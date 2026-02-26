@@ -160,18 +160,25 @@ export default function PathEditorOverlay({ canvas, path, onDone }: Props) {
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
   const dragRef = useRef<{ target: DragTarget } | null>(null);
+  const activePointerIdRef = useRef<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
-  const composedRef = useRef<Mat6>(
-    multiplyMat(canvas.viewportTransform as Mat6, path.calcTransformMatrix() as Mat6),
-  );
-  const pathOffsetRef = useRef<{ x: number; y: number }>(
-    (path as unknown as { pathOffset?: { x: number; y: number } }).pathOffset ?? { x: 0, y: 0 },
+  const getPathOffset = useCallback(
+    () => (path as unknown as { pathOffset?: { x: number; y: number } }).pathOffset ?? { x: 0, y: 0 },
+    [path],
   );
 
   useEffect(() => {
     path.set({ visible: false });
     canvas.renderAll();
+
+    return () => {
+      if (activePointerIdRef.current !== null && svgRef.current?.hasPointerCapture(activePointerIdRef.current)) {
+        svgRef.current.releasePointerCapture(activePointerIdRef.current);
+      }
+      activePointerIdRef.current = null;
+      dragRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
@@ -183,29 +190,50 @@ export default function PathEditorOverlay({ canvas, path, onDone }: Props) {
   }, [onDone]);
 
   const localToScreen = useCallback((lx: number, ly: number) => {
-    const m = composedRef.current;
-    const cx = lx - pathOffsetRef.current.x;
-    const cy = ly - pathOffsetRef.current.y;
+    const m = multiplyMat(
+      (canvas.viewportTransform as Mat6) ?? [1, 0, 0, 1, 0, 0],
+      path.calcTransformMatrix() as Mat6,
+    );
+    const pathOffset = getPathOffset();
+    const cx = lx - pathOffset.x;
+    const cy = ly - pathOffset.y;
     return { x: m[0] * cx + m[2] * cy + m[4], y: m[1] * cx + m[3] * cy + m[5] };
-  }, []);
+  }, [canvas, path, getPathOffset]);
 
   const screenToLocal = useCallback((sx: number, sy: number) => {
-    const inv = invertMat(composedRef.current);
+    const m = multiplyMat(
+      (canvas.viewportTransform as Mat6) ?? [1, 0, 0, 1, 0, 0],
+      path.calcTransformMatrix() as Mat6,
+    );
+    const pathOffset = getPathOffset();
+    const inv = invertMat(m);
     return {
-      x: inv[0] * sx + inv[2] * sy + inv[4] + pathOffsetRef.current.x,
-      y: inv[1] * sx + inv[3] * sy + inv[5] + pathOffsetRef.current.y,
+      x: inv[0] * sx + inv[2] * sy + inv[4] + pathOffset.x,
+      y: inv[1] * sx + inv[3] * sy + inv[5] + pathOffset.y,
     };
-  }, []);
+  }, [canvas, path, getPathOffset]);
 
   const handlePointerDown = useCallback((e: React.PointerEvent, target: DragTarget) => {
+    e.preventDefault();
     e.stopPropagation();
-    (e.target as Element).setPointerCapture(e.pointerId);
+    svgRef.current?.setPointerCapture(e.pointerId);
+    activePointerIdRef.current = e.pointerId;
     dragRef.current = { target };
     setSelectedIdx(target.idx);
   }, []);
 
+  const handleSvgPointerDown = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
+      if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) {
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
       if (!dragRef.current || !svgRef.current) return;
       const rect = svgRef.current.getBoundingClientRect();
       const local = screenToLocal(e.clientX - rect.left, e.clientY - rect.top);
@@ -238,13 +266,25 @@ export default function PathEditorOverlay({ canvas, path, onDone }: Props) {
     [screenToLocal],
   );
 
-  const handlePointerUp = useCallback(() => {
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (activePointerIdRef.current !== null) {
+      if (svgRef.current?.hasPointerCapture(activePointerIdRef.current)) {
+        svgRef.current.releasePointerCapture(activePointerIdRef.current);
+      }
+      activePointerIdRef.current = null;
+    }
     dragRef.current = null;
   }, []);
 
-  const m = composedRef.current;
-  const ox = pathOffsetRef.current.x;
-  const oy = pathOffsetRef.current.y;
+  const m = multiplyMat(
+    (canvas.viewportTransform as Mat6) ?? [1, 0, 0, 1, 0, 0],
+    path.calcTransformMatrix() as Mat6,
+  );
+  const pathOffset = getPathOffset();
+  const ox = pathOffset.x;
+  const oy = pathOffset.y;
   const pathTransform = `matrix(${m.join(' ')}) translate(${-ox} ${-oy})`;
   const pathD = commandsToD(buildCommands(nodes));
 
@@ -252,10 +292,12 @@ export default function PathEditorOverlay({ canvas, path, onDone }: Props) {
     <>
       <svg
         ref={svgRef}
-        className='pointer-events-auto absolute inset-0 h-full w-full'
+        className='pointer-events-auto absolute inset-0 z-30 h-full w-full'
         style={{ overflow: 'visible', touchAction: 'none', cursor: 'default' }}
+        onPointerDown={handleSvgPointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
       >
         <path
           d={pathD}
@@ -337,7 +379,7 @@ export default function PathEditorOverlay({ canvas, path, onDone }: Props) {
           );
         })}
       </svg>
-      <div className='pointer-events-none absolute top-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-gray-800/80 px-3 py-1.5 shadow-md'>
+      <div className='pointer-events-none absolute top-3 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full bg-gray-800/80 px-3 py-1.5 shadow-md'>
         <span className='text-xs text-white'>경로 편집 중</span>
         <button
           type='button'
