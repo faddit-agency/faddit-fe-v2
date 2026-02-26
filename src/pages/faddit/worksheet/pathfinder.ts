@@ -27,6 +27,7 @@ type PaperResultEntry = {
   splitCompound?: boolean;
   forceOutline?: boolean;
   forceCloseOpenPaths?: boolean;
+  stripStroke?: boolean;
 };
 
 const OP_RESULT_LABEL: Record<PathfinderOp, string> = {
@@ -62,11 +63,8 @@ function getSingleResultStyleSource(sorted: FabricObject[], op: PathfinderOp): F
 
 function getMergeStyleKey(obj: FabricObject, index: number): string {
   const fill = obj.fill;
-  const stroke = obj.stroke;
-  const strokeWidth = typeof obj.strokeWidth === 'number' ? obj.strokeWidth : 1;
-
-  if (typeof fill === 'string' && typeof stroke === 'string') {
-    return `${fill}::${stroke}::${strokeWidth}`;
+  if (typeof fill === 'string') {
+    return `${fill}`;
   }
 
   return `__non-mergeable__${index}`;
@@ -79,6 +77,34 @@ function getFilledStyleSource(sources: FabricObject[]): FabricObject {
   });
 
   return filled ?? sources[0];
+}
+
+function computeBoundsUnion(objs: FabricObject[]): { left: number; top: number; width: number; height: number } | null {
+  if (objs.length === 0) return null;
+
+  let left = Infinity;
+  let top = Infinity;
+  let right = -Infinity;
+  let bottom = -Infinity;
+
+  objs.forEach((obj) => {
+    const b = obj.getBoundingRect();
+    left = Math.min(left, b.left);
+    top = Math.min(top, b.top);
+    right = Math.max(right, b.left + b.width);
+    bottom = Math.max(bottom, b.top + b.height);
+  });
+
+  if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(right) || !Number.isFinite(bottom)) {
+    return null;
+  }
+
+  return {
+    left,
+    top,
+    width: Math.max(0, right - left),
+    height: Math.max(0, bottom - top),
+  };
 }
 
 function canBooleanTarget(obj: FabricObject): boolean {
@@ -295,21 +321,20 @@ function applyTrimSequence(shapes: paper.PathItem[]): Array<{ item: paper.PathIt
   return results;
 }
 
-function applyCropSequence(shapes: paper.PathItem[]): paper.PathItem | null {
-  if (shapes.length < 2) return null;
+function applyCropSequenceBySource(
+  shapes: paper.PathItem[],
+): Array<{ item: paper.PathItem; sourceIndex: number }> {
+  if (shapes.length < 2) return [];
 
   const mask = shapes[shapes.length - 1];
-  let source = shapes[0].clone({ insert: false }) as paper.PathItem;
+  const results: Array<{ item: paper.PathItem; sourceIndex: number }> = [];
 
-  for (let i = 1; i < shapes.length - 1; i += 1) {
-    const next = source.unite(shapes[i], { insert: false }) as paper.PathItem;
-    source.remove();
-    source = next;
+  for (let i = 0; i < shapes.length - 1; i += 1) {
+    const clipped = shapes[i].intersect(mask, { insert: false }) as paper.PathItem;
+    results.push({ item: clipped, sourceIndex: i });
   }
 
-  const result = source.intersect(mask, { insert: false }) as paper.PathItem;
-  source.remove();
-  return result;
+  return results;
 }
 
 function applyMergeFromTrim(
@@ -410,6 +435,7 @@ export function applyPathfinderOperation(canvas: Canvas, op: PathfinderOp): bool
           item: entry.item,
           styleSource: sources[entry.sourceIndex],
           splitCompound: true,
+          stripStroke: true,
         });
       });
     } else if (op === 'merge') {
@@ -420,16 +446,19 @@ export function applyPathfinderOperation(canvas: Canvas, op: PathfinderOp): bool
           item: entry.item,
           styleSource: entry.styleSource,
           splitCompound: true,
+          stripStroke: true,
         });
       });
     } else if (op === 'crop') {
-      const cropped = applyCropSequence(shapes);
-      if (cropped) {
+      const cropped = applyCropSequenceBySource(shapes);
+      cropped.forEach((entry) => {
         resultEntries.push({
-          item: cropped,
-          styleSource: sources[sources.length - 1],
+          item: entry.item,
+          styleSource: sources[entry.sourceIndex],
+          splitCompound: true,
+          stripStroke: true,
         });
-      }
+      });
     } else if (op === 'outline') {
       const outlined = applyDivideSequence(shapes) ?? applyBooleanSequence('unite', shapes);
       if (outlined) {
@@ -468,10 +497,12 @@ export function applyPathfinderOperation(canvas: Canvas, op: PathfinderOp): bool
 
         const next = new Path(pathData, {
           fill: entry.forceOutline ? '' : entry.styleSource.fill,
-          stroke: entry.forceOutline ? strokeForOutline : entry.styleSource.stroke,
+          stroke: entry.stripStroke ? '' : entry.forceOutline ? strokeForOutline : entry.styleSource.stroke,
           strokeWidth: Math.max(1, sourceStrokeWidth),
           strokeUniform: true,
           objectCaching: false,
+          originX: 'left',
+          originY: 'top',
         });
 
         (next as ObjWithData).data = {
@@ -486,6 +517,22 @@ export function applyPathfinderOperation(canvas: Canvas, op: PathfinderOp): bool
 
     if (createdObjects.length === 0) {
       return false;
+    }
+
+    const sourceBounds = computeBoundsUnion(sorted);
+    const resultBounds = computeBoundsUnion(createdObjects);
+    if (sourceBounds && resultBounds) {
+      const dx = sourceBounds.left - resultBounds.left;
+      const dy = sourceBounds.top - resultBounds.top;
+      if (Math.abs(dx) > 0.001 || Math.abs(dy) > 0.001) {
+        createdObjects.forEach((obj) => {
+          obj.set({
+            left: (obj.left ?? 0) + dx,
+            top: (obj.top ?? 0) + dy,
+          });
+          obj.setCoords();
+        });
+      }
     }
 
     canvas.discardActiveObject();

@@ -564,24 +564,57 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
 
       canvas.discardActiveObject();
 
-      const canvasWidth = canvas.getWidth();
-      const canvasHeight = canvas.getHeight();
+      const selectionBounds = objs.reduce(
+        (acc, obj) => {
+          const bounds = obj.getBoundingRect();
+          const right = bounds.left + bounds.width;
+          const bottom = bounds.top + bounds.height;
+
+          return {
+            left: Math.min(acc.left, bounds.left),
+            top: Math.min(acc.top, bounds.top),
+            right: Math.max(acc.right, right),
+            bottom: Math.max(acc.bottom, bottom),
+          };
+        },
+        {
+          left: Number.POSITIVE_INFINITY,
+          top: Number.POSITIVE_INFINITY,
+          right: Number.NEGATIVE_INFINITY,
+          bottom: Number.NEGATIVE_INFINITY,
+        },
+      );
+
+      const selectionLeft = selectionBounds.left;
+      const selectionTop = selectionBounds.top;
+      const selectionWidth = Math.max(0, selectionBounds.right - selectionBounds.left);
+      const selectionHeight = Math.max(0, selectionBounds.bottom - selectionBounds.top);
 
       objs.forEach((obj) => {
         const bounds = obj.getBoundingRect();
+        let targetLeft = bounds.left;
+        let targetTop = bounds.top;
+
         if (type === 'left') {
-          obj.set({ left: 0 });
+          targetLeft = selectionLeft;
         } else if (type === 'centerH') {
-          obj.set({ left: canvasWidth / 2 - bounds.width / 2 });
+          targetLeft = selectionLeft + selectionWidth / 2 - bounds.width / 2;
         } else if (type === 'right') {
-          obj.set({ left: canvasWidth - bounds.width });
+          targetLeft = selectionLeft + selectionWidth - bounds.width;
         } else if (type === 'top') {
-          obj.set({ top: 0 });
+          targetTop = selectionTop;
         } else if (type === 'centerV') {
-          obj.set({ top: canvasHeight / 2 - bounds.height / 2 });
+          targetTop = selectionTop + selectionHeight / 2 - bounds.height / 2;
         } else if (type === 'bottom') {
-          obj.set({ top: canvasHeight - bounds.height });
+          targetTop = selectionTop + selectionHeight - bounds.height;
         }
+
+        const deltaX = targetLeft - bounds.left;
+        const deltaY = targetTop - bounds.top;
+        obj.set({
+          left: (obj.left ?? 0) + deltaX,
+          top: (obj.top ?? 0) + deltaY,
+        });
         obj.setCoords();
       });
 

@@ -1833,7 +1833,15 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
 
     const handleObjectScaling = (e: { target?: FabricObject; e?: TPointerEvent }) => {
       const target = e.target;
-      if (!target || !snapKeyDownRef.current) return;
+      if (!target) return;
+
+      clearHoverHighlight();
+
+      if (!snapKeyDownRef.current) {
+        target.setCoords();
+        return;
+      }
+
       const baseWidth = target.width ?? 0;
       const baseHeight = target.height ?? 0;
       if (baseWidth <= 0 || baseHeight <= 0) return;
@@ -1873,6 +1881,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     canvas.on('selection:cleared', handleSelectionCleared);
     canvas.on('object:moving', handleObjectMoving);
     canvas.on('object:scaling', handleObjectScaling);
+    canvas.on('object:rotating', clearHoverHighlight);
     canvas.on('object:modified', handleObjectModified);
     canvas.on('mouse:over', handleMouseOver);
     canvas.on('mouse:out', handleMouseOut);
@@ -1889,6 +1898,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       canvas.off('selection:cleared', handleSelectionCleared);
       canvas.off('object:moving', handleObjectMoving);
       canvas.off('object:scaling', handleObjectScaling);
+      canvas.off('object:rotating', clearHoverHighlight);
       canvas.off('object:modified', handleObjectModified);
       canvas.off('mouse:over', handleMouseOver);
       canvas.off('mouse:out', handleMouseOut);
@@ -1968,6 +1978,8 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     };
 
     const handleMouseDown = (opt: TPointerEventInfo<TPointerEvent>) => {
+      clearTransientHoverOverlay();
+
       if (ENABLE_CANVA_INTERACTION_ENGINE && interactionControllerRef.current) {
         const consumed = interactionControllerRef.current.onMouseDown(opt);
         const nextOverlay = interactionControllerRef.current.getOverlayModel();
@@ -1980,8 +1992,6 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         if (consumed) return;
       }
       if (activeTool === 'select') return;
-
-      clearTransientHoverOverlay();
 
       const pointer = canvas.getScenePoint(opt.e);
       drawStartRef.current = { x: pointer.x, y: pointer.y };
