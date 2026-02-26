@@ -187,7 +187,7 @@ function IconGridTooltipButton({
         onClick={onClick}
         title={title}
         aria-label={title}
-        className={`flex h-8 w-full cursor-pointer items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 ${className ?? ''}`}
+        className={`flex h-8 w-full cursor-pointer items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-700 ${className ?? ''}`}
       >
         {children}
       </button>
@@ -381,7 +381,7 @@ export default function WorksheetToolbox() {
                         key={op}
                         onClick={() => applyPathfinder(op)}
                         title={title}
-                        className='h-9'
+                        className='h-9 text-gray-400 hover:text-gray-600'
                       >
                         <PathfinderGlyph op={op} />
                       </IconGridTooltipButton>
@@ -399,7 +399,7 @@ export default function WorksheetToolbox() {
                         type='button'
                         onClick={groupSelected}
                         title='그룹화 (Cmd/Ctrl+G)'
-                        className='cursor-pointer rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700'
+                        className='cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800'
                       >
                         <Layers size={13} strokeWidth={1.5} />
                       </button>
@@ -409,7 +409,7 @@ export default function WorksheetToolbox() {
                         type='button'
                         onClick={ungroupSelected}
                         title='그룹 해제 (Cmd/Ctrl+Alt+G)'
-                        className='cursor-pointer rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700'
+                        className='cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800'
                       >
                         <Ungroup size={13} strokeWidth={1.5} />
                       </button>
@@ -419,7 +419,7 @@ export default function WorksheetToolbox() {
                         type='button'
                         onClick={deleteSelected}
                         title='삭제 (Delete)'
-                        className='cursor-pointer rounded p-0.5 text-gray-400 hover:bg-red-50 hover:text-red-500'
+                        className='cursor-pointer rounded p-0.5 text-gray-500 hover:bg-red-50 hover:text-red-500'
                       >
                         <Trash2 size={13} strokeWidth={1.5} />
                       </button>
@@ -451,7 +451,7 @@ export default function WorksheetToolbox() {
                                 toggleLayerExpanded(layer.id);
                               }}
                               title={layer.isExpanded ? '그룹 접기' : '그룹 펼치기'}
-                              className='shrink-0 cursor-pointer text-gray-400 hover:text-gray-700'
+                              className='shrink-0 cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800'
                             >
                               {layer.isExpanded ? (
                                 <ChevronDown size={12} strokeWidth={1.5} />
@@ -472,7 +472,7 @@ export default function WorksheetToolbox() {
                               toggleLayerVisibility(layer.id);
                             }}
                             title={layer.visible ? '숨기기' : '표시'}
-                            className='shrink-0 cursor-pointer text-gray-400 hover:text-gray-700'
+                            className='shrink-0 cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800'
                           >
                             {layer.visible ? (
                               <Eye size={13} strokeWidth={1.5} />
@@ -531,7 +531,7 @@ export default function WorksheetToolbox() {
                               beginLayerRename(layer.id, layer.name);
                             }}
                             title={editingLayerId === layer.id ? '수정 완료' : '이름 수정'}
-                            className='shrink-0 cursor-pointer text-gray-400 hover:text-gray-700'
+                            className='shrink-0 cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800'
                           >
                             {editingLayerId === layer.id ? (
                               <Check size={13} strokeWidth={1.7} />
@@ -549,7 +549,7 @@ export default function WorksheetToolbox() {
                               toggleLayerLock(layer.id);
                             }}
                             title={layer.locked ? '잠금 해제' : '잠금'}
-                            className='shrink-0 cursor-pointer text-gray-400 hover:text-gray-700'
+                            className='shrink-0 cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800'
                           >
                             {layer.locked ? (
                               <Lock size={13} strokeWidth={1.5} />
