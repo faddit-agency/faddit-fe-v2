@@ -270,7 +270,7 @@ function DiagramPlaceholder({
       </div>
 
       <div className='worksheet-v2-no-drag shrink-0 px-4 pb-3'>
-        <div className='flex items-center justify-center gap-3 overflow-x-auto py-1'>
+        <div className='flex items-center justify-start gap-3 overflow-x-auto py-1 pr-1 pl-0.5'>
           {sheets.map((sheet, index) => {
             const isSelected = sheet.id === selectedSheet?.id;
             return (
