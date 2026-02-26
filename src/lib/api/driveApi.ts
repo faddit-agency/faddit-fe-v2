@@ -2,6 +2,7 @@ import { baseHttpClient } from './httpClient';
 
 export type DriveNode = {
   fileSystemId: string;
+  worksheetId?: string;
   name: string;
   path: string;
   idPath: string;

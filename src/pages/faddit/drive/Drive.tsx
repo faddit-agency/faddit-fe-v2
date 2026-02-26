@@ -852,6 +852,7 @@ const FadditDrive: React.FC = () => {
 
               return {
                 id: node.fileSystemId,
+                worksheetId: node.worksheetId,
                 nodeType: node.type,
                 imageSrc: previewUrl || ChildClothImage,
                 imageAlt: node.name,
@@ -1102,8 +1103,9 @@ const FadditDrive: React.FC = () => {
     return normalizedTag === 'worksheet' || normalizedTag === 'faddit';
   };
 
-  const handleOpenWorksheetFromDrive = (itemId: string) => {
-    navigate(`/faddit/worksheet/${itemId}`);
+  const handleOpenWorksheetFromDrive = (item: Pick<DriveItem, 'id' | 'worksheetId'>) => {
+    const targetWorksheetId = item.worksheetId || item.id;
+    navigate(`/faddit/worksheet/${targetWorksheetId}`);
   };
 
   const handleFileCardDoubleClick = (itemId: string) => {
@@ -1112,7 +1114,7 @@ const FadditDrive: React.FC = () => {
       return;
     }
 
-    handleOpenWorksheetFromDrive(itemId);
+    handleOpenWorksheetFromDrive(targetItem);
   };
 
   const handleOpenFileEditPanel = (itemId: string) => {
@@ -1469,7 +1471,7 @@ const FadditDrive: React.FC = () => {
       return;
     }
 
-    handleOpenWorksheetFromDrive(entry.id);
+    handleOpenWorksheetFromDrive(targetItem);
   };
 
   const handleCloseDetailPanel = () => {
@@ -2199,7 +2201,7 @@ const FadditDrive: React.FC = () => {
               <div className='mt-5 flex justify-end'>
                 <button
                   type='button'
-                  onClick={() => handleOpenWorksheetFromDrive(activeItem.id)}
+                  onClick={() => handleOpenWorksheetFromDrive(activeItem)}
                   className='btn cursor-pointer border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-200'
                 >
                   작업지시서 열기
