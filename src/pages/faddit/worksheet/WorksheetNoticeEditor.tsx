@@ -3,7 +3,6 @@ import { Extension } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
-import Underline from '@tiptap/extension-underline';
 import {
   Bold,
   Italic,
@@ -99,7 +98,6 @@ export default function WorksheetNoticeEditor({
       StarterKit.configure({
         heading: { levels: [2, 3] },
       }),
-      Underline,
       ListTabKeymap,
       Placeholder.configure({
         placeholder,
@@ -143,7 +141,7 @@ export default function WorksheetNoticeEditor({
     const next = normalizeEditorHtml(value);
     if (current === next) return;
 
-    editor.commands.setContent(next || '', false);
+    editor.commands.setContent(next || '', { emitUpdate: false });
   }, [editor, value]);
 
   if (!editor) return null;
