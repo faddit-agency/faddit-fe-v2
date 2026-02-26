@@ -5,7 +5,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useDrive } from '../context/DriveContext';
 import { useAuthStore } from '../store/useAuthStore';
 
-import LogoOnly from '../images/icons/faddit-logo-only.svg?react';
+import LogoOnly from '../images/icons/faddit-logo-only.svg';
 
 //icons svg from lucide
 import {
@@ -565,7 +565,7 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
           </button>
           {/* Logo */}
           <NavLink end to='/' className='block'>
-            <LogoOnly className='h-[23px] w-[18px] fill-[#2f2f2f] dark:fill-[#fff]' />
+            <img src={LogoOnly} alt='Faddit' className='h-[23px] w-[18px]' />
           </NavLink>
         </div>
 
