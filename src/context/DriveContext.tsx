@@ -11,9 +11,8 @@ import {
 } from '../lib/api/driveApi';
 import ChildClothImage from '../images/faddit/childcloth.png';
 import { useAuthStore } from '../store/useAuthStore';
-import { getMaterialsByFileSystem } from '../pages/faddit/drive/materialApi';
-import { useDriveMaterialStore } from '../store/useDriveMaterialStore';
-import { useDriveViewStore } from '../store/useDriveViewStore';
+import { getMaterialsByFileSystem } from '../lib/api/materialApi';
+import { useDriveStore } from '../store/useDriveStore';
 
 export interface DriveItem {
   id: string;
@@ -26,6 +25,9 @@ export interface DriveItem {
   badge: string;
   isStarred?: boolean;
   owner?: string;
+  ownerProfileImg?: string;
+  recentActionType?: 'file_view' | 'file_edit';
+  recentActorName?: string;
   date?: string;
   size?: string;
   parentId?: string | null;
@@ -78,6 +80,11 @@ interface DriveContextType {
   currentFolderId: string | null;
   currentFolderPath: string;
   currentFolderIdPath: string;
+  setCurrentFolderLocation: (
+    folderId: string | null,
+    path: string,
+    idPath: string,
+  ) => void;
   hydrateDrive: (rootFolderId: string) => Promise<void>;
   refreshDrive: () => Promise<void>;
   loadFolderView: (folderId: string) => Promise<void>;
@@ -313,6 +320,9 @@ const toDriveItem = (node: DriveNode, imageSrc: string): DriveItem => ({
   badge: node.tag ? String(node.tag) : '파일',
   isStarred: node.isStarred,
   owner: node.creatorName || undefined,
+  ownerProfileImg: node.creatorProfileImg || undefined,
+  recentActionType: node.recentActionType,
+  recentActorName: node.recentActorName || undefined,
   date: node.updatedAt ? String(node.updatedAt).slice(0, 10) : '-',
   size: formatBytes(node.size),
   parentId: node.parentId,
@@ -331,9 +341,9 @@ const isImageFile = (extension?: string) => {
 
 export const DriveProvider = ({ children }: { children: ReactNode }) => {
   const userId = useAuthStore((state) => state.user?.userId);
-  const setMaterialsForFile = useDriveMaterialStore((state) => state.setMaterialsForFile);
-  const clearMaterialsForFiles = useDriveMaterialStore((state) => state.clearMaterialsForFiles);
-  const setDriveView = useDriveViewStore((state) => state.setDriveView);
+  const setMaterialsForFile = useDriveStore((state) => state.setMaterialsForFile);
+  const clearMaterialsForFiles = useDriveStore((state) => state.clearMaterialsForFiles);
+  const setDriveView = useDriveStore((state) => state.setDriveView);
 
   const [items, setItems] = useState<DriveItem[]>([]);
   const [driveFolders, setDriveFolders] = useState<DriveFolder[]>([]);
@@ -434,15 +444,16 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
 
     setItemParentMap((prev) => ({ ...prev, ...nextParentMap }));
 
-    const nextWorkspaceNodes = [...rootFolders.map(toSidebarFolder), ...rootData.files.map(toSidebarFile)];
+    const nextWorkspaceNodes = [
+      ...rootFolders.map(toSidebarFolder),
+      ...rootData.files.map(toSidebarFile),
+    ];
     const nextFavoriteNodes = [
       ...starredFolders.map(toSidebarFolder),
       ...starredData.files.map(toSidebarFile),
     ];
 
-    setWorkspaces((prev) =>
-      mergeSidebarNodesPreservingLoadedDescendants(prev, nextWorkspaceNodes),
-    );
+    setWorkspaces((prev) => mergeSidebarNodesPreservingLoadedDescendants(prev, nextWorkspaceNodes));
     setFavorites((prev) => mergeSidebarNodesPreservingLoadedDescendants(prev, nextFavoriteNodes));
   }, []);
 
@@ -588,8 +599,12 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
 
       const movingIds = new Set(ids);
 
-      setWorkspaces((prev) => moveNodesWithRootSupport(prev, movingIds, targetFolderId, rootFolderId));
-      setFavorites((prev) => moveNodesWithRootSupport(prev, movingIds, targetFolderId, rootFolderId));
+      setWorkspaces((prev) =>
+        moveNodesWithRootSupport(prev, movingIds, targetFolderId, rootFolderId),
+      );
+      setFavorites((prev) =>
+        moveNodesWithRootSupport(prev, movingIds, targetFolderId, rootFolderId),
+      );
 
       await updateDriveItems({
         id: ids,
@@ -793,6 +808,15 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
     [itemParentMap],
   );
 
+  const setCurrentFolderLocation = useCallback(
+    (folderId: string | null, path: string, idPath: string) => {
+      setCurrentFolderId(folderId);
+      setCurrentFolderPath(path);
+      setCurrentFolderIdPath(idPath);
+    },
+    [],
+  );
+
   const value = useMemo(
     () => ({
       items,
@@ -808,6 +832,7 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
       currentFolderId,
       currentFolderPath,
       currentFolderIdPath,
+      setCurrentFolderLocation,
       hydrateDrive,
       refreshDrive,
       loadFolderView,
@@ -831,6 +856,7 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
       currentFolderId,
       currentFolderPath,
       currentFolderIdPath,
+      setCurrentFolderLocation,
       hydrateDrive,
       refreshDrive,
       loadFolderView,
