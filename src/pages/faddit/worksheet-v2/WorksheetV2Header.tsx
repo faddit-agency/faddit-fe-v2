@@ -47,7 +47,7 @@ export default function WorksheetV2Header() {
             type='button'
             className='border-faddit inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-lg border bg-white px-4 text-sm font-medium text-gray-900 transition-colors hover:bg-violet-50'
           >
-            <Play size={13} fill='currentColor' />
+            <Play size={14} fill='currentColor' className='shrink-0 translate-y-[0.5px]' />
             Play
           </button>
           <button

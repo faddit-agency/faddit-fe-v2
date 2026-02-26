@@ -109,7 +109,7 @@ export default function WorksheetTopBar({
         onClick={onExit}
         className='pointer-events-auto inline-flex h-9 w-[116px] cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-900 transition-colors hover:bg-violet-50'
       >
-        <ArrowLeft size={14} />
+        <ArrowLeft size={14} className='shrink-0 translate-y-[0.5px]' />
         나가기
       </button>
 
@@ -135,13 +135,16 @@ export default function WorksheetTopBar({
                 : 'w-0 opacity-0'
           }`}
         />
-        <span className='relative z-10 flex items-center gap-1.5'>
+        <span className='relative z-10 flex items-center gap-1.5 leading-none'>
           {visualState === 'saving' ? (
-            <Loader2 size={14} className='animate-spin' />
+            <Loader2 size={14} className='shrink-0 translate-y-[0.5px] animate-spin' />
           ) : visualState === 'saved' ? (
-            <Check size={14} className='scale-100 transition-transform duration-200 ease-out' />
+            <Check
+              size={14}
+              className='shrink-0 translate-y-[0.5px] scale-100 transition-transform duration-200 ease-out'
+            />
           ) : showStatusIcon ? (
-            <Save size={14} />
+            <Save size={14} className='shrink-0 translate-y-[0.5px]' />
           ) : null}
           <span className='text-left whitespace-nowrap transition-all duration-200 ease-out'>{saveLabel}</span>
         </span>

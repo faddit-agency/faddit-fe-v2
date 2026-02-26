@@ -722,9 +722,9 @@ export default function WorksheetV2GridContent({
                         event.stopPropagation();
                         handleEnterEditMode();
                       }}
-                      className='worksheet-v2-no-drag inline-flex h-9 items-center gap-1.5 rounded-md bg-gray-800 px-3 text-sm font-medium text-white transition-colors hover:bg-gray-700'
+                      className='worksheet-v2-no-drag inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-zinc-700'
                     >
-                      <LogIn size={14} />
+                      <LogIn size={14} className='shrink-0 translate-y-[0.5px]' />
                       Edit Mode
                     </button>
                   ) : undefined
