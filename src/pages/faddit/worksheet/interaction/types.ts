@@ -48,6 +48,7 @@ export interface OverlayHud {
   x: number;
   y: number;
   label: string;
+  kind?: 'grid' | 'align' | 'distance' | 'axis';
 }
 
 export interface OverlayModel {

@@ -41,6 +41,7 @@ export function computeSnap(request: SnapRequest): SnapResult {
           x: request.point.x + 10,
           y: request.point.y - 12,
           label: `${hudX}, ${hudY}`,
+          kind: 'axis',
         },
       ],
     };
@@ -55,6 +56,7 @@ export function computeSnap(request: SnapRequest): SnapResult {
         x: request.point.x + 10,
         y: request.point.y - 12,
         label: `${hudX}, ${hudY}`,
+        kind: 'axis',
       },
     ],
   };

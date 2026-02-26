@@ -482,6 +482,8 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     startX: 0,
     startY: 0,
   });
+  const isObjectMovingRef = useRef(false);
+  const modifierDistanceKeyDownRef = useRef(false);
 
   const {
     canvasRef,
@@ -1037,6 +1039,36 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       );
     };
 
+    const nudgeActiveObject = (dx: number, dy: number) => {
+      const canvas = fabricRef.current;
+      if (!canvas) return;
+
+      const active = canvas.getActiveObject();
+      if (!active) return;
+
+      const left = typeof active.left === 'number' ? active.left : 0;
+      const top = typeof active.top === 'number' ? active.top : 0;
+      active.set({ left: left + dx, top: top + dy });
+      active.setCoords();
+      canvas.requestRenderAll();
+      refreshLayers();
+      saveHistory();
+    };
+
+    const startPathEditFromActiveSelection = () => {
+      const canvas = fabricRef.current;
+      if (!canvas || pathEditingPath) return;
+
+      const active = canvas.getActiveObject();
+      if (!(active instanceof Path) || isArrowPathObject(active)) return;
+
+      setPathEditingPath(active);
+      setActiveTool('select');
+      canvas.discardActiveObject();
+      canvas.selection = false;
+      canvas.requestRenderAll();
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isTextFocused()) return;
       if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -1055,7 +1087,19 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         e.preventDefault();
         ungroupSelected();
       } else if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-        if (e.code === 'KeyV') {
+        if (e.code === 'ArrowLeft') {
+          e.preventDefault();
+          nudgeActiveObject(-1, 0);
+        } else if (e.code === 'ArrowRight') {
+          e.preventDefault();
+          nudgeActiveObject(1, 0);
+        } else if (e.code === 'ArrowUp') {
+          e.preventDefault();
+          nudgeActiveObject(0, -1);
+        } else if (e.code === 'ArrowDown') {
+          e.preventDefault();
+          nudgeActiveObject(0, 1);
+        } else if (e.code === 'KeyV') {
           e.preventDefault();
           setActiveTool('select');
         } else if (e.code === 'KeyR') {
@@ -1072,7 +1116,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
           setActiveTool('line');
         } else if (e.code === 'KeyA') {
           e.preventDefault();
-          setActiveTool('arrow');
+          startPathEditFromActiveSelection();
         } else if (e.code === 'KeyB') {
           e.preventDefault();
           setActiveTool('draw');
@@ -1088,7 +1132,18 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [deleteSelected, copySelected, pasteClipboard, groupSelected, ungroupSelected, setActiveTool]);
+  }, [
+    deleteSelected,
+    copySelected,
+    pasteClipboard,
+    groupSelected,
+    ungroupSelected,
+    pathEditingPath,
+    setActiveTool,
+    setPathEditingPath,
+    refreshLayers,
+    saveHistory,
+  ]);
 
   useEffect(() => {
     const canvas = fabricRef.current;
@@ -1100,6 +1155,366 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
   useEffect(() => {
     const canvas = fabricRef.current;
     if (!canvas) return;
+
+    const moveState: {
+      target: FabricObject | null;
+      originLeft: number;
+      originTop: number;
+      pointerStartX: number;
+      pointerStartY: number;
+    } = {
+      target: null,
+      originLeft: 0,
+      originTop: 0,
+      pointerStartX: 0,
+      pointerStartY: 0,
+    };
+
+    const clearMoveGuides = () => {
+      setInteractionOverlayModel((prev) => {
+        if (prev.guides.length === 0 && prev.hud.length === 0) {
+          return prev;
+        }
+        return { guides: [], hud: [] };
+      });
+    };
+
+    const getBoundsMetrics = (obj: FabricObject) => {
+      const bounds = obj.getBoundingRect();
+      const left = bounds.left;
+      const top = bounds.top;
+      const right = left + bounds.width;
+      const bottom = top + bounds.height;
+      return {
+        left,
+        top,
+        right,
+        bottom,
+        centerX: (left + right) / 2,
+        centerY: (top + bottom) / 2,
+      };
+    };
+
+    const hasVerticalOverlap = (
+      a: ReturnType<typeof getBoundsMetrics>,
+      b: ReturnType<typeof getBoundsMetrics>,
+    ) => Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0;
+
+    const hasHorizontalOverlap = (
+      a: ReturnType<typeof getBoundsMetrics>,
+      b: ReturnType<typeof getBoundsMetrics>,
+    ) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0;
+
+    const computeDistanceGuides = (target: FabricObject) => {
+      const base = getBoundsMetrics(target);
+      const others = canvas.getObjects().filter((obj) => obj !== target && obj.visible !== false);
+
+      let nearestLeft: {
+        id: string;
+        gap: number;
+        x1: number;
+        y1: number;
+        x2: number;
+        y2: number;
+        hudX: number;
+        hudY: number;
+      } | null = null;
+      let nearestRight: typeof nearestLeft = null;
+      let nearestTop: typeof nearestLeft = null;
+      let nearestBottom: typeof nearestLeft = null;
+
+      const pickNearest = <T extends { gap: number }>(current: T | null, candidate: T): T => {
+        if (!current) return candidate;
+        return candidate.gap < current.gap ? candidate : current;
+      };
+
+      for (const other of others) {
+        const b = getBoundsMetrics(other);
+
+        if (hasVerticalOverlap(base, b)) {
+          const overlapTop = Math.max(base.top, b.top);
+          const overlapBottom = Math.min(base.bottom, b.bottom);
+          const lineY = (overlapTop + overlapBottom) / 2;
+
+          if (b.right <= base.left) {
+            const gap = base.left - b.right;
+            nearestLeft = pickNearest(nearestLeft, {
+              id: `distance-left-${Math.round(b.right)}-${Math.round(lineY)}`,
+              gap,
+              x1: b.right,
+              y1: lineY,
+              x2: base.left,
+              y2: lineY,
+              hudX: (b.right + base.left) / 2,
+              hudY: lineY - 10,
+            });
+          }
+
+          if (b.left >= base.right) {
+            const gap = b.left - base.right;
+            nearestRight = pickNearest(nearestRight, {
+              id: `distance-right-${Math.round(b.left)}-${Math.round(lineY)}`,
+              gap,
+              x1: base.right,
+              y1: lineY,
+              x2: b.left,
+              y2: lineY,
+              hudX: (base.right + b.left) / 2,
+              hudY: lineY - 10,
+            });
+          }
+        }
+
+        if (hasHorizontalOverlap(base, b)) {
+          const overlapLeft = Math.max(base.left, b.left);
+          const overlapRight = Math.min(base.right, b.right);
+          const lineX = (overlapLeft + overlapRight) / 2;
+
+          if (b.bottom <= base.top) {
+            const gap = base.top - b.bottom;
+            nearestTop = pickNearest(nearestTop, {
+              id: `distance-top-${Math.round(lineX)}-${Math.round(b.bottom)}`,
+              gap,
+              x1: lineX,
+              y1: b.bottom,
+              x2: lineX,
+              y2: base.top,
+              hudX: lineX + 8,
+              hudY: (b.bottom + base.top) / 2,
+            });
+          }
+
+          if (b.top >= base.bottom) {
+            const gap = b.top - base.bottom;
+            nearestBottom = pickNearest(nearestBottom, {
+              id: `distance-bottom-${Math.round(lineX)}-${Math.round(b.top)}`,
+              gap,
+              x1: lineX,
+              y1: base.bottom,
+              x2: lineX,
+              y2: b.top,
+              hudX: lineX + 8,
+              hudY: (base.bottom + b.top) / 2,
+            });
+          }
+        }
+      }
+
+      const candidates = [nearestLeft, nearestRight, nearestTop, nearestBottom].filter(
+        (candidate): candidate is NonNullable<typeof nearestLeft> => Boolean(candidate),
+      );
+
+      return {
+        guides: candidates.map((candidate) => ({
+          id: candidate.id,
+          kind: 'distance' as const,
+          x1: candidate.x1,
+          y1: candidate.y1,
+          x2: candidate.x2,
+          y2: candidate.y2,
+        })),
+        hud: candidates.map((candidate) => ({
+          id: `${candidate.id}-hud`,
+          x: candidate.hudX,
+          y: candidate.hudY,
+          label: `${Math.round(candidate.gap)} px`,
+          kind: 'distance' as const,
+        })),
+      };
+    };
+
+    const getSnapTolerance = () => 6 / Math.max(canvas.getZoom(), 0.001);
+
+    const getCanvasSceneBounds = () => {
+      const width = canvas.getWidth();
+      const height = canvas.getHeight();
+      const vpt = (canvas.viewportTransform ?? [1, 0, 0, 1, 0, 0]) as Mat6;
+      const inv = invertMat(vpt);
+
+      const toScene = (x: number, y: number) => ({
+        x: inv[0] * x + inv[2] * y + inv[4],
+        y: inv[1] * x + inv[3] * y + inv[5],
+      });
+
+      const p1 = toScene(0, 0);
+      const p2 = toScene(width, 0);
+      const p3 = toScene(0, height);
+      const p4 = toScene(width, height);
+
+      const left = Math.min(p1.x, p2.x, p3.x, p4.x);
+      const right = Math.max(p1.x, p2.x, p3.x, p4.x);
+      const top = Math.min(p1.y, p2.y, p3.y, p4.y);
+      const bottom = Math.max(p1.y, p2.y, p3.y, p4.y);
+
+      return {
+        left,
+        right,
+        top,
+        bottom,
+        centerX: (left + right) / 2,
+        centerY: (top + bottom) / 2,
+      };
+    };
+
+    const computeSmartGuides = (target: FabricObject) => {
+      const tolerance = getSnapTolerance();
+      const base = getBoundsMetrics(target);
+      const canvasBounds = getCanvasSceneBounds();
+      const others = canvas.getObjects().filter((obj) => obj !== target && obj.visible !== false);
+
+      let bestX: {
+        delta: number;
+        lineX: number;
+        spanTop: number;
+        spanBottom: number;
+        sourceRole: 'left' | 'center' | 'right';
+        refRole: 'left' | 'center' | 'right';
+      } | null = null;
+      let bestY: {
+        delta: number;
+        lineY: number;
+        spanLeft: number;
+        spanRight: number;
+        sourceRole: 'top' | 'center' | 'bottom';
+        refRole: 'top' | 'center' | 'bottom';
+      } | null = null;
+
+      const xCandidates = [
+        { value: base.left, role: 'left' as const },
+        { value: base.centerX, role: 'center' as const },
+        { value: base.right, role: 'right' as const },
+      ] as const;
+      const yCandidates = [
+        { value: base.top, role: 'top' as const },
+        { value: base.centerY, role: 'center' as const },
+        { value: base.bottom, role: 'bottom' as const },
+      ] as const;
+
+      const considerX = (
+        sourceValue: number,
+        sourceRole: 'left' | 'center' | 'right',
+        refValue: number,
+        refRole: 'left' | 'center' | 'right',
+        spanTop: number,
+        spanBottom: number,
+      ) => {
+        const delta = refValue - sourceValue;
+        const abs = Math.abs(delta);
+        if (abs > tolerance) return;
+        if (!bestX || abs < Math.abs(bestX.delta)) {
+          bestX = {
+            delta,
+            lineX: refValue,
+            spanTop,
+            spanBottom,
+            sourceRole,
+            refRole,
+          };
+        }
+      };
+
+      const considerY = (
+        sourceValue: number,
+        sourceRole: 'top' | 'center' | 'bottom',
+        refValue: number,
+        refRole: 'top' | 'center' | 'bottom',
+        spanLeft: number,
+        spanRight: number,
+      ) => {
+        const delta = refValue - sourceValue;
+        const abs = Math.abs(delta);
+        if (abs > tolerance) return;
+        if (!bestY || abs < Math.abs(bestY.delta)) {
+          bestY = {
+            delta,
+            lineY: refValue,
+            spanLeft,
+            spanRight,
+            sourceRole,
+            refRole,
+          };
+        }
+      };
+
+      for (const other of others) {
+        const b = getBoundsMetrics(other);
+        const otherXValues = [
+          { value: b.left, role: 'left' as const },
+          { value: b.centerX, role: 'center' as const },
+          { value: b.right, role: 'right' as const },
+        ] as const;
+        const otherYValues = [
+          { value: b.top, role: 'top' as const },
+          { value: b.centerY, role: 'center' as const },
+          { value: b.bottom, role: 'bottom' as const },
+        ] as const;
+
+        for (const source of xCandidates) {
+          for (const ref of otherXValues) {
+            considerX(
+              source.value,
+              source.role,
+              ref.value,
+              ref.role,
+              Math.min(base.top, b.top),
+              Math.max(base.bottom, b.bottom),
+            );
+          }
+        }
+
+        for (const source of yCandidates) {
+          for (const ref of otherYValues) {
+            considerY(
+              source.value,
+              source.role,
+              ref.value,
+              ref.role,
+              Math.min(base.left, b.left),
+              Math.max(base.right, b.right),
+            );
+          }
+        }
+      }
+
+      const canvasXValues = [
+        { value: canvasBounds.left, role: 'left' as const },
+        { value: canvasBounds.centerX, role: 'center' as const },
+        { value: canvasBounds.right, role: 'right' as const },
+      ];
+      const canvasYValues = [
+        { value: canvasBounds.top, role: 'top' as const },
+        { value: canvasBounds.centerY, role: 'center' as const },
+        { value: canvasBounds.bottom, role: 'bottom' as const },
+      ];
+
+      for (const source of xCandidates) {
+        for (const ref of canvasXValues) {
+          considerX(
+            source.value,
+            source.role,
+            ref.value,
+            ref.role,
+            canvasBounds.top,
+            canvasBounds.bottom,
+          );
+        }
+      }
+
+      for (const source of yCandidates) {
+        for (const ref of canvasYValues) {
+          considerY(
+            source.value,
+            source.role,
+            ref.value,
+            ref.role,
+            canvasBounds.left,
+            canvasBounds.right,
+          );
+        }
+      }
+
+      return { bestX, bestY };
+    };
 
     const hoverStrokeMap = new WeakMap<FabricObject, unknown>();
     const mainColor =
@@ -1127,6 +1542,28 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       canvas.requestRenderAll();
     };
 
+    const updateModifierDistanceGuides = () => {
+      if (isObjectMovingRef.current) return;
+      if (!modifierDistanceKeyDownRef.current) {
+        clearMoveGuides();
+        return;
+      }
+
+      const active = canvas.getActiveObject();
+      if (!active) {
+        clearMoveGuides();
+        return;
+      }
+
+      const distanceOverlay = computeDistanceGuides(active);
+      if (distanceOverlay.guides.length === 0 && distanceOverlay.hud.length === 0) {
+        clearMoveGuides();
+        return;
+      }
+
+      setInteractionOverlayModel({ guides: distanceOverlay.guides, hud: distanceOverlay.hud });
+    };
+
     const handleObjectAdded = (e: { target?: FabricObject }) => {
       if (!e.target) return;
       if (ENABLE_CANVA_INTERACTION_ENGINE) {
@@ -1141,6 +1578,11 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         selected.forEach((obj) => interactionControllerRef.current?.applyObjectControls(obj));
       }
       selected.forEach(setupEndpointEditingIfNeeded);
+      updateModifierDistanceGuides();
+    };
+
+    const handleSelectionCleared = () => {
+      updateModifierDistanceGuides();
     };
 
     const handleMouseOver = (e: { target?: FabricObject }) => {
@@ -1155,15 +1597,138 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
 
     const handleObjectMoving = (e: { target?: FabricObject; e?: TPointerEvent }) => {
       const target = e.target;
-      if (!target || !snapKeyDownRef.current) return;
+      if (!target) return;
+      isObjectMovingRef.current = true;
+
       const left = target.left;
       const top = target.top;
       if (typeof left !== 'number' || typeof top !== 'number') return;
-      target.set({
-        left: snapToGrid(left),
-        top: snapToGrid(top),
-      });
+
+      const pointer = e.e ? canvas.getScenePoint(e.e) : null;
+      if (moveState.target !== target && pointer) {
+        moveState.target = target;
+        moveState.originLeft = left;
+        moveState.originTop = top;
+        moveState.pointerStartX = pointer.x;
+        moveState.pointerStartY = pointer.y;
+      }
+
+      if (pointer && e.e && 'shiftKey' in e.e && e.e.shiftKey) {
+        const dx = pointer.x - moveState.pointerStartX;
+        const dy = pointer.y - moveState.pointerStartY;
+        if (Math.abs(dx) > Math.abs(dy)) {
+          target.set({ top: moveState.originTop });
+        } else {
+          target.set({ left: moveState.originLeft });
+        }
+      }
+
+      const smart = computeSmartGuides(target);
+
+      if (snapKeyDownRef.current) {
+        const nextLeft = target.left;
+        const nextTop = target.top;
+        if (typeof nextLeft === 'number' && typeof nextTop === 'number') {
+          target.set({
+            left: snapToGrid(nextLeft),
+            top: snapToGrid(nextTop),
+          });
+        }
+      }
+
+      const guides = [] as Array<{ id: string; kind: 'align' | 'distance' | 'axis'; x1: number; y1: number; x2: number; y2: number }>;
+      const hud = [] as Array<{
+        id: string;
+        x: number;
+        y: number;
+        label: string;
+        kind?: 'align' | 'distance' | 'axis' | 'grid';
+      }>;
+      const xRoleLabel: Record<'left' | 'center' | 'right', string> = {
+        left: '좌',
+        center: '중',
+        right: '우',
+      };
+      const yRoleLabel: Record<'top' | 'center' | 'bottom', string> = {
+        top: '상',
+        center: '중',
+        bottom: '하',
+      };
+
+      const targetBounds = getBoundsMetrics(target);
+      if (smart.bestX) {
+        guides.push({
+          id: `align-x-${smart.bestX.lineX}`,
+          kind: 'align',
+          x1: smart.bestX.lineX,
+          y1: Math.min(targetBounds.top, smart.bestX.spanTop) - 20,
+          x2: smart.bestX.lineX,
+          y2: Math.max(targetBounds.bottom, smart.bestX.spanBottom) + 20,
+        });
+        hud.push({
+          id: `align-x-label-${smart.bestX.lineX}`,
+          x: smart.bestX.lineX + 8,
+          y: Math.min(targetBounds.top, smart.bestX.spanTop) - 8,
+          label: `${xRoleLabel[smart.bestX.sourceRole]}↔${xRoleLabel[smart.bestX.refRole]}`,
+          kind: 'align',
+        });
+      }
+      if (smart.bestY) {
+        guides.push({
+          id: `align-y-${smart.bestY.lineY}`,
+          kind: 'align',
+          x1: Math.min(targetBounds.left, smart.bestY.spanLeft) - 20,
+          y1: smart.bestY.lineY,
+          x2: Math.max(targetBounds.right, smart.bestY.spanRight) + 20,
+          y2: smart.bestY.lineY,
+        });
+        hud.push({
+          id: `align-y-label-${smart.bestY.lineY}`,
+          x: Math.min(targetBounds.left, smart.bestY.spanLeft) - 8,
+          y: smart.bestY.lineY - 8,
+          label: `${yRoleLabel[smart.bestY.sourceRole]}↔${yRoleLabel[smart.bestY.refRole]}`,
+          kind: 'align',
+        });
+      }
+
+      const distanceOverlay = computeDistanceGuides(target);
+      guides.push(...distanceOverlay.guides);
+      hud.push(...distanceOverlay.hud);
+
+      setInteractionOverlayModel({ guides, hud });
       target.setCoords();
+    };
+
+    const handleObjectModified = () => {
+      moveState.target = null;
+      isObjectMovingRef.current = false;
+      clearMoveGuides();
+      updateModifierDistanceGuides();
+    };
+
+    const handleModifierKeyDown = (event: KeyboardEvent) => {
+      const nextModifierState = event.altKey || event.metaKey;
+      if (nextModifierState === modifierDistanceKeyDownRef.current) {
+        return;
+      }
+      modifierDistanceKeyDownRef.current = nextModifierState;
+      updateModifierDistanceGuides();
+    };
+
+    const handleModifierKeyUp = (event: KeyboardEvent) => {
+      const nextModifierState = event.altKey || event.metaKey;
+      if (nextModifierState === modifierDistanceKeyDownRef.current) {
+        return;
+      }
+      modifierDistanceKeyDownRef.current = nextModifierState;
+      updateModifierDistanceGuides();
+    };
+
+    const handleModifierWindowBlur = () => {
+      modifierDistanceKeyDownRef.current = false;
+      if (!isObjectMovingRef.current) {
+        clearMoveGuides();
+      }
     };
 
     const handleObjectScaling = (e: { target?: FabricObject; e?: TPointerEvent }) => {
@@ -1205,19 +1770,32 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     canvas.on('object:added', handleObjectAdded);
     canvas.on('selection:created', handleSelection);
     canvas.on('selection:updated', handleSelection);
+    canvas.on('selection:cleared', handleSelectionCleared);
     canvas.on('object:moving', handleObjectMoving);
     canvas.on('object:scaling', handleObjectScaling);
+    canvas.on('object:modified', handleObjectModified);
     canvas.on('mouse:over', handleMouseOver);
     canvas.on('mouse:out', handleMouseOut);
+    window.addEventListener('keydown', handleModifierKeyDown);
+    window.addEventListener('keyup', handleModifierKeyUp);
+    window.addEventListener('blur', handleModifierWindowBlur);
 
     return () => {
+      isObjectMovingRef.current = false;
+      modifierDistanceKeyDownRef.current = false;
       canvas.off('object:added', handleObjectAdded);
       canvas.off('selection:created', handleSelection);
       canvas.off('selection:updated', handleSelection);
+      canvas.off('selection:cleared', handleSelectionCleared);
       canvas.off('object:moving', handleObjectMoving);
       canvas.off('object:scaling', handleObjectScaling);
+      canvas.off('object:modified', handleObjectModified);
       canvas.off('mouse:over', handleMouseOver);
       canvas.off('mouse:out', handleMouseOut);
+      window.removeEventListener('keydown', handleModifierKeyDown);
+      window.removeEventListener('keyup', handleModifierKeyUp);
+      window.removeEventListener('blur', handleModifierWindowBlur);
+      clearMoveGuides();
     };
   }, []);
 
@@ -1280,7 +1858,13 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     const handleMouseDown = (opt: TPointerEventInfo<TPointerEvent>) => {
       if (ENABLE_CANVA_INTERACTION_ENGINE && interactionControllerRef.current) {
         const consumed = interactionControllerRef.current.onMouseDown(opt);
-        setInteractionOverlayModel(interactionControllerRef.current.getOverlayModel());
+        const nextOverlay = interactionControllerRef.current.getOverlayModel();
+        setInteractionOverlayModel((prev) =>
+          (isObjectMovingRef.current && prev.guides.length > 0) ||
+            (modifierDistanceKeyDownRef.current && prev.guides.some((guide) => guide.kind === 'distance'))
+            ? { guides: prev.guides, hud: prev.hud }
+            : nextOverlay,
+        );
         if (consumed) return;
       }
       if (activeTool === 'select') return;
@@ -1386,7 +1970,13 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       if (ENABLE_CANVA_INTERACTION_ENGINE) {
         interactionControllerRef.current?.onMouseMove(opt);
         if (interactionControllerRef.current) {
-          setInteractionOverlayModel(interactionControllerRef.current.getOverlayModel());
+          const nextOverlay = interactionControllerRef.current.getOverlayModel();
+          setInteractionOverlayModel((prev) =>
+            (isObjectMovingRef.current && prev.guides.length > 0) ||
+              (modifierDistanceKeyDownRef.current && prev.guides.some((guide) => guide.kind === 'distance'))
+              ? { guides: prev.guides, hud: prev.hud }
+              : nextOverlay,
+          );
         }
       }
       if (!drawStartRef.current || !activeShapeRef.current) return;
@@ -1439,7 +2029,13 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     const handleMouseUp = (opt: TPointerEventInfo<TPointerEvent>) => {
       if (ENABLE_CANVA_INTERACTION_ENGINE && interactionControllerRef.current) {
         const consumed = interactionControllerRef.current.onMouseUp(opt);
-        setInteractionOverlayModel(interactionControllerRef.current.getOverlayModel());
+        const nextOverlay = interactionControllerRef.current.getOverlayModel();
+        setInteractionOverlayModel((prev) =>
+          (isObjectMovingRef.current && prev.guides.length > 0) ||
+            (modifierDistanceKeyDownRef.current && prev.guides.some((guide) => guide.kind === 'distance'))
+            ? { guides: prev.guides, hud: prev.hud }
+            : nextOverlay,
+        );
         if (consumed) return;
       }
       if (!drawStartRef.current) return;
@@ -1985,8 +2581,8 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       <div className='pointer-events-none absolute inset-0 z-10' style={gridStyle} />
       <canvas ref={canvasElRef} className='absolute inset-0 z-20' />
       <InteractionOverlay
-        canvas={ENABLE_CANVA_INTERACTION_ENGINE ? fabricRef.current : null}
-        model={ENABLE_CANVA_INTERACTION_ENGINE ? interactionOverlayModel : { guides: [], hud: [] }}
+        canvas={fabricRef.current}
+        model={interactionOverlayModel}
       />
       {pathEditingPath && fabricRef.current && (
         <PathEditorOverlay
