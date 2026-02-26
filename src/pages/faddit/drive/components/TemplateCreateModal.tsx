@@ -11,6 +11,21 @@ type DimensionValue = {
   unit: 'cm' | 'inch';
 };
 
+type OptionWithOtherValue = {
+  selected: string;
+  customText: string;
+};
+
+type NumberWithOptionValue = {
+  value?: number;
+  unit: string;
+};
+
+type NumberPairValue = {
+  first?: number;
+  second?: number | string;
+};
+
 export type CreateMaterialFormValue = {
   category: MaterialCategory;
   codeInternal?: string;
@@ -87,6 +102,24 @@ const TEMPLATE_TO_MATERIAL_CATEGORY: Partial<Record<TemplateKey, MaterialCategor
 };
 
 const appendEtcOption = (fieldDef: MaterialFieldDef) => {
+  if (fieldDef.input_type === 'option_with_other') {
+    if (fieldDef.options && typeof fieldDef.options === 'object' && !Array.isArray(fieldDef.options)) {
+      const optionsRaw = (fieldDef.options as { options?: unknown }).options;
+      const options = Array.isArray(optionsRaw) ? optionsRaw.map((option) => String(option)) : [];
+      if (options.includes('기타')) {
+        return fieldDef;
+      }
+      return {
+        ...fieldDef,
+        options: {
+          ...(fieldDef.options as Record<string, unknown>),
+          options: [...options, '기타'],
+        },
+      };
+    }
+    return fieldDef;
+  }
+
   if (fieldDef.input_type !== 'select' && fieldDef.input_type !== 'multiselect') {
     return fieldDef;
   }
@@ -102,12 +135,148 @@ const appendEtcOption = (fieldDef: MaterialFieldDef) => {
   return { ...fieldDef, options: [...normalized, '기타'] };
 };
 
+const getSelectOptions = (fieldDef: MaterialFieldDef) => {
+  if (Array.isArray(fieldDef.options)) {
+    return fieldDef.options.map((option) => String(option));
+  }
+  if (fieldDef.options && typeof fieldDef.options === 'object' && !Array.isArray(fieldDef.options)) {
+    const optionsRaw = (fieldDef.options as { options?: unknown }).options;
+    if (Array.isArray(optionsRaw)) {
+      return optionsRaw.map((option) => String(option));
+    }
+  }
+  return [];
+};
+
+const getUnitOptions = (fieldDef: MaterialFieldDef) => {
+  if (fieldDef.options && typeof fieldDef.options === 'object' && !Array.isArray(fieldDef.options)) {
+    const unitsRaw = (fieldDef.options as { units?: unknown }).units;
+    if (Array.isArray(unitsRaw)) {
+      return unitsRaw.map((unit) => String(unit));
+    }
+  }
+  return [];
+};
+
+const getNumberPairLabels = (fieldDef: MaterialFieldDef) => {
+  if (fieldDef.options && typeof fieldDef.options === 'object' && !Array.isArray(fieldDef.options)) {
+    const options = fieldDef.options as { first_label?: unknown; second_label?: unknown };
+    return {
+      firstLabel: typeof options.first_label === 'string' ? options.first_label : '값 1',
+      secondLabel: typeof options.second_label === 'string' ? options.second_label : '값 2',
+    };
+  }
+  return { firstLabel: '값 1', secondLabel: '값 2' };
+};
+
+const getNumberPairKind = (fieldDef: MaterialFieldDef) => {
+  if (fieldDef.options && typeof fieldDef.options === 'object' && !Array.isArray(fieldDef.options)) {
+    const pairKind = (fieldDef.options as { pair_kind?: unknown }).pair_kind;
+    return pairKind === 'price_quantity' ? 'price_quantity' : 'width_height';
+  }
+  return 'width_height';
+};
+
+const getDefaultFieldValue = (fieldDef: MaterialFieldDef): unknown => {
+  if (fieldDef.input_type === 'dimension') {
+    return { unit: 'cm' } as DimensionValue;
+  }
+  if (fieldDef.input_type === 'option_with_other') {
+    return { selected: '', customText: '' } as OptionWithOtherValue;
+  }
+  if (fieldDef.input_type === 'number_with_option') {
+    const units = getUnitOptions(fieldDef);
+    return { unit: units[0] ?? '' } as NumberWithOptionValue;
+  }
+  if (fieldDef.input_type === 'number_pair') {
+    return {} as NumberPairValue;
+  }
+  return '';
+};
+
+const formatNumberWithCommas = (value?: number) => {
+  if (typeof value !== 'number' || Number.isNaN(value)) return '';
+  return value.toLocaleString('en-US');
+};
+
+const parseFormattedNumber = (raw: string) => {
+  const normalized = raw.replace(/,/g, '').trim();
+  if (!normalized) return undefined;
+  const parsed = Number(normalized);
+  return Number.isNaN(parsed) ? undefined : parsed;
+};
+
+const formatDualLengthText = (value: unknown) => {
+  if (typeof value !== 'object' || value === null) return null;
+  const payload = value as { value_cm?: unknown; value_inch?: unknown; value?: unknown; unit?: unknown };
+  let cm = typeof payload.value_cm === 'number' ? payload.value_cm : undefined;
+  let inch = typeof payload.value_inch === 'number' ? payload.value_inch : undefined;
+
+  const numeric = typeof payload.value === 'number' ? payload.value : undefined;
+  const unit = String(payload.unit ?? '');
+  if (numeric !== undefined && unit === 'cm') {
+    cm = numeric;
+    inch = numeric / 2.54;
+  }
+  if (numeric !== undefined && unit === 'inch') {
+    inch = numeric;
+    cm = numeric * 2.54;
+  }
+
+  if (cm === undefined && inch === undefined) return null;
+
+  const cmText = cm !== undefined ? `${formatNumberWithCommas(cm)} cm` : '-';
+  const inchText = inch !== undefined ? `${formatNumberWithCommas(inch)} inch` : '-';
+  return `${cmText} / ${inchText}`;
+};
+
+const hasMeaningfulValue = (fieldDef: MaterialFieldDef, value: unknown) => {
+  if (value === '' || value === null || value === undefined) {
+    return false;
+  }
+  if (fieldDef.input_type === 'option_with_other') {
+    if (typeof value === 'string') return value.trim() !== '';
+    if (typeof value === 'object' && value !== null) {
+      const selected = String((value as { selected?: unknown }).selected ?? '').trim();
+      const customText = String((value as { customText?: unknown }).customText ?? '').trim();
+      if (!selected) return false;
+      if (selected !== '기타') return true;
+      return customText !== '';
+    }
+    return false;
+  }
+  if (fieldDef.input_type === 'number_with_option') {
+    if (typeof value === 'object' && value !== null) {
+      const numberValue = (value as { value?: unknown }).value;
+      return typeof numberValue === 'number' && !Number.isNaN(numberValue);
+    }
+    return false;
+  }
+  if (fieldDef.input_type === 'number_pair') {
+    if (typeof value === 'object' && value !== null) {
+      const first = (value as { first?: unknown }).first;
+      const second = (value as { second?: unknown }).second;
+      const pairKind = getNumberPairKind(fieldDef);
+      if (pairKind === 'price_quantity') {
+        return typeof first === 'number' && String(second ?? '').trim() !== '';
+      }
+      return typeof first === 'number' && typeof second === 'number';
+    }
+    return false;
+  }
+  return true;
+};
+
 const shouldShowField = (fieldDef: MaterialFieldDef, values: Record<string, unknown>) => {
   if (!fieldDef.show_if) {
     return true;
   }
 
-  const compareValue = String(values[fieldDef.show_if.field] ?? '');
+  const rawValue = values[fieldDef.show_if.field];
+  const compareValue =
+    typeof rawValue === 'object' && rawValue !== null
+      ? String((rawValue as { selected?: unknown }).selected ?? rawValue)
+      : String(rawValue ?? '');
   return fieldDef.show_if.in.includes(compareValue);
 };
 
@@ -287,11 +456,7 @@ const TemplateCreateModal = ({
               next[fieldDef.field_key] = prev[fieldDef.field_key];
               return;
             }
-            if (fieldDef.input_type === 'dimension') {
-              next[fieldDef.field_key] = { unit: 'cm' } as DimensionValue;
-              return;
-            }
-            next[fieldDef.field_key] = '';
+            next[fieldDef.field_key] = getDefaultFieldValue(fieldDef);
           });
           return next;
         });
@@ -365,8 +530,14 @@ const TemplateCreateModal = ({
         file,
       };
 
+      const fieldDefByKey = new Map(fieldDefs.map((fieldDef) => [fieldDef.field_key, fieldDef]));
+
       Object.entries(fieldValues).forEach(([fieldKey, value]) => {
-        if (value === '' || value === null || value === undefined) {
+        const fieldDef = fieldDefByKey.get(fieldKey);
+        if (!fieldDef) {
+          return;
+        }
+        if (!hasMeaningfulValue(fieldDef, value)) {
           return;
         }
 
@@ -400,9 +571,7 @@ const TemplateCreateModal = ({
     const value = fieldValues[fieldDef.field_key];
 
     if (fieldDef.input_type === 'select') {
-      const options = Array.isArray(fieldDef.options)
-        ? fieldDef.options.map((option) => String(option))
-        : [];
+      const options = getSelectOptions(fieldDef);
 
       return (
         <select
@@ -421,6 +590,51 @@ const TemplateCreateModal = ({
       );
     }
 
+    if (fieldDef.input_type === 'option_with_other') {
+      const options = getSelectOptions(fieldDef);
+      const optionValue =
+        typeof value === 'object' && value !== null
+          ? (value as OptionWithOtherValue)
+          : ({ selected: '', customText: '' } as OptionWithOtherValue);
+
+      return (
+        <div className='space-y-2'>
+          <select
+            id={`field-${fieldDef.field_key}`}
+            className='form-select w-full'
+            value={optionValue.selected}
+            onChange={(event) =>
+              handleFieldValueChange(fieldDef.field_key, {
+                ...optionValue,
+                selected: event.target.value,
+              } as OptionWithOtherValue)
+            }
+          >
+            <option value=''>선택</option>
+            {options.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+          {optionValue.selected === '기타' ? (
+            <input
+              type='text'
+              className='form-input w-full'
+              placeholder='기타 입력'
+              value={optionValue.customText ?? ''}
+              onChange={(event) =>
+                handleFieldValueChange(fieldDef.field_key, {
+                  ...optionValue,
+                  customText: event.target.value,
+                } as OptionWithOtherValue)
+              }
+            />
+          ) : null}
+        </div>
+      );
+    }
+
     if (fieldDef.input_type === 'dimension') {
       const dimension =
         typeof value === 'object' && value !== null
@@ -430,26 +644,28 @@ const TemplateCreateModal = ({
       return (
         <div className='grid grid-cols-3 gap-2'>
           <input
-            type='number'
+            type='text'
+            inputMode='decimal'
             className='form-input w-full'
             placeholder='가로'
-            value={dimension.width ?? ''}
+            value={formatNumberWithCommas(dimension.width)}
             onChange={(event) =>
               handleFieldValueChange(fieldDef.field_key, {
                 ...dimension,
-                width: event.target.value === '' ? undefined : Number(event.target.value),
+                width: parseFormattedNumber(event.target.value),
               })
             }
           />
           <input
-            type='number'
+            type='text'
+            inputMode='decimal'
             className='form-input w-full'
             placeholder='세로'
-            value={dimension.height ?? ''}
+            value={formatNumberWithCommas(dimension.height)}
             onChange={(event) =>
               handleFieldValueChange(fieldDef.field_key, {
                 ...dimension,
-                height: event.target.value === '' ? undefined : Number(event.target.value),
+                height: parseFormattedNumber(event.target.value),
               })
             }
           />
@@ -481,20 +697,114 @@ const TemplateCreateModal = ({
       );
     }
 
+    if (fieldDef.input_type === 'number_with_option') {
+      const unitOptions = getUnitOptions(fieldDef);
+      const numberWithUnit =
+        typeof value === 'object' && value !== null
+          ? (value as NumberWithOptionValue)
+          : ({ unit: unitOptions[0] ?? '' } as NumberWithOptionValue);
+
+      const dualLengthText = formatDualLengthText(numberWithUnit);
+      return (
+        <div className='space-y-2'>
+          <div className='grid grid-cols-3 gap-2'>
+            <input
+              type='text'
+              inputMode='decimal'
+              className='form-input col-span-2 w-full'
+              value={formatNumberWithCommas(numberWithUnit.value)}
+              onChange={(event) =>
+                handleFieldValueChange(fieldDef.field_key, {
+                  ...numberWithUnit,
+                  value: parseFormattedNumber(event.target.value),
+                } as NumberWithOptionValue)
+              }
+            />
+            <select
+              className='form-select w-full'
+              value={numberWithUnit.unit ?? ''}
+              onChange={(event) =>
+                handleFieldValueChange(fieldDef.field_key, {
+                  ...numberWithUnit,
+                  unit: event.target.value,
+                } as NumberWithOptionValue)
+              }
+            >
+              {unitOptions.map((unit) => (
+                <option key={unit} value={unit}>
+                  {unit}
+                </option>
+              ))}
+            </select>
+          </div>
+          {dualLengthText ? (
+            <div className='text-xs text-gray-500 dark:text-gray-400'>{dualLengthText}</div>
+          ) : null}
+        </div>
+      );
+    }
+
+    if (fieldDef.input_type === 'number_pair') {
+      const pairValue =
+        typeof value === 'object' && value !== null ? (value as NumberPairValue) : ({} as NumberPairValue);
+      const { firstLabel, secondLabel } = getNumberPairLabels(fieldDef);
+      const pairKind = getNumberPairKind(fieldDef);
+      return (
+        <div className='grid grid-cols-2 gap-2'>
+          <input
+            type='text'
+            inputMode='decimal'
+            className='form-input w-full'
+            placeholder={firstLabel}
+            value={formatNumberWithCommas(pairValue.first)}
+            onChange={(event) =>
+              handleFieldValueChange(fieldDef.field_key, {
+                ...pairValue,
+                first: parseFormattedNumber(event.target.value),
+              } as NumberPairValue)
+            }
+          />
+          <input
+            type='text'
+            inputMode={pairKind === 'price_quantity' ? undefined : 'decimal'}
+            className='form-input w-full'
+            placeholder={secondLabel}
+            value={
+              pairKind === 'price_quantity'
+                ? String(pairValue.second ?? '')
+                : formatNumberWithCommas(pairValue.second)
+            }
+            onChange={(event) =>
+              handleFieldValueChange(fieldDef.field_key, {
+                ...pairValue,
+                second:
+                  pairKind === 'price_quantity'
+                    ? event.target.value
+                    : parseFormattedNumber(event.target.value),
+              } as NumberPairValue)
+            }
+          />
+        </div>
+      );
+    }
+
     const isNumber = fieldDef.input_type === 'number';
     return (
       <input
         id={`field-${fieldDef.field_key}`}
-        type={isNumber ? 'number' : 'text'}
+        type='text'
+        inputMode={isNumber ? 'decimal' : undefined}
         className='form-input w-full'
-        value={String(value ?? '')}
+        value={
+          isNumber
+            ? formatNumberWithCommas(typeof value === 'number' ? value : undefined)
+            : String(value ?? '')
+        }
         onChange={(event) =>
           handleFieldValueChange(
             fieldDef.field_key,
             isNumber
-              ? event.target.value === ''
-                ? ''
-                : Number(event.target.value)
+              ? parseFormattedNumber(event.target.value) ?? ''
               : event.target.value,
           )
         }

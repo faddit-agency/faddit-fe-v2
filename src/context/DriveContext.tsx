@@ -12,8 +12,7 @@ import {
 import ChildClothImage from '../images/faddit/childcloth.png';
 import { useAuthStore } from '../store/useAuthStore';
 import { getMaterialsByFileSystem } from '../lib/api/materialApi';
-import { useDriveMaterialStore } from '../store/useDriveMaterialStore';
-import { useDriveViewStore } from '../store/useDriveViewStore';
+import { useDriveStore } from '../store/useDriveStore';
 
 export interface DriveItem {
   id: string;
@@ -26,6 +25,7 @@ export interface DriveItem {
   badge: string;
   isStarred?: boolean;
   owner?: string;
+  ownerProfileImg?: string;
   date?: string;
   size?: string;
   parentId?: string | null;
@@ -313,6 +313,7 @@ const toDriveItem = (node: DriveNode, imageSrc: string): DriveItem => ({
   badge: node.tag ? String(node.tag) : '파일',
   isStarred: node.isStarred,
   owner: node.creatorName || undefined,
+  ownerProfileImg: node.creatorProfileImg || undefined,
   date: node.updatedAt ? String(node.updatedAt).slice(0, 10) : '-',
   size: formatBytes(node.size),
   parentId: node.parentId,
@@ -331,9 +332,9 @@ const isImageFile = (extension?: string) => {
 
 export const DriveProvider = ({ children }: { children: ReactNode }) => {
   const userId = useAuthStore((state) => state.user?.userId);
-  const setMaterialsForFile = useDriveMaterialStore((state) => state.setMaterialsForFile);
-  const clearMaterialsForFiles = useDriveMaterialStore((state) => state.clearMaterialsForFiles);
-  const setDriveView = useDriveViewStore((state) => state.setDriveView);
+  const setMaterialsForFile = useDriveStore((state) => state.setMaterialsForFile);
+  const clearMaterialsForFiles = useDriveStore((state) => state.clearMaterialsForFiles);
+  const setDriveView = useDriveStore((state) => state.setDriveView);
 
   const [items, setItems] = useState<DriveItem[]>([]);
   const [driveFolders, setDriveFolders] = useState<DriveFolder[]>([]);

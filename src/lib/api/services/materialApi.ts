@@ -10,7 +10,10 @@ export type MaterialFieldInputType =
   | 'multiselect'
   | 'dimension'
   | 'textarea'
-  | 'group';
+  | 'group'
+  | 'option_with_other'
+  | 'number_with_option'
+  | 'number_pair';
 
 export type MaterialFieldDef = {
   id: number;

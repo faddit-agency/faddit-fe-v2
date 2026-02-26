@@ -16,6 +16,7 @@ export type DriveNode = {
   mimetype?: string;
   tag?: string;
   creatorName?: string;
+  creatorProfileImg?: string;
   deletedAt?: string;
   worksheetThumbnail?: string;
 };

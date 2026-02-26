@@ -29,6 +29,10 @@ export type SignOutRequest = {
 
 export type SignInResponse = {
   userId: string;
+  name?: string;
+  email?: string;
+  profileImg?: string;
+  profile_img?: string;
   rootFolder?: string;
   storageUsed?: number;
   storageLimit?: number;

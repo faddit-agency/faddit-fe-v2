@@ -9,7 +9,7 @@ import GlobalTooltip from '../../../components/ui/GlobalTooltip';
 import Notification from '../../../components/Notification';
 import { useDrive, DriveItem, DriveFolder, SidebarItem } from '../../../context/DriveContext';
 import { useAuthStore } from '../../../store/useAuthStore';
-import { useDriveMaterialStore } from '../../../store/useDriveMaterialStore';
+import { useDriveStore } from '../../../store/useDriveStore';
 import TemplateCreateModal, {
   CreateMaterialFormValue,
   CreateWorksheetFormValue,
@@ -98,51 +98,7 @@ const isImageFile = (extension?: string) => {
   return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(value);
 };
 
-const toEditableAttributeValue = (value: unknown) => {
-  if (value === null || value === undefined) {
-    return '';
-  }
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return '';
-  }
-};
-
-const parseEditedAttributeValue = (rawValue: string, originalValue: unknown): unknown => {
-  const trimmed = rawValue.trim();
-  if (trimmed === '') {
-    return '';
-  }
-
-  if (typeof originalValue === 'number') {
-    const numeric = Number(trimmed);
-    return Number.isNaN(numeric) ? originalValue : numeric;
-  }
-
-  if (typeof originalValue === 'boolean') {
-    if (trimmed.toLowerCase() === 'true') {
-      return true;
-    }
-    if (trimmed.toLowerCase() === 'false') {
-      return false;
-    }
-    return originalValue;
-  }
-
-  if (Array.isArray(originalValue) || (originalValue && typeof originalValue === 'object')) {
-    try {
-      return JSON.parse(trimmed);
-    } catch {
-      return originalValue;
-    }
-  }
-
-  return rawValue;
-};
+const toEditableAttributeValue = (value: unknown) => value;
 
 const fileToDataUrl = (file: File) =>
   new Promise<string>((resolve, reject) => {
@@ -158,13 +114,148 @@ const fileToDataUrl = (file: File) =>
     reader.readAsDataURL(file);
   });
 
-const shouldShowMaterialField = (fieldDef: MaterialFieldDef, values: Record<string, string>) => {
+const shouldShowMaterialField = (fieldDef: MaterialFieldDef, values: Record<string, unknown>) => {
   if (!fieldDef.show_if) {
     return true;
   }
 
-  const compareValue = String(values[fieldDef.show_if.field] ?? '');
+  const rawValue = values[fieldDef.show_if.field];
+  const compareValue =
+    typeof rawValue === 'object' && rawValue !== null
+      ? String((rawValue as { selected?: unknown }).selected ?? rawValue)
+      : String(rawValue ?? '');
   return fieldDef.show_if.in.includes(compareValue);
+};
+
+const getSelectOptions = (fieldDef: MaterialFieldDef) => {
+  if (Array.isArray(fieldDef.options)) {
+    return fieldDef.options.map((option) => String(option));
+  }
+  if (
+    fieldDef.options &&
+    typeof fieldDef.options === 'object' &&
+    !Array.isArray(fieldDef.options)
+  ) {
+    const optionsRaw = (fieldDef.options as { options?: unknown }).options;
+    if (Array.isArray(optionsRaw)) {
+      return optionsRaw.map((option) => String(option));
+    }
+  }
+  return [];
+};
+
+const getUnitOptions = (fieldDef: MaterialFieldDef) => {
+  if (
+    fieldDef.options &&
+    typeof fieldDef.options === 'object' &&
+    !Array.isArray(fieldDef.options)
+  ) {
+    const unitsRaw = (fieldDef.options as { units?: unknown }).units;
+    if (Array.isArray(unitsRaw)) {
+      return unitsRaw.map((unit) => String(unit));
+    }
+  }
+  return [];
+};
+
+const getNumberPairLabels = (fieldDef: MaterialFieldDef) => {
+  if (
+    fieldDef.options &&
+    typeof fieldDef.options === 'object' &&
+    !Array.isArray(fieldDef.options)
+  ) {
+    const options = fieldDef.options as { first_label?: unknown; second_label?: unknown };
+    return {
+      firstLabel: typeof options.first_label === 'string' ? options.first_label : '값 1',
+      secondLabel: typeof options.second_label === 'string' ? options.second_label : '값 2',
+    };
+  }
+  return { firstLabel: '값 1', secondLabel: '값 2' };
+};
+
+const getNumberPairKind = (fieldDef: MaterialFieldDef) => {
+  if (
+    fieldDef.options &&
+    typeof fieldDef.options === 'object' &&
+    !Array.isArray(fieldDef.options)
+  ) {
+    const pairKind = (fieldDef.options as { pair_kind?: unknown }).pair_kind;
+    return pairKind === 'price_quantity' ? 'price_quantity' : 'width_height';
+  }
+  return 'width_height';
+};
+
+const getDefaultEditFieldValue = (fieldDef: MaterialFieldDef): unknown => {
+  if (fieldDef.input_type === 'option_with_other') {
+    return { selected: '', customText: '' };
+  }
+  if (fieldDef.input_type === 'number_with_option') {
+    const units = getUnitOptions(fieldDef);
+    return { unit: units[0] ?? '' };
+  }
+  if (fieldDef.input_type === 'number_pair') {
+    return {};
+  }
+  return '';
+};
+
+const MATERIAL_TOP_FIELDS = new Set([
+  'code_internal',
+  'vendor_name',
+  'item_name',
+  'origin_country',
+]);
+
+const formatNumberWithCommas = (value?: number) => {
+  if (typeof value !== 'number' || Number.isNaN(value)) return '';
+  return value.toLocaleString('en-US');
+};
+
+const parseFormattedNumber = (raw: string) => {
+  const normalized = raw.replace(/,/g, '').trim();
+  if (!normalized) return undefined;
+  const parsed = Number(normalized);
+  return Number.isNaN(parsed) ? undefined : parsed;
+};
+
+const formatDualLengthText = (value: unknown) => {
+  if (typeof value !== 'object' || value === null) return null;
+  const payload = value as {
+    value_cm?: unknown;
+    value_inch?: unknown;
+    value?: unknown;
+    unit?: unknown;
+  };
+  let cm = typeof payload.value_cm === 'number' ? payload.value_cm : undefined;
+  let inch = typeof payload.value_inch === 'number' ? payload.value_inch : undefined;
+
+  const numeric = typeof payload.value === 'number' ? payload.value : undefined;
+  const unit = String(payload.unit ?? '');
+  if (numeric !== undefined && unit === 'cm') {
+    cm = numeric;
+    inch = numeric / 2.54;
+  }
+  if (numeric !== undefined && unit === 'inch') {
+    inch = numeric;
+    cm = numeric * 2.54;
+  }
+
+  if (cm === undefined && inch === undefined) return null;
+
+  const cmText = cm !== undefined ? `${formatNumberWithCommas(cm)} cm` : '-';
+  const inchText = inch !== undefined ? `${formatNumberWithCommas(inch)} inch` : '-';
+  return `${cmText} / ${inchText}`;
+};
+
+const formatKrw = (value: number) => `₩${formatNumberWithCommas(value)}`;
+
+const toNumberOrUndefined = (value: unknown) => {
+  if (typeof value === 'number' && !Number.isNaN(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value.replace(/,/g, ''));
+    return Number.isNaN(parsed) ? undefined : parsed;
+  }
+  return undefined;
 };
 
 type MarqueeRect = {
@@ -374,6 +465,37 @@ const DriveFolderTile: React.FC<{
   );
 };
 
+const DriveFolderTileSkeleton = () => (
+  <div className='relative flex items-center justify-between rounded-xl bg-gray-100 px-4 py-3 dark:bg-gray-800/70'>
+    <div className='flex items-center gap-3'>
+      <div className='h-5 w-5 animate-pulse rounded bg-gray-300/80 dark:bg-gray-600/70' />
+      <div className='h-4 w-28 animate-pulse rounded bg-gray-300/80 dark:bg-gray-600/70' />
+    </div>
+    <div className='h-8 w-8 animate-pulse rounded-md bg-gray-300/80 dark:bg-gray-600/70' />
+  </div>
+);
+
+const DriveItemCardSkeleton = () => (
+  <div className='overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xs dark:border-gray-700/60 dark:bg-gray-800'>
+    <div className='aspect-[16/10] w-full animate-pulse bg-gray-200 dark:bg-gray-700/70' />
+    <div className='space-y-3 p-[clamp(12px,1.2vw,20px)]'>
+      <div className='h-5 w-16 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700/70' />
+      <div className='space-y-2'>
+        <div className='h-5 w-3/4 animate-pulse rounded bg-gray-200 dark:bg-gray-700/70' />
+        <div className='h-4 w-full animate-pulse rounded bg-gray-200 dark:bg-gray-700/70' />
+        <div className='h-4 w-11/12 animate-pulse rounded bg-gray-200 dark:bg-gray-700/70' />
+      </div>
+      <div className='space-y-1.5'>
+        <div className='h-3.5 w-full animate-pulse rounded bg-gray-200 dark:bg-gray-700/70' />
+        <div className='h-3.5 w-10/12 animate-pulse rounded bg-gray-200 dark:bg-gray-700/70' />
+        <div className='h-3.5 w-9/12 animate-pulse rounded bg-gray-200 dark:bg-gray-700/70' />
+        <div className='h-3.5 w-8/12 animate-pulse rounded bg-gray-200 dark:bg-gray-700/70' />
+      </div>
+      <div className='h-3.5 w-1/2 animate-pulse rounded bg-gray-200 dark:bg-gray-700/70' />
+    </div>
+  </div>
+);
+
 const DriveListRow: React.FC<{
   entry: DriveListEntry;
   isSelected: boolean;
@@ -532,8 +654,13 @@ const FadditDrive: React.FC = () => {
   const rootFolderFromAuth = useAuthStore((state) => state.user?.rootFolder);
   const userId = useAuthStore((state) => state.user?.userId);
   const currentUserName = useAuthStore((state) => state.user?.name);
-  const materialsByFileSystemId = useDriveMaterialStore((state) => state.materialsByFileSystemId);
-  const setMaterialsForFile = useDriveMaterialStore((state) => state.setMaterialsForFile);
+  const currentUserProfileImg = useAuthStore((state) => state.user?.profileImg);
+  const materialsByFileSystemId = useDriveStore((state) => state.materialsByFileSystemId);
+  const setMaterialsForFile = useDriveStore((state) => state.setMaterialsForFile);
+  const searchLoading = useDriveStore((state) => state.searchLoading);
+  const driveLoading = useDriveStore((state) => state.driveLoading);
+  const setSearchLoading = useDriveStore((state) => state.setSearchLoading);
+  const setDriveLoading = useDriveStore((state) => state.setDriveLoading);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [isCreatingMaterial, setIsCreatingMaterial] = useState(false);
@@ -548,15 +675,18 @@ const FadditDrive: React.FC = () => {
   const [detailPanelEditMode, setDetailPanelEditMode] = useState(false);
   const [detailSaveLoading, setDetailSaveLoading] = useState(false);
   const [editFileName, setEditFileName] = useState('');
+  const [editCodeInternal, setEditCodeInternal] = useState('');
+  const [editVendorName, setEditVendorName] = useState('');
+  const [editItemName, setEditItemName] = useState('');
+  const [editOriginCountry, setEditOriginCountry] = useState('');
   const [editImageUrl, setEditImageUrl] = useState('');
   const [editImageFile, setEditImageFile] = useState<File | null>(null);
   const [editImagePreviewUrl, setEditImagePreviewUrl] = useState<string | null>(null);
   const [editImageDragging, setEditImageDragging] = useState(false);
   const [editMaterialFieldDefs, setEditMaterialFieldDefs] = useState<MaterialFieldDef[]>([]);
   const [editMaterialFieldDefsLoading, setEditMaterialFieldDefsLoading] = useState(false);
-  const [editAttributes, setEditAttributes] = useState<Record<string, string>>({});
+  const [editAttributes, setEditAttributes] = useState<Record<string, unknown>>({});
   const [deleteToastOpen, setDeleteToastOpen] = useState(false);
-  const [searchLoading, setSearchLoading] = useState(false);
   const [searchTotalCount, setSearchTotalCount] = useState(0);
   const [resultFilterOpen, setResultFilterOpen] = useState(false);
   const [draftSearchCategories, setDraftSearchCategories] = useState<DriveSearchCategory[]>([]);
@@ -643,6 +773,9 @@ const FadditDrive: React.FC = () => {
     pantone_color: '팬톤 컬러',
     blend_ratio: '혼용률',
     weave: '조직',
+    pattern: '패턴',
+    width: '폭',
+    width_type: '폭 타입',
     pattern_width: '패턴폭',
     pattern_width_mm: '패턴폭',
     pattern_width_type: '폭 타입',
@@ -652,12 +785,17 @@ const FadditDrive: React.FC = () => {
     shrinkage_pct: '수축률',
     moq: '최소 발주수량',
     processing_fee: '가공비',
+    processing: '가공여부',
     price_amount: '단가',
     price_unit: '단위',
+    price_per_unit: '단가/단위',
     rib_spec: '리브 스펙',
     rib_direction: '리브 방향',
+    grain_direction: '결 방향',
+    size_spec: '규격',
     gauge_no: '호수',
     post_processing: '후가공',
+    color: '컬러',
   };
 
   const getAttributeLabel = (key: string) => {
@@ -685,18 +823,78 @@ const FadditDrive: React.FC = () => {
     return fallbackImageSrc;
   };
 
-  const formatAttributeValue = (value: unknown): string => {
+  const formatAttributeValue = (value: unknown, fieldKey?: string): string => {
+    const isPriceField = (fieldKey || '').includes('price') || (fieldKey || '').includes('fee');
+
     if (value === null || value === undefined || value === '') {
       return '-';
     }
     if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      if (typeof value === 'number' && isPriceField) {
+        return formatKrw(value);
+      }
+      if (typeof value === 'string' && isPriceField) {
+        const numeric = toNumberOrUndefined(value);
+        if (numeric !== undefined) {
+          return formatKrw(numeric);
+        }
+      }
       return String(value);
     }
     if (Array.isArray(value)) {
-      return value.map((item) => formatAttributeValue(item)).join(', ');
+      return value.map((item) => formatAttributeValue(item, fieldKey)).join(', ');
     }
     if (typeof value === 'object') {
       const objectValue = value as Record<string, unknown>;
+
+      if ('selected' in objectValue) {
+        const selected = String(objectValue.selected ?? '').trim();
+        const customText = String(objectValue.customText ?? '').trim();
+        if (selected === '기타') {
+          return customText || '기타';
+        }
+        return selected || '-';
+      }
+
+      if ('value' in objectValue || 'unit' in objectValue) {
+        const rawValue = objectValue.value;
+        const rawUnit = objectValue.unit;
+        const valueText =
+          typeof rawValue === 'number'
+            ? isPriceField
+              ? formatKrw(rawValue)
+              : formatNumberWithCommas(rawValue)
+            : String(rawValue ?? '').trim();
+        const unitText = String(rawUnit ?? '').trim();
+        if (valueText && unitText) {
+          return `${valueText}/${unitText}`;
+        }
+        if (valueText) {
+          return valueText;
+        }
+      }
+
+      if ('first' in objectValue || 'second' in objectValue) {
+        const firstRaw = objectValue.first;
+        const secondRaw = objectValue.second;
+        const firstText =
+          typeof firstRaw === 'number'
+            ? isPriceField
+              ? formatKrw(firstRaw)
+              : formatNumberWithCommas(firstRaw)
+            : String(firstRaw ?? '').trim();
+        const secondText =
+          typeof secondRaw === 'number'
+            ? formatNumberWithCommas(secondRaw)
+            : String(secondRaw ?? '').trim();
+        if (firstText && secondText) {
+          return `${firstText}/${secondText}`;
+        }
+        return firstText || secondText || '-';
+      }
+
+      const dualLengthText = formatDualLengthText(objectValue);
+      if (dualLengthText) return dualLengthText;
       if (
         ('width' in objectValue || 'height' in objectValue) &&
         ('unit' in objectValue || 'width' in objectValue || 'height' in objectValue)
@@ -706,11 +904,13 @@ const FadditDrive: React.FC = () => {
         const unit = objectValue.unit ? String(objectValue.unit) : '';
         return `${width} x ${height}${unit ? ` ${unit}` : ''}`;
       }
-      return Object.entries(objectValue)
-        .map(
-          ([key, nestedValue]) => `${getAttributeLabel(key)}: ${formatAttributeValue(nestedValue)}`,
-        )
-        .join(', ');
+
+      return (
+        Object.values(objectValue)
+          .map((nestedValue) => formatAttributeValue(nestedValue, fieldKey))
+          .filter((text) => text !== '-' && text !== '')
+          .join(' / ') || '-'
+      );
     }
     return String(value);
   };
@@ -863,6 +1063,7 @@ const FadditDrive: React.FC = () => {
                 badge: node.tag ? String(node.tag) : '파일',
                 isStarred: node.isStarred,
                 owner: node.creatorName || undefined,
+                ownerProfileImg: node.creatorProfileImg || undefined,
                 date: node.updatedAt ? String(node.updatedAt).slice(0, 10) : '-',
                 size: formatBytes(node.size),
                 parentId: node.parentId,
@@ -907,12 +1108,24 @@ const FadditDrive: React.FC = () => {
       return;
     }
 
+    let cancelled = false;
     setSearchLoading(false);
     setSearchTotalCount(0);
     const targetFolderId = folderId || effectiveRootFolderId;
-    loadFolderView(targetFolderId).catch((error) => {
-      console.error('Failed to load drive folder view', error);
-    });
+    setDriveLoading(true);
+    loadFolderView(targetFolderId)
+      .catch((error) => {
+        console.error('Failed to load drive folder view', error);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setDriveLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [folderId, isSearchMode, loadFolderView, rootFolderFromAuth, rootFolderId]);
 
   useEffect(() => {
@@ -1101,7 +1314,9 @@ const FadditDrive: React.FC = () => {
       return true;
     }
 
-    const normalizedTag = String(item.badge || '').trim().toLowerCase();
+    const normalizedTag = String(item.badge || '')
+      .trim()
+      .toLowerCase();
     return normalizedTag === 'worksheet' || normalizedTag === 'faddit';
   };
 
@@ -1482,7 +1697,7 @@ const FadditDrive: React.FC = () => {
     setFileQuery(null);
   };
 
-  const handleEditAttributeChange = (key: string, value: string) => {
+  const handleEditAttributeChange = (key: string, value: unknown) => {
     setEditAttributes((prev) => ({
       ...prev,
       [key]: value,
@@ -1513,8 +1728,7 @@ const FadditDrive: React.FC = () => {
       if (primaryActiveMaterial) {
         const nextAttributes: Record<string, unknown> = {};
         editableAttributeKeys.forEach((key) => {
-          const originalValue = (primaryActiveMaterial.attributes || {})[key];
-          nextAttributes[key] = parseEditedAttributeValue(editAttributes[key] ?? '', originalValue);
+          nextAttributes[key] = editAttributes[key];
         });
 
         const hasAttributeChange = Object.entries(nextAttributes).some(
@@ -1524,10 +1738,23 @@ const FadditDrive: React.FC = () => {
           ? await fileToDataUrl(editImageFile)
           : editImageUrl;
         const hasImageChange = normalizedImageUrl !== (primaryActiveMaterial.image_url || '');
+        const normalizedCodeInternal = editCodeInternal.trim();
+        const normalizedVendorName = editVendorName.trim();
+        const normalizedItemName = editItemName.trim();
+        const normalizedOriginCountry = editOriginCountry.trim();
+        const hasTopFieldChange =
+          normalizedCodeInternal !== (primaryActiveMaterial.code_internal || '') ||
+          normalizedVendorName !== (primaryActiveMaterial.vendor_name || '') ||
+          normalizedItemName !== (primaryActiveMaterial.item_name || '') ||
+          normalizedOriginCountry !== (primaryActiveMaterial.origin_country || '');
 
-        if (hasAttributeChange || hasImageChange) {
+        if (hasAttributeChange || hasImageChange || hasTopFieldChange) {
           await updateMaterial(primaryActiveMaterial.id, {
             userId,
+            codeInternal: normalizedCodeInternal,
+            vendorName: normalizedVendorName,
+            itemName: normalizedItemName,
+            originCountry: normalizedOriginCountry,
             attributes: nextAttributes,
             imageUrl: normalizedImageUrl,
           });
@@ -1842,6 +2069,7 @@ const FadditDrive: React.FC = () => {
     () =>
       editMaterialFieldDefs
         .filter((fieldDef) => fieldDef.input_type !== 'group')
+        .filter((fieldDef) => !MATERIAL_TOP_FIELDS.has(fieldDef.field_key))
         .filter((fieldDef) => shouldShowMaterialField(fieldDef, editAttributes)),
     [editAttributes, editMaterialFieldDefs],
   );
@@ -1852,6 +2080,9 @@ const FadditDrive: React.FC = () => {
       keySet.add(fieldDef.field_key);
     });
     Object.keys(primaryActiveMaterial?.attributes || {}).forEach((key) => {
+      if (MATERIAL_TOP_FIELDS.has(key)) {
+        return;
+      }
       keySet.add(key);
     });
 
@@ -1871,9 +2102,193 @@ const FadditDrive: React.FC = () => {
     return map;
   }, [editMaterialFieldDefs]);
 
+  const renderEditAttributeInput = (key: string) => {
+    const fieldDef = materialFieldDefByKey.get(key);
+    const value = editAttributes[key];
+
+    if (!fieldDef) {
+      return (
+        <input
+          type='text'
+          value={String(value ?? '')}
+          onChange={(event) => handleEditAttributeChange(key, event.target.value)}
+          className='form-input w-full'
+          placeholder={key}
+        />
+      );
+    }
+
+    if (fieldDef.input_type === 'number') {
+      return (
+        <input
+          type='text'
+          inputMode='decimal'
+          value={formatNumberWithCommas(typeof value === 'number' ? value : undefined)}
+          onChange={(event) =>
+            handleEditAttributeChange(key, parseFormattedNumber(event.target.value) ?? '')
+          }
+          className='form-input w-full'
+          placeholder={key}
+        />
+      );
+    }
+
+    if (fieldDef.input_type === 'option_with_other') {
+      const options = getSelectOptions(fieldDef);
+      const optionValue =
+        typeof value === 'object' && value !== null
+          ? (value as { selected?: string; customText?: string })
+          : ({ selected: '', customText: '' } as { selected?: string; customText?: string });
+      return (
+        <div className='space-y-2'>
+          <select
+            className='form-select w-full'
+            value={optionValue.selected ?? ''}
+            onChange={(event) =>
+              handleEditAttributeChange(key, {
+                ...optionValue,
+                selected: event.target.value,
+              })
+            }
+          >
+            <option value=''>선택</option>
+            {options.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+          {optionValue.selected === '기타' ? (
+            <input
+              type='text'
+              className='form-input w-full'
+              placeholder='기타 입력'
+              value={optionValue.customText ?? ''}
+              onChange={(event) =>
+                handleEditAttributeChange(key, {
+                  ...optionValue,
+                  customText: event.target.value,
+                })
+              }
+            />
+          ) : null}
+        </div>
+      );
+    }
+
+    if (fieldDef.input_type === 'number_with_option') {
+      const units = getUnitOptions(fieldDef);
+      const numberWithUnit =
+        typeof value === 'object' && value !== null
+          ? (value as { value?: number; unit?: string })
+          : ({ value: undefined, unit: units[0] ?? '' } as { value?: number; unit?: string });
+      const dualLengthText = formatDualLengthText(numberWithUnit);
+      return (
+        <div className='space-y-2'>
+          <div className='grid grid-cols-3 gap-2'>
+            <input
+              type='text'
+              inputMode='decimal'
+              className='form-input col-span-2 w-full'
+              value={formatNumberWithCommas(numberWithUnit.value)}
+              onChange={(event) =>
+                handleEditAttributeChange(key, {
+                  ...numberWithUnit,
+                  value: parseFormattedNumber(event.target.value),
+                })
+              }
+            />
+            <select
+              className='form-select w-full'
+              value={numberWithUnit.unit ?? ''}
+              onChange={(event) =>
+                handleEditAttributeChange(key, {
+                  ...numberWithUnit,
+                  unit: event.target.value,
+                })
+              }
+            >
+              {units.map((unit) => (
+                <option key={unit} value={unit}>
+                  {unit}
+                </option>
+              ))}
+            </select>
+          </div>
+          {dualLengthText ? (
+            <div className='text-xs text-gray-500 dark:text-gray-400'>{dualLengthText}</div>
+          ) : null}
+        </div>
+      );
+    }
+
+    if (fieldDef.input_type === 'number_pair') {
+      const pair =
+        typeof value === 'object' && value !== null
+          ? (value as { first?: number; second?: number | string })
+          : ({ first: undefined, second: undefined } as {
+              first?: number;
+              second?: number | string;
+            });
+      const { firstLabel, secondLabel } = getNumberPairLabels(fieldDef);
+      const pairKind = getNumberPairKind(fieldDef);
+      return (
+        <div className='grid grid-cols-2 gap-2'>
+          <input
+            type='text'
+            inputMode='decimal'
+            className='form-input w-full'
+            placeholder={firstLabel}
+            value={formatNumberWithCommas(pair.first)}
+            onChange={(event) =>
+              handleEditAttributeChange(key, {
+                ...pair,
+                first: parseFormattedNumber(event.target.value),
+              })
+            }
+          />
+          <input
+            type='text'
+            inputMode={pairKind === 'price_quantity' ? undefined : 'decimal'}
+            className='form-input w-full'
+            placeholder={secondLabel}
+            value={
+              pairKind === 'price_quantity'
+                ? String(pair.second ?? '')
+                : formatNumberWithCommas(pair.second as number | undefined)
+            }
+            onChange={(event) =>
+              handleEditAttributeChange(key, {
+                ...pair,
+                second:
+                  pairKind === 'price_quantity'
+                    ? event.target.value
+                    : parseFormattedNumber(event.target.value),
+              })
+            }
+          />
+        </div>
+      );
+    }
+
+    return (
+      <input
+        type='text'
+        value={String(value ?? '')}
+        onChange={(event) => handleEditAttributeChange(key, event.target.value)}
+        className='form-input w-full'
+        placeholder={key}
+      />
+    );
+  };
+
   const cardGridClass = detailPanelOpen
-    ? 'grid grid-cols-1 sm:grid-cols-[repeat(auto-fill,minmax(220px,1fr))] xl:grid-cols-[repeat(auto-fill,minmax(220px,300px))]'
-    : 'grid grid-cols-1 sm:grid-cols-[repeat(auto-fill,minmax(240px,1fr))] xl:grid-cols-[repeat(auto-fill,minmax(240px,320px))]';
+    ? 'grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))]'
+    : 'grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))]';
+
+  const isDriveListLoading = driveLoading || searchLoading;
+  const folderSkeletonCount = detailPanelOpen ? 4 : 6;
+  const fileSkeletonCount = detailPanelOpen ? 6 : 8;
 
   useEffect(() => {
     if (!detailPanelEditMode || !primaryActiveMaterial) {
@@ -1929,11 +2344,15 @@ const FadditDrive: React.FC = () => {
     }
 
     setEditFileName(activeItem.title);
+    setEditCodeInternal(primaryActiveMaterial?.code_internal || '');
+    setEditVendorName(primaryActiveMaterial?.vendor_name || '');
+    setEditItemName(primaryActiveMaterial?.item_name || '');
+    setEditOriginCountry(primaryActiveMaterial?.origin_country || '');
     setEditImageUrl(primaryActiveMaterial?.image_url || '');
     setEditImageFile(null);
     setEditImageDragging(false);
     setEditAttributes(() => {
-      const next: Record<string, string> = {};
+      const next: Record<string, unknown> = {};
       if (!primaryActiveMaterial) {
         return next;
       }
@@ -1946,6 +2365,10 @@ const FadditDrive: React.FC = () => {
     activeItem,
     detailPanelEditMode,
     primaryActiveMaterial?.attributes,
+    primaryActiveMaterial?.code_internal,
+    primaryActiveMaterial?.vendor_name,
+    primaryActiveMaterial?.item_name,
+    primaryActiveMaterial?.origin_country,
     primaryActiveMaterial?.image_url,
   ]);
 
@@ -1960,7 +2383,7 @@ const FadditDrive: React.FC = () => {
         .filter((fieldDef) => fieldDef.input_type !== 'group')
         .forEach((fieldDef) => {
           if (next[fieldDef.field_key] === undefined) {
-            next[fieldDef.field_key] = '';
+            next[fieldDef.field_key] = getDefaultEditFieldValue(fieldDef);
           }
         });
       return next;
@@ -1985,7 +2408,7 @@ const FadditDrive: React.FC = () => {
               {activeCategoryLabel}
             </div>
             {detailPanelEditMode ? (
-              <div>
+              <div className='space-y-2'>
                 <div className='mb-1 text-xs font-semibold tracking-wide text-gray-500 dark:text-gray-400'>
                   파일 이름
                 </div>
@@ -1996,6 +2419,36 @@ const FadditDrive: React.FC = () => {
                   className='form-input w-full'
                   placeholder='파일 이름'
                 />
+                <div className='grid grid-cols-1 gap-2 sm:grid-cols-2'>
+                  <input
+                    type='text'
+                    value={editCodeInternal}
+                    onChange={(event) => setEditCodeInternal(event.target.value)}
+                    className='form-input w-full'
+                    placeholder='코드(내부)'
+                  />
+                  <input
+                    type='text'
+                    value={editVendorName}
+                    onChange={(event) => setEditVendorName(event.target.value)}
+                    className='form-input w-full'
+                    placeholder='업체명'
+                  />
+                  <input
+                    type='text'
+                    value={editItemName}
+                    onChange={(event) => setEditItemName(event.target.value)}
+                    className='form-input w-full'
+                    placeholder='원단품명'
+                  />
+                  <input
+                    type='text'
+                    value={editOriginCountry}
+                    onChange={(event) => setEditOriginCountry(event.target.value)}
+                    className='form-input w-full'
+                    placeholder='원산지'
+                  />
+                </div>
               </div>
             ) : (
               <h2 className='text-2xl leading-tight font-bold text-gray-900 dark:text-gray-100'>
@@ -2098,17 +2551,7 @@ const FadditDrive: React.FC = () => {
                       <div className='mb-1 text-xs font-semibold tracking-wide text-gray-500 dark:text-gray-400'>
                         {materialFieldDefByKey.get(key)?.label || getAttributeLabel(key)}
                       </div>
-                      <input
-                        type={
-                          materialFieldDefByKey.get(key)?.input_type === 'number'
-                            ? 'number'
-                            : 'text'
-                        }
-                        value={editAttributes[key] ?? ''}
-                        onChange={(event) => handleEditAttributeChange(key, event.target.value)}
-                        className='form-input w-full'
-                        placeholder={key}
-                      />
+                      {renderEditAttributeInput(key)}
                     </div>
                   ))}
                 </div>
@@ -2180,6 +2623,12 @@ const FadditDrive: React.FC = () => {
                     품명:{' '}
                     <span className='font-medium'>{primaryActiveMaterial.item_name || '-'}</span>
                   </div>
+                  <div>
+                    원산지:{' '}
+                    <span className='font-medium'>
+                      {primaryActiveMaterial.origin_country || '-'}
+                    </span>
+                  </div>
                 </div>
               ) : (
                 <p className='mt-3 text-sm text-gray-500 dark:text-gray-400'>
@@ -2205,7 +2654,7 @@ const FadditDrive: React.FC = () => {
                         {getAttributeLabel(key)}
                       </div>
                       <div className='text-right text-sm text-gray-800 dark:text-gray-100'>
-                        {formatAttributeValue(value)}
+                        {formatAttributeValue(value, key)}
                       </div>
                     </div>
                   ))}
@@ -2244,7 +2693,7 @@ const FadditDrive: React.FC = () => {
             }}
             onMouseDown={handleGridMarqueeSelect}
             onClick={handleContainerBlankClick}
-            className='scrollbar-drive relative h-full overflow-x-hidden overflow-y-auto px-4 py-6 sm:px-6 lg:px-8'
+            className='scrollbar-drive relative h-full w-full overflow-x-hidden overflow-y-auto px-4 py-6 sm:px-6 lg:px-8'
           >
             <div className='mb-8 sm:flex sm:items-center sm:justify-between'>
               <div className='mb-4 sm:mb-0'>
@@ -2568,85 +3017,118 @@ const FadditDrive: React.FC = () => {
             <div ref={gridContentRef} className='mt-8'>
               {viewMode === 'grid' ? (
                 <div className='space-y-6'>
-                  <div className={`grid gap-5 ${cardGridClass}`}>
-                    {displayedFolders.map((folder) => {
-                      const dragSelection = getDragSelection(folder.id, 'folder', folder.name);
-                      return (
-                        <DriveFolderTile
-                          key={folder.id}
-                          folder={folder}
-                          isSelected={selectedSet.has(folder.id)}
-                          dragSelectionIds={dragSelection.ids}
-                          dragSelectionEntries={dragSelection.entries}
-                          onToggleSelect={(checked) => applySelection(folder.id, checked)}
-                          onPress={(event) => handleFolderPress(folder.id, event)}
-                          onOpen={navigateToFolder}
-                          onMoveFolder={handleOpenMoveDialog}
-                          onAddFavorite={handleAddFavoriteFromMenu}
-                          onRenameFolder={handleOpenRenameFolderDialog}
-                          onDeleteFolder={handleDeleteSingleItem}
-                        />
-                      );
-                    })}
-                  </div>
+                  {isDriveListLoading ? (
+                    <>
+                      <div className={`grid gap-5 ${cardGridClass}`}>
+                        {Array.from({ length: folderSkeletonCount }).map((_, index) => (
+                          <DriveFolderTileSkeleton key={`folder-skeleton-${index + 1}`} />
+                        ))}
+                      </div>
+                      <div className={`grid gap-5 ${cardGridClass}`}>
+                        {Array.from({ length: fileSkeletonCount }).map((_, index) => (
+                          <DriveItemCardSkeleton key={`file-skeleton-${index + 1}`} />
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className={`grid gap-5 ${cardGridClass}`}>
+                        {displayedFolders.map((folder) => {
+                          const dragSelection = getDragSelection(folder.id, 'folder', folder.name);
+                          return (
+                            <DriveFolderTile
+                              key={folder.id}
+                              folder={folder}
+                              isSelected={selectedSet.has(folder.id)}
+                              dragSelectionIds={dragSelection.ids}
+                              dragSelectionEntries={dragSelection.entries}
+                              onToggleSelect={(checked) => applySelection(folder.id, checked)}
+                              onPress={(event) => handleFolderPress(folder.id, event)}
+                              onOpen={navigateToFolder}
+                              onMoveFolder={handleOpenMoveDialog}
+                              onAddFavorite={handleAddFavoriteFromMenu}
+                              onRenameFolder={handleOpenRenameFolderDialog}
+                              onDeleteFolder={handleDeleteSingleItem}
+                            />
+                          );
+                        })}
+                      </div>
 
-                  <div className={`grid gap-5 ${cardGridClass}`}>
-                    {displayedItems.map((item) => {
-                      const dragSelection = getDragSelection(item.id, 'file', item.title);
-                      const linkedMaterials = materialsByFileSystemId[item.id] || [];
-                      const primaryMaterial = linkedMaterials[0] || null;
-                      const displayImageSrc = getDisplayImageSrc(item.id, item.imageSrc);
-                      const categoryLabel = getCategoryLabel(item.id, item.badge);
-                      const attributesCount = linkedMaterials.reduce((count, material) => {
-                        const attrs = material.attributes || {};
-                        return count + Object.keys(attrs).length;
-                      }, 0);
-                      const summaryText = primaryMaterial
-                        ? [
-                            primaryMaterial.code_internal
-                              ? `코드 ${primaryMaterial.code_internal}`
-                              : '',
-                            primaryMaterial.vendor_name || '',
-                            primaryMaterial.item_name || '',
-                          ]
-                            .filter((value): value is string => Boolean(value))
-                            .join(' · ')
-                        : [item.isStarred ? '즐겨찾기된 파일' : '', item.subtitle]
-                            .filter((value): value is string => Boolean(value))
-                            .join(' · ');
-                      return (
-                        <DriveItemCard
-                          key={item.id}
-                          id={item.id}
-                          materialFetchedFromBackend={item.id in materialsByFileSystemId}
-                          materialAttributesCount={attributesCount}
-                          categoryLabel={categoryLabel}
-                          summaryText={summaryText}
-                          creatorName={item.owner || currentUserName}
-                          isStarred={Boolean(item.isStarred)}
-                          imageSrc={displayImageSrc}
-                          imageAlt={item.imageAlt}
-                          title={item.title}
-                          subtitle={item.subtitle}
-                          badge={item.badge}
-                          actionLabel='View'
-                          actionHref='#0'
-                          isSelected={selectedSet.has(item.id)}
-                          isActive={activeItemId === item.id}
-                          onSelectChange={applySelection}
-                          onCardClick={handleFileCardClick}
-                          onCardDoubleClick={handleFileCardDoubleClick}
-                          onEdit={handleOpenFileEditPanel}
-                          onMoveToFolder={handleOpenMoveDialog}
-                          onAddFavorite={handleAddFavoriteFromMenu}
-                          onDelete={(id) => handleDeleteSingleItem(id, item.title)}
-                          dragSelectionIds={dragSelection.ids}
-                          dragSelectionEntries={dragSelection.entries}
-                          className='min-w-0'
-                        />
-                      );
-                    })}
-                  </div>
+                      <div className={`grid gap-5 ${cardGridClass}`}>
+                        {displayedItems.map((item) => {
+                          const dragSelection = getDragSelection(item.id, 'file', item.title);
+                          const linkedMaterials = materialsByFileSystemId[item.id] || [];
+                          const primaryMaterial = linkedMaterials[0] || null;
+                          const displayImageSrc = getDisplayImageSrc(item.id, item.imageSrc);
+                          const categoryLabel = getCategoryLabel(item.id, item.badge);
+                          const attributesCount = linkedMaterials.reduce((count, material) => {
+                            const attrs = material.attributes || {};
+                            return count + Object.keys(attrs).length;
+                          }, 0);
+                          const summaryText = primaryMaterial
+                            ? [
+                                primaryMaterial.code_internal
+                                  ? `코드 ${primaryMaterial.code_internal}`
+                                  : '',
+                                primaryMaterial.vendor_name || '',
+                                primaryMaterial.item_name || '',
+                              ]
+                                .filter((value): value is string => Boolean(value))
+                                .join(' · ')
+                            : [item.isStarred ? '즐겨찾기된 파일' : '', item.subtitle]
+                                .filter((value): value is string => Boolean(value))
+                                .join(' · ');
+                          return (
+                            <DriveItemCard
+                              key={item.id}
+                              id={item.id}
+                              materialFetchedFromBackend={item.id in materialsByFileSystemId}
+                              materialAttributesCount={attributesCount}
+                              categoryLabel={categoryLabel}
+                              summaryText={summaryText}
+                              materialCardMeta={
+                                primaryMaterial
+                                  ? {
+                                      codeInternal: primaryMaterial.code_internal || '',
+                                      vendorName: primaryMaterial.vendor_name || '',
+                                      itemName: primaryMaterial.item_name || '',
+                                      originCountry: primaryMaterial.origin_country || '',
+                                    }
+                                  : undefined
+                              }
+                              creatorName={item.owner || currentUserName}
+                              creatorAvatarUrl={
+                                item.ownerProfileImg ||
+                                ((item.owner || currentUserName) === currentUserName
+                                  ? currentUserProfileImg
+                                  : undefined)
+                              }
+                              isStarred={Boolean(item.isStarred)}
+                              imageSrc={displayImageSrc}
+                              imageAlt={item.imageAlt}
+                              title={item.title}
+                              subtitle={item.subtitle}
+                              badge={item.badge}
+                              actionLabel='View'
+                              actionHref='#0'
+                              isSelected={selectedSet.has(item.id)}
+                              isActive={activeItemId === item.id}
+                              onSelectChange={applySelection}
+                              onCardClick={handleFileCardClick}
+                              onCardDoubleClick={handleFileCardDoubleClick}
+                              onEdit={handleOpenFileEditPanel}
+                              onMoveToFolder={handleOpenMoveDialog}
+                              onAddFavorite={handleAddFavoriteFromMenu}
+                              onDelete={(id) => handleDeleteSingleItem(id, item.title)}
+                              dragSelectionIds={dragSelection.ids}
+                              dragSelectionEntries={dragSelection.entries}
+                              className='min-w-0'
+                            />
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className='overflow-x-auto rounded-xl bg-white shadow-xs dark:bg-gray-800'>
