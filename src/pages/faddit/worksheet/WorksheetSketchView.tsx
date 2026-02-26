@@ -117,6 +117,12 @@ function isArrowPathObject(obj: FabricObject | null): obj is Path {
   );
 }
 
+function isHoverOverlayObject(obj: FabricObject | null): boolean {
+  if (!obj) return false;
+  const data = getObjectData(obj);
+  return data?.kind === '__hover_overlay__';
+}
+
 function buildArrowPathCommands(tail: ArrowPoint, tip: ArrowPoint): TSimplePathData {
   const dx = tip.x - tail.x;
   const dy = tip.y - tail.y;
@@ -484,6 +490,9 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
   });
   const isObjectMovingRef = useRef(false);
   const modifierDistanceKeyDownRef = useRef(false);
+  const hoverOutlineRef = useRef<FabricObject | null>(null);
+  const hoverTargetRef = useRef<FabricObject | null>(null);
+  const hoverApplySeqRef = useRef(0);
 
   const {
     canvasRef,
@@ -1207,7 +1216,9 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
 
     const computeDistanceGuides = (target: FabricObject) => {
       const base = getBoundsMetrics(target);
-      const others = canvas.getObjects().filter((obj) => obj !== target && obj.visible !== false);
+      const others = canvas
+        .getObjects()
+        .filter((obj) => obj !== target && obj.visible !== false && !isHoverOverlayObject(obj));
 
       let nearestLeft: {
         id: string;
@@ -1360,7 +1371,9 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       const tolerance = getSnapTolerance();
       const base = getBoundsMetrics(target);
       const canvasBounds = getCanvasSceneBounds();
-      const others = canvas.getObjects().filter((obj) => obj !== target && obj.visible !== false);
+      const others = canvas
+        .getObjects()
+        .filter((obj) => obj !== target && obj.visible !== false && !isHoverOverlayObject(obj));
 
       let bestX: {
         delta: number;
@@ -1516,30 +1529,111 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       return { bestX, bestY };
     };
 
-    const hoverStrokeMap = new WeakMap<FabricObject, unknown>();
-    const mainColor =
-      getComputedStyle(document.documentElement).getPropertyValue('--color-faddit').trim() || '#763bff';
+    const markHoverOverlay = (obj: FabricObject) => {
+      const prev = getObjectData(obj);
+      (obj as unknown as { data?: ArrowObjectData }).data = {
+        ...(prev ?? {}),
+        kind: '__hover_overlay__',
+        name: 'hover-overlay',
+      };
+    };
 
-    const applyHoverHighlight = (target: FabricObject) => {
-      if (!target.evented) {
-        return;
-      }
+    const createHoverFallbackOutline = (target: FabricObject, strokeWidth: number): Rect => {
+      const bounds = getBoundsMetrics(target);
+      const rect = new Rect({
+        left: bounds.left,
+        top: bounds.top,
+        width: Math.max(1, bounds.right - bounds.left),
+        height: Math.max(1, bounds.bottom - bounds.top),
+        fill: '',
+        stroke: '#2563EB',
+        strokeWidth,
+        strokeUniform: true,
+        selectable: false,
+        evented: false,
+        hasBorders: false,
+        hasControls: false,
+        objectCaching: false,
+        excludeFromExport: true,
+      });
+      rect.setCoords();
+      return rect;
+    };
 
-      if (target.type !== 'i-text' && target.type !== 'image') {
-        if (!hoverStrokeMap.has(target)) {
-          hoverStrokeMap.set(target, target.get('stroke') ?? null);
-        }
-        target.set({ stroke: mainColor });
-      }
+    const clearHoverHighlight = () => {
+      hoverApplySeqRef.current += 1;
+      hoverTargetRef.current = null;
+
+      const outline = hoverOutlineRef.current;
+      hoverOutlineRef.current = null;
+      if (!outline) return;
+
+      canvas.remove(outline);
       canvas.requestRenderAll();
     };
 
-    const clearHoverHighlight = (target: FabricObject) => {
-      if (hoverStrokeMap.has(target)) {
-        target.set({ stroke: hoverStrokeMap.get(target) as FabricObject['stroke'] });
+    const applyHoverHighlight = (target: FabricObject) => {
+      if (!target.evented || target.visible === false || isHoverOverlayObject(target)) {
+        return;
       }
 
-      canvas.requestRenderAll();
+      if (hoverTargetRef.current === target && hoverOutlineRef.current) {
+        return;
+      }
+
+      clearHoverHighlight();
+
+      const requestSeq = hoverApplySeqRef.current + 1;
+      hoverApplySeqRef.current = requestSeq;
+      const strokeWidth = 1 / Math.max(canvas.getZoom(), 0.001);
+
+      const run = async () => {
+        let outline: FabricObject | null = null;
+
+        if (target.type === 'image') {
+          outline = createHoverFallbackOutline(target, strokeWidth);
+        } else {
+          try {
+            outline = await target.clone();
+          } catch {
+            outline = createHoverFallbackOutline(target, strokeWidth);
+          }
+        }
+
+        if (!outline || hoverApplySeqRef.current !== requestSeq) {
+          return;
+        }
+
+        markHoverOverlay(outline);
+        outline.set({
+          fill: '',
+          stroke: '#2563EB',
+          strokeWidth,
+          strokeUniform: true,
+          selectable: false,
+          evented: false,
+          hasBorders: false,
+          hasControls: false,
+          objectCaching: false,
+          excludeFromExport: true,
+          perPixelTargetFind: false,
+          hoverCursor: 'default',
+          moveCursor: 'default',
+        });
+        outline.setCoords();
+
+        if (hoverApplySeqRef.current !== requestSeq) {
+          return;
+        }
+
+        canvas.add(outline);
+        canvas.bringObjectToFront(outline);
+        hoverOutlineRef.current = outline;
+        hoverTargetRef.current = target;
+        canvas.requestRenderAll();
+      };
+
+      void run();
     };
 
     const updateModifierDistanceGuides = () => {
@@ -1550,7 +1644,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       }
 
       const active = canvas.getActiveObject();
-      if (!active) {
+      if (!active || isHoverOverlayObject(active)) {
         clearMoveGuides();
         return;
       }
@@ -1566,6 +1660,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
 
     const handleObjectAdded = (e: { target?: FabricObject }) => {
       if (!e.target) return;
+      if (isHoverOverlayObject(e.target)) return;
       if (ENABLE_CANVA_INTERACTION_ENGINE) {
         interactionControllerRef.current?.applyObjectControls(e.target);
       }
@@ -1573,7 +1668,8 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     };
 
     const handleSelection = (e: { selected?: FabricObject[] }) => {
-      const selected = e.selected ?? [];
+      clearHoverHighlight();
+      const selected = (e.selected ?? []).filter((obj) => !isHoverOverlayObject(obj));
       if (ENABLE_CANVA_INTERACTION_ENGINE) {
         selected.forEach((obj) => interactionControllerRef.current?.applyObjectControls(obj));
       }
@@ -1582,6 +1678,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     };
 
     const handleSelectionCleared = () => {
+      clearHoverHighlight();
       updateModifierDistanceGuides();
     };
 
@@ -1590,14 +1687,15 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       applyHoverHighlight(e.target);
     };
 
-    const handleMouseOut = (e: { target?: FabricObject }) => {
-      if (!e.target) return;
-      clearHoverHighlight(e.target);
+    const handleMouseOut = () => {
+      clearHoverHighlight();
     };
 
     const handleObjectMoving = (e: { target?: FabricObject; e?: TPointerEvent }) => {
       const target = e.target;
       if (!target) return;
+      if (isHoverOverlayObject(target)) return;
+      clearHoverHighlight();
       isObjectMovingRef.current = true;
 
       const left = target.left;
@@ -1702,6 +1800,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     const handleObjectModified = () => {
       moveState.target = null;
       isObjectMovingRef.current = false;
+      clearHoverHighlight();
       clearMoveGuides();
       updateModifierDistanceGuides();
     };
@@ -1726,6 +1825,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
 
     const handleModifierWindowBlur = () => {
       modifierDistanceKeyDownRef.current = false;
+      clearHoverHighlight();
       if (!isObjectMovingRef.current) {
         clearMoveGuides();
       }
@@ -1795,6 +1895,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       window.removeEventListener('keydown', handleModifierKeyDown);
       window.removeEventListener('keyup', handleModifierKeyUp);
       window.removeEventListener('blur', handleModifierWindowBlur);
+      clearHoverHighlight();
       clearMoveGuides();
     };
   }, []);

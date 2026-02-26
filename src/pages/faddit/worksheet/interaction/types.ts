@@ -40,7 +40,7 @@ export interface OverlayGuideLine {
   y1: number;
   x2: number;
   y2: number;
-  kind: 'grid' | 'align' | 'distance' | 'axis';
+  kind: 'grid' | 'align' | 'distance' | 'axis' | 'hover';
 }
 
 export interface OverlayHud {

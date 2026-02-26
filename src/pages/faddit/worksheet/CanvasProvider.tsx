@@ -15,6 +15,7 @@ import {
   IText,
   loadSVGFromString,
 } from 'fabric';
+import { applyPathfinderOperation, type PathfinderOp } from './pathfinder';
 
 export type ToolType =
   | 'select'
@@ -91,6 +92,7 @@ interface CanvasCtx {
   pasteClipboard: () => void;
   groupSelected: () => void;
   ungroupSelected: () => void;
+  applyPathfinder: (op: PathfinderOp) => void;
 }
 
 const CanvasContext = createContext<CanvasCtx | null>(null);
@@ -107,11 +109,16 @@ const LAYER_NAME_MAP: Record<string, string> = {
   group: '그룹',
 };
 
-type ObjWithData = FabricObject & { data?: { id?: string; name?: string } };
+type ObjWithData = FabricObject & { data?: { id?: string; name?: string; kind?: string } };
 
 function isArrowObject(obj: FabricObject): boolean {
   const data = (obj as ObjWithData).data;
   return data?.id?.startsWith('arrow-') ?? false;
+}
+
+function isInternalOverlayObject(obj: FabricObject): boolean {
+  const data = (obj as ObjWithData).data;
+  return data?.kind === '__hover_overlay__';
 }
 
 function applyCornerRoundness(obj: FabricObject, radius: number): void {
@@ -141,12 +148,15 @@ function buildLayerTree(
   expandedIds: Set<string>,
   counter: { n: number },
 ): LayerItem[] {
-  return [...objs].reverse().map((obj) => {
-    counter.n += 1;
-    const type = obj.type ?? 'object';
-    const currentData = (obj as ObjWithData).data;
-    const fallbackId = `obj-${Date.now()}-${counter.n}`;
-    const fallbackName = LAYER_NAME_MAP[type] ?? type;
+  return [...objs]
+    .filter((obj) => !isInternalOverlayObject(obj))
+    .reverse()
+    .map((obj) => {
+      counter.n += 1;
+      const type = obj.type ?? 'object';
+      const currentData = (obj as ObjWithData).data;
+      const fallbackId = `obj-${Date.now()}-${counter.n}`;
+      const fallbackName = LAYER_NAME_MAP[type] ?? type;
     const normalizedData = {
       id: currentData?.id ?? fallbackId,
       name: currentData?.name ?? fallbackName,
@@ -166,19 +176,19 @@ function buildLayerTree(
         ? buildLayerTree((obj as Group).getObjects(), depth + 1, expandedIds, counter)
         : [];
 
-    return {
-      obj,
-      id,
-      name,
-      visible: obj.visible !== false,
-      locked: !obj.selectable,
-      previewColor: getObjPreviewColor(obj),
-      depth,
-      isGroup,
-      isExpanded,
-      children,
-    };
-  });
+      return {
+        obj,
+        id,
+        name,
+        visible: obj.visible !== false,
+        locked: !obj.selectable,
+        previewColor: getObjPreviewColor(obj),
+        depth,
+        isGroup,
+        isExpanded,
+        children,
+      };
+    });
 }
 
 function flattenLayerTree(items: LayerItem[]): LayerItem[] {
@@ -892,6 +902,20 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
     [saveHistory, refreshLayers],
   );
 
+  const applyPathfinder = useCallback(
+    (op: PathfinderOp) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const changed = applyPathfinderOperation(canvas, op);
+      if (!changed) return;
+
+      refreshLayers();
+      saveHistory();
+    },
+    [refreshLayers, saveHistory],
+  );
+
   return (
     <CanvasContext.Provider
       value={{
@@ -943,6 +967,7 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
         pasteClipboard,
         groupSelected,
         ungroupSelected,
+        applyPathfinder,
       }}
     >
       {children}

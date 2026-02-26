@@ -1,4 +1,3 @@
-import React from 'react';
 import type { Canvas } from 'fabric';
 import type { OverlayModel } from './types';
 
@@ -15,18 +14,26 @@ function sceneToViewport(canvas: Canvas, x: number, y: number): { x: number; y: 
   };
 }
 
-function getGuideStroke(kind: 'grid' | 'align' | 'distance' | 'axis'): string {
+function getGuideStroke(kind: 'grid' | 'align' | 'distance' | 'axis' | 'hover'): string {
+  if (kind === 'hover') return '#2563EB';
   if (kind === 'distance') return '#F59E0B';
   if (kind === 'axis') return '#0EA5E9';
   if (kind === 'grid') return '#94A3B8';
   return '#2563EB';
 }
 
-function getGuideDash(kind: 'grid' | 'align' | 'distance' | 'axis'): string {
+function getGuideDash(kind: 'grid' | 'align' | 'distance' | 'axis' | 'hover'): string | undefined {
+  if (kind === 'hover') return undefined;
   if (kind === 'distance') return '2 3';
   if (kind === 'axis') return '3 3';
   if (kind === 'grid') return '1 4';
   return '5 3';
+}
+
+function getGuideWidth(kind: 'grid' | 'align' | 'distance' | 'axis' | 'hover'): number {
+  if (kind === 'hover') return 1;
+  if (kind === 'distance') return 1.3;
+  return 1.5;
 }
 
 function getHudStyle(kind?: 'grid' | 'align' | 'distance' | 'axis'): {
@@ -59,6 +66,7 @@ export default function InteractionOverlay({ canvas, model }: Props) {
         const p2 = sceneToViewport(canvas, guide.x2, guide.y2);
         const stroke = getGuideStroke(guide.kind);
         const strokeDasharray = getGuideDash(guide.kind);
+        const strokeWidth = getGuideWidth(guide.kind);
         return (
           <g key={guide.id}>
             <line
@@ -67,8 +75,9 @@ export default function InteractionOverlay({ canvas, model }: Props) {
               x2={p2.x}
               y2={p2.y}
               stroke={stroke}
-              strokeWidth={1.5}
+              strokeWidth={strokeWidth}
               strokeDasharray={strokeDasharray}
+              shapeRendering={guide.kind === 'hover' ? 'crispEdges' : 'geometricPrecision'}
               opacity={0.92}
             />
             {guide.kind === 'align' && (
