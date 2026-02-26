@@ -22,7 +22,7 @@ import {
   getMaterialsByFileSystem,
   MaterialFieldDef,
   updateMaterial,
-} from './materialApi';
+} from '../../../lib/api/materialApi';
 import {
   createDriveFile,
   DriveNode,

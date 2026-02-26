@@ -1,6 +1,10 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import ModalFooterBasic from '../../../../components/ModalFooterBasic';
-import { getMaterialFieldDefs, MaterialCategory, MaterialFieldDef } from '../materialApi';
+import {
+  getMaterialFieldDefs,
+  MaterialCategory,
+  MaterialFieldDef,
+} from '../../../../lib/api/materialApi';
 
 type DimensionValue = {
   width?: number;

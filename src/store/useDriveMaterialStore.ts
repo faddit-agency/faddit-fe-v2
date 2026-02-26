@@ -1,5 +1,5 @@
 import { createAppStore } from './createAppStore';
-import { MaterialItem } from '../pages/faddit/drive/materialApi';
+import { MaterialItem } from '../lib/api/materialApi';
 
 type DriveMaterialState = {
   materialsByFileSystemId: Record<string, MaterialItem[]>;

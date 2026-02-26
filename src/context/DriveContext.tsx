@@ -11,7 +11,7 @@ import {
 } from '../lib/api/driveApi';
 import ChildClothImage from '../images/faddit/childcloth.png';
 import { useAuthStore } from '../store/useAuthStore';
-import { getMaterialsByFileSystem } from '../pages/faddit/drive/materialApi';
+import { getMaterialsByFileSystem } from '../lib/api/materialApi';
 import { useDriveMaterialStore } from '../store/useDriveMaterialStore';
 import { useDriveViewStore } from '../store/useDriveViewStore';
 
@@ -430,15 +430,16 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
 
     setItemParentMap((prev) => ({ ...prev, ...nextParentMap }));
 
-    const nextWorkspaceNodes = [...rootFolders.map(toSidebarFolder), ...rootData.files.map(toSidebarFile)];
+    const nextWorkspaceNodes = [
+      ...rootFolders.map(toSidebarFolder),
+      ...rootData.files.map(toSidebarFile),
+    ];
     const nextFavoriteNodes = [
       ...starredFolders.map(toSidebarFolder),
       ...starredData.files.map(toSidebarFile),
     ];
 
-    setWorkspaces((prev) =>
-      mergeSidebarNodesPreservingLoadedDescendants(prev, nextWorkspaceNodes),
-    );
+    setWorkspaces((prev) => mergeSidebarNodesPreservingLoadedDescendants(prev, nextWorkspaceNodes));
     setFavorites((prev) => mergeSidebarNodesPreservingLoadedDescendants(prev, nextFavoriteNodes));
   }, []);
 
@@ -584,8 +585,12 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
 
       const movingIds = new Set(ids);
 
-      setWorkspaces((prev) => moveNodesWithRootSupport(prev, movingIds, targetFolderId, rootFolderId));
-      setFavorites((prev) => moveNodesWithRootSupport(prev, movingIds, targetFolderId, rootFolderId));
+      setWorkspaces((prev) =>
+        moveNodesWithRootSupport(prev, movingIds, targetFolderId, rootFolderId),
+      );
+      setFavorites((prev) =>
+        moveNodesWithRootSupport(prev, movingIds, targetFolderId, rootFolderId),
+      );
 
       await updateDriveItems({
         id: ids,
