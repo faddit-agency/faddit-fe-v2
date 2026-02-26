@@ -53,6 +53,7 @@ export interface DriveItemCardProps {
   };
   creatorName?: string;
   creatorAvatarUrl?: string;
+  recentActionLabel?: string;
   isStarred?: boolean;
   hideHoverTools?: boolean;
   onMoveToFolder?: (id: string) => void;
@@ -444,6 +445,7 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
   materialCardMeta,
   creatorName,
   creatorAvatarUrl,
+  recentActionLabel,
   isStarred = false,
   hideHoverTools = false,
   onMoveToFolder,
@@ -912,9 +914,15 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
             {children && <div className='mb-5'>{children}</div>}
           </div>
 
-          {/* Card footer */}
-          <div className='flex items-center justify-between'>
-            <div className='flex items-center gap-2 text-[clamp(11px,0.78vw,12px)] font-medium text-gray-500 dark:text-gray-400'>
+        {/* Card footer */}
+        <div className='flex items-center justify-between'>
+            <div className='flex flex-col gap-1'>
+              {recentActionLabel ? (
+                <div className='text-[11px] font-medium text-gray-500 dark:text-gray-400'>
+                  {recentActionLabel}
+                </div>
+              ) : null}
+              <div className='flex items-center gap-2 text-[clamp(11px,0.78vw,12px)] font-medium text-gray-500 dark:text-gray-400'>
               {creatorAvatarUrl ? (
                 <img
                   src={creatorAvatarUrl}
@@ -927,6 +935,7 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
                 </span>
               )}
               <span>{creatorName || '알 수 없음'}</span>
+              </div>
             </div>
             {isStarred ? (
               <svg

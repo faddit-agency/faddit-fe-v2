@@ -327,6 +327,7 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
     loadFolderChildren,
     getItemParentId,
     currentFolderIdPath,
+    rootFolderId,
   } = useDrive();
 
   const trigger = useRef(null);
@@ -338,6 +339,7 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
   const [pointedFolderId, setPointedFolderId] = useState('my-workspace');
   const storageUsed = useAuthStore((state) => state.user?.storageUsed ?? 0);
   const storageLimit = useAuthStore((state) => state.user?.storageLimit ?? 0);
+  const rootFolderFromAuth = useAuthStore((state) => state.user?.rootFolder ?? null);
   const { setNodeRef: setMyWorkspaceDropRef, isOver: isMyWorkspaceOver } = useDroppable({
     id: 'my-workspace',
     data: { type: 'folder', id: 'my-workspace' },
@@ -713,7 +715,8 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
                   }`}
                   onClick={() => {
                     setPointedFolderId('my-workspace');
-                    navigate('/faddit/drive');
+                    const workspaceRoot = rootFolderId || rootFolderFromAuth;
+                    navigate(workspaceRoot ? `/faddit/drive/${workspaceRoot}` : '/faddit/drive');
                   }}
                 >
                   <div className='flex items-center justify-between pl-4'>

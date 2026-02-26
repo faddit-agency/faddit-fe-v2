@@ -26,6 +26,8 @@ export interface DriveItem {
   isStarred?: boolean;
   owner?: string;
   ownerProfileImg?: string;
+  recentActionType?: 'file_view' | 'file_edit';
+  recentActorName?: string;
   date?: string;
   size?: string;
   parentId?: string | null;
@@ -78,6 +80,11 @@ interface DriveContextType {
   currentFolderId: string | null;
   currentFolderPath: string;
   currentFolderIdPath: string;
+  setCurrentFolderLocation: (
+    folderId: string | null,
+    path: string,
+    idPath: string,
+  ) => void;
   hydrateDrive: (rootFolderId: string) => Promise<void>;
   refreshDrive: () => Promise<void>;
   loadFolderView: (folderId: string) => Promise<void>;
@@ -314,6 +321,8 @@ const toDriveItem = (node: DriveNode, imageSrc: string): DriveItem => ({
   isStarred: node.isStarred,
   owner: node.creatorName || undefined,
   ownerProfileImg: node.creatorProfileImg || undefined,
+  recentActionType: node.recentActionType,
+  recentActorName: node.recentActorName || undefined,
   date: node.updatedAt ? String(node.updatedAt).slice(0, 10) : '-',
   size: formatBytes(node.size),
   parentId: node.parentId,
@@ -799,6 +808,15 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
     [itemParentMap],
   );
 
+  const setCurrentFolderLocation = useCallback(
+    (folderId: string | null, path: string, idPath: string) => {
+      setCurrentFolderId(folderId);
+      setCurrentFolderPath(path);
+      setCurrentFolderIdPath(idPath);
+    },
+    [],
+  );
+
   const value = useMemo(
     () => ({
       items,
@@ -814,6 +832,7 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
       currentFolderId,
       currentFolderPath,
       currentFolderIdPath,
+      setCurrentFolderLocation,
       hydrateDrive,
       refreshDrive,
       loadFolderView,
@@ -837,6 +856,7 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
       currentFolderId,
       currentFolderPath,
       currentFolderIdPath,
+      setCurrentFolderLocation,
       hydrateDrive,
       refreshDrive,
       loadFolderView,

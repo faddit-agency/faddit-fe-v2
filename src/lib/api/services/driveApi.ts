@@ -17,6 +17,8 @@ export type DriveNode = {
   tag?: string;
   creatorName?: string;
   creatorProfileImg?: string;
+  recentActionType?: 'file_view' | 'file_edit';
+  recentActorName?: string;
   deletedAt?: string;
   worksheetThumbnail?: string;
 };
@@ -89,6 +91,14 @@ export type DriveSearchResponse = {
   data: DriveNode[];
 };
 
+export type DriveRecentActivityType = 'folder_enter' | 'file_view' | 'file_edit';
+
+export type DriveRecentTrackPayload = {
+  userId: string;
+  fileSystemId: string;
+  eventType: DriveRecentActivityType;
+};
+
 export type CreateDriveFilePayload = {
   parentId: string | null;
   userId: string;
@@ -122,6 +132,15 @@ export const getDriveAll = async (path: string) => {
     params: { path },
   });
   return response.data;
+};
+
+export const getDriveRecent = async () => {
+  const response = await baseHttpClient.get<DriveAllResponse>(DRIVE_ENDPOINTS.recent);
+  return response.data;
+};
+
+export const trackDriveRecentActivity = async (payload: DriveRecentTrackPayload) => {
+  await baseHttpClient.post(DRIVE_ENDPOINTS.recentTrack, payload);
 };
 
 export const getDriveStarredAll = async () => {

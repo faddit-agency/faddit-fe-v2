@@ -26,10 +26,13 @@ import {
 import {
   createDriveFile,
   DriveNode,
+  DriveRecentActivityType,
   DriveSearchCategory,
   DriveUploadTag,
   getDriveFilePreviewUrl,
+  getDriveRecent,
   searchDriveItems,
+  trackDriveRecentActivity,
   updateDriveItems,
 } from '../../../lib/api/driveApi';
 import { createWorksheet } from '../../../lib/api/worksheetApi';
@@ -45,6 +48,7 @@ type DriveListEntry = {
   subtitle?: string;
   date: string;
   size: string;
+  isStarred?: boolean;
 };
 
 type DragSelectionEntry = {
@@ -505,6 +509,10 @@ const DriveListRow: React.FC<{
   onToggleSelect: (checked: boolean) => void;
   onRowClick: (entry: DriveListEntry, event: React.MouseEvent<HTMLTableRowElement>) => void;
   onRowDoubleClick: (entry: DriveListEntry, event: React.MouseEvent<HTMLTableRowElement>) => void;
+  onMoveToFolder: (id: string) => void;
+  onAddFavorite: (id: string, nextStarred: boolean) => void;
+  onRenameFolder: (folderId: string, name: string) => void;
+  onDeleteEntry: (id: string, name: string) => void;
 }> = ({
   entry,
   isSelected,
@@ -514,7 +522,12 @@ const DriveListRow: React.FC<{
   onToggleSelect,
   onRowClick,
   onRowDoubleClick,
+  onMoveToFolder,
+  onAddFavorite,
+  onRenameFolder,
+  onDeleteEntry,
 }) => {
+  const [kebabOpen, setKebabOpen] = useState(false);
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: entry.id,
     data: {
@@ -610,15 +623,74 @@ const DriveListRow: React.FC<{
       <td className='px-4 py-3 text-gray-600 dark:text-gray-300'>{entry.date}</td>
       <td className='px-4 py-3 text-gray-600 dark:text-gray-300'>{entry.size}</td>
       <td className='w-px px-4 py-3 text-right'>
-        <button
-          type='button'
-          className='inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700/60 dark:hover:text-gray-200'
-          aria-label='항목 옵션'
-        >
-          <svg className='h-4 w-4 fill-current' viewBox='0 0 16 16' aria-hidden='true'>
-            <path d='M8 3a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Zm0 7.5A1.5 1.5 0 1 0 8 7.5a1.5 1.5 0 0 0 0 3Zm0 5.5A1.5 1.5 0 1 0 8 13a1.5 1.5 0 0 0 0 3Z' />
-          </svg>
-        </button>
+        <PopoverPrimitive.Root open={kebabOpen} onOpenChange={setKebabOpen}>
+          <PopoverPrimitive.Trigger asChild>
+            <button
+              type='button'
+              className='inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700/60 dark:hover:text-gray-200'
+              aria-label='항목 옵션'
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <svg className='h-4 w-4 fill-current' viewBox='0 0 16 16' aria-hidden='true'>
+                <path d='M8 3a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Zm0 7.5A1.5 1.5 0 1 0 8 7.5a1.5 1.5 0 0 0 0 3Zm0 5.5A1.5 1.5 0 1 0 8 13a1.5 1.5 0 0 0 0 3Z' />
+              </svg>
+            </button>
+          </PopoverPrimitive.Trigger>
+          <PopoverPrimitive.Portal>
+            <PopoverPrimitive.Content
+              align='end'
+              side='bottom'
+              sideOffset={6}
+              className='z-50 w-36 rounded-lg border border-gray-200 bg-white p-1.5 shadow-lg dark:border-gray-700/60 dark:bg-gray-800'
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                type='button'
+                className='w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
+                onClick={() => {
+                  setKebabOpen(false);
+                  onMoveToFolder(entry.id);
+                }}
+              >
+                폴더 이동
+              </button>
+              <button
+                type='button'
+                className='w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
+                onClick={() => {
+                  setKebabOpen(false);
+                  onAddFavorite(entry.id, !entry.isStarred);
+                }}
+              >
+                {entry.isStarred ? '즐겨찾기 취소' : '즐겨 찾기'}
+              </button>
+              {entry.kind === 'folder' ? (
+                <button
+                  type='button'
+                  className='w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
+                  onClick={() => {
+                    setKebabOpen(false);
+                    onRenameFolder(entry.id, entry.title);
+                  }}
+                >
+                  폴더 이름 수정
+                </button>
+              ) : null}
+              <button
+                type='button'
+                className='w-full rounded-md px-2 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-500/10'
+                onClick={() => {
+                  setKebabOpen(false);
+                  onDeleteEntry(entry.id, entry.title);
+                }}
+              >
+                삭제하기
+              </button>
+            </PopoverPrimitive.Content>
+          </PopoverPrimitive.Portal>
+        </PopoverPrimitive.Root>
       </td>
     </tr>
   );
@@ -642,6 +714,7 @@ const FadditDrive: React.FC = () => {
     loadFolderView,
     currentFolderPath,
     currentFolderIdPath,
+    setCurrentFolderLocation,
     rootFolderId,
     currentFolderId,
     refreshDrive,
@@ -657,6 +730,7 @@ const FadditDrive: React.FC = () => {
   const currentUserProfileImg = useAuthStore((state) => state.user?.profileImg);
   const materialsByFileSystemId = useDriveStore((state) => state.materialsByFileSystemId);
   const setMaterialsForFile = useDriveStore((state) => state.setMaterialsForFile);
+  const clearMaterialsForFiles = useDriveStore((state) => state.clearMaterialsForFiles);
   const searchLoading = useDriveStore((state) => state.searchLoading);
   const driveLoading = useDriveStore((state) => state.driveLoading);
   const setSearchLoading = useDriveStore((state) => state.setSearchLoading);
@@ -707,6 +781,7 @@ const FadditDrive: React.FC = () => {
   const gridContentRef = useRef<HTMLDivElement | null>(null);
   const editImageInputRef = useRef<HTMLInputElement | null>(null);
   const keepNextDetailEditModeRef = useRef(false);
+  const lastTrackedViewFileIdRef = useRef<string>('');
   const resultFilterRef = useRef<HTMLDivElement | null>(null);
   const resultSearchInputRef = useRef<HTMLInputElement | null>(null);
   const suppressBlankClearRef = useRef(false);
@@ -733,6 +808,7 @@ const FadditDrive: React.FC = () => {
     [searchCategoriesParam],
   );
   const isSearchMode = searchModeParam === 'search' || Boolean(searchKeyword);
+  const isRecentMode = !isSearchMode && !folderId;
 
   const categoryLabelMap: Record<string, string> = {
     fabric: '원단',
@@ -917,14 +993,14 @@ const FadditDrive: React.FC = () => {
 
   const breadcrumbParts = useMemo(() => {
     if (!currentFolderPath) {
-      return ['홈'];
+      return [] as string[];
     }
 
     const segments = currentFolderPath
       .split('/')
       .map((segment) => segment.trim())
       .filter(Boolean);
-    return segments.length > 0 ? segments : ['홈'];
+    return segments;
   }, [currentFolderPath]);
 
   const breadcrumbIds = useMemo(() => {
@@ -942,13 +1018,29 @@ const FadditDrive: React.FC = () => {
     [breadcrumbParts],
   );
 
+  const breadcrumbDisplayParts = useMemo(() => visibleBreadcrumbParts, [visibleBreadcrumbParts]);
+
   const breadcrumbIdStartIndex = useMemo(
-    () => Math.max(0, breadcrumbIds.length - visibleBreadcrumbParts.length),
-    [breadcrumbIds.length, visibleBreadcrumbParts.length],
+    () => Math.max(0, breadcrumbIds.length - breadcrumbDisplayParts.length),
+    [breadcrumbDisplayParts.length, breadcrumbIds.length],
   );
 
-  const pageTitle = isSearchMode ? '검색결과' : breadcrumbParts[breadcrumbParts.length - 1] || '홈';
   const effectiveRootFolderId = rootFolderId || rootFolderFromAuth || '';
+  const isRootFolderView =
+    !isSearchMode &&
+    !isRecentMode &&
+    Boolean(effectiveRootFolderId) &&
+    (folderId === effectiveRootFolderId || currentFolderId === effectiveRootFolderId);
+
+  const pageTitle = isRecentMode
+    ? '최근 문서함'
+    : isRootFolderView
+      ? '내 워크스페이스'
+    : isSearchMode
+      ? '검색결과'
+      : breadcrumbDisplayParts[breadcrumbDisplayParts.length - 1] || '내 워크스페이스';
+
+  const showDriveBreadcrumb = !isSearchMode && !isRecentMode && !isRootFolderView;
 
   const favoriteFolderIdSet = useMemo(() => {
     const ids = new Set<string>();
@@ -1064,6 +1156,8 @@ const FadditDrive: React.FC = () => {
                 isStarred: node.isStarred,
                 owner: node.creatorName || undefined,
                 ownerProfileImg: node.creatorProfileImg || undefined,
+                recentActionType: node.recentActionType,
+                recentActorName: node.recentActorName || undefined,
                 date: node.updatedAt ? String(node.updatedAt).slice(0, 10) : '-',
                 size: formatBytes(node.size),
                 parentId: node.parentId,
@@ -1103,19 +1197,103 @@ const FadditDrive: React.FC = () => {
   }, [isSearchMode, searchCategories, searchKeyword, setDriveFolders, setItems]);
 
   useEffect(() => {
-    const effectiveRootFolderId = rootFolderId || rootFolderFromAuth;
-    if (!effectiveRootFolderId || isSearchMode) {
+    if (isSearchMode) {
       return;
     }
 
     let cancelled = false;
     setSearchLoading(false);
     setSearchTotalCount(0);
-    const targetFolderId = folderId || effectiveRootFolderId;
+
+    const loadRecentView = async () => {
+      const recentData = await getDriveRecent();
+      const folders = recentData.folders
+        .filter((node) => node.type === 'folder' && !node.isRoot)
+        .map((node) => ({
+          id: node.fileSystemId,
+          name: node.name,
+          shared: false,
+          updatedAt: node.updatedAt || '',
+          updatedBy: '',
+          parentId: node.parentId,
+          isStarred: node.isStarred,
+        }));
+
+      const files = await Promise.all(
+        recentData.files
+          .filter((node) => node.type !== 'folder')
+          .map(async (node) => {
+            const previewUrl = isImageFile(node.mimetype)
+              ? await getDriveFilePreviewUrl(node.fileSystemId).catch(() => '')
+              : '';
+
+            return {
+              id: node.fileSystemId,
+              worksheetId: node.worksheetId,
+              nodeType: node.type,
+              imageSrc: previewUrl || ChildClothImage,
+              imageAlt: node.name,
+              title: node.name,
+              subtitle: node.mimetype ? `.${node.mimetype}` : 'file',
+              badge: node.tag ? String(node.tag) : '파일',
+              isStarred: node.isStarred,
+              owner: node.creatorName || undefined,
+              ownerProfileImg: node.creatorProfileImg || undefined,
+              recentActionType: node.recentActionType,
+              recentActorName: node.recentActorName || undefined,
+              date: node.updatedAt ? String(node.updatedAt).slice(0, 10) : '-',
+              size: formatBytes(node.size),
+              parentId: node.parentId,
+              sourcePath: node.path,
+              stateStoreKey: 'Drive.recent.items',
+            } as DriveItem;
+          }),
+      );
+
+      if (cancelled) return;
+
+      setCurrentFolderLocation(null, '', '');
+      setDriveFolders(folders);
+      setItems(files);
+
+      const fileSystemIds = recentData.files
+        .filter((node) => node.type !== 'folder')
+        .map((node) => node.fileSystemId);
+      if (!userId) {
+        clearMaterialsForFiles(fileSystemIds);
+      } else {
+        await Promise.all(
+          fileSystemIds.map(async (fileSystemId) => {
+            try {
+              const materials = await getMaterialsByFileSystem(fileSystemId, userId);
+              setMaterialsForFile(fileSystemId, materials);
+            } catch {
+              setMaterialsForFile(fileSystemId, []);
+            }
+          }),
+        );
+      }
+    };
+
+    const loadFolderByRoute = async () => {
+      const effectiveRootFolderId = rootFolderId || rootFolderFromAuth;
+      const targetFolderId = folderId || effectiveRootFolderId;
+      if (!targetFolderId) return;
+      await loadFolderView(targetFolderId);
+
+      if (folderId && userId) {
+        await trackDriveRecentActivity({
+          userId,
+          fileSystemId: folderId,
+          eventType: 'folder_enter' as DriveRecentActivityType,
+        });
+      }
+    };
+
     setDriveLoading(true);
-    loadFolderView(targetFolderId)
+    (isRecentMode ? loadRecentView() : loadFolderByRoute())
       .catch((error) => {
-        console.error('Failed to load drive folder view', error);
+        console.error('Failed to load drive view', error);
       })
       .finally(() => {
         if (!cancelled) {
@@ -1126,7 +1304,21 @@ const FadditDrive: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [folderId, isSearchMode, loadFolderView, rootFolderFromAuth, rootFolderId]);
+  }, [
+    clearMaterialsForFiles,
+    folderId,
+    isRecentMode,
+    isSearchMode,
+    loadFolderView,
+    rootFolderFromAuth,
+    rootFolderId,
+    setCurrentFolderLocation,
+    setItems,
+    setMaterialsForFile,
+    setSearchLoading,
+    setSearchTotalCount,
+    userId,
+  ]);
 
   useEffect(() => {
     if (!fileIdFromQuery) {
@@ -1150,9 +1342,29 @@ const FadditDrive: React.FC = () => {
     setDetailPanelOpen(true);
   }, [fileIdFromQuery, items]);
 
+  useEffect(() => {
+    if (!detailPanelOpen || !activeItemId || !userId) {
+      return;
+    }
+
+    if (lastTrackedViewFileIdRef.current === activeItemId) {
+      return;
+    }
+
+    lastTrackedViewFileIdRef.current = activeItemId;
+    trackDriveRecentActivity({
+      userId,
+      fileSystemId: activeItemId,
+      eventType: 'file_view',
+    }).catch((error) => {
+      console.error('Failed to track recent file view', error);
+    });
+  }, [activeItemId, detailPanelOpen, userId]);
+
   const clearSelectionEffects = () => {
     setSelectedIds([]);
     setActiveItemId('');
+    lastTrackedViewFileIdRef.current = '';
     setDetailPanelEditMode(false);
     setDetailPanelOpen(false);
     setFileQuery(null);
@@ -1610,6 +1822,7 @@ const FadditDrive: React.FC = () => {
         title: folder.name,
         date: `${folder.updatedAt} ${folder.updatedBy}`,
         size: '—',
+        isStarred: folder.isStarred,
       })),
       ...displayedItems.map((item) => ({
         id: item.id,
@@ -1619,6 +1832,7 @@ const FadditDrive: React.FC = () => {
         subtitle: item.subtitle,
         date: `${item.date || '-'} ${item.owner || ''}`.trim(),
         size: item.size || '-',
+        isStarred: Boolean(item.isStarred),
       })),
     ],
     [displayedItems, displayedFolders],
@@ -1692,6 +1906,7 @@ const FadditDrive: React.FC = () => {
   };
 
   const handleCloseDetailPanel = () => {
+    lastTrackedViewFileIdRef.current = '';
     setDetailPanelEditMode(false);
     setDetailPanelOpen(false);
     setFileQuery(null);
@@ -1721,8 +1936,10 @@ const FadditDrive: React.FC = () => {
 
     try {
       setDetailSaveLoading(true);
+      let hasEdited = false;
       if (trimmedName !== activeItem.title) {
         await updateDriveItems({ id: [activeItem.id], name: trimmedName });
+        hasEdited = true;
       }
 
       if (primaryActiveMaterial) {
@@ -1758,7 +1975,16 @@ const FadditDrive: React.FC = () => {
             attributes: nextAttributes,
             imageUrl: normalizedImageUrl,
           });
+          hasEdited = true;
         }
+      }
+
+      if (hasEdited) {
+        await trackDriveRecentActivity({
+          userId,
+          fileSystemId: activeItem.id,
+          eventType: 'file_edit',
+        });
       }
 
       await refreshDrive();
@@ -2785,16 +3011,22 @@ const FadditDrive: React.FC = () => {
                     {pageTitle}
                   </h1>
                 )}
-                {!isSearchMode && (
+                {showDriveBreadcrumb && (
                   <div className='mt-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-600 dark:text-gray-300'>
                     <button
                       type='button'
-                      onClick={() => navigate('/faddit/drive')}
+                      onClick={() =>
+                        navigate(
+                          effectiveRootFolderId
+                            ? `/faddit/drive/${effectiveRootFolderId}`
+                            : '/faddit/drive',
+                        )
+                      }
                       className='rounded px-1.5 py-0.5 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-100'
                     >
-                      홈
+                      내 워크스페이스
                     </button>
-                    {visibleBreadcrumbParts.map((part, index) => {
+                    {breadcrumbDisplayParts.map((part, index) => {
                       const breadcrumbId = breadcrumbIds[breadcrumbIdStartIndex + index];
 
                       return (
@@ -3078,6 +3310,20 @@ const FadditDrive: React.FC = () => {
                             : [item.isStarred ? '즐겨찾기된 파일' : '', item.subtitle]
                                 .filter((value): value is string => Boolean(value))
                                 .join(' · ');
+
+                          const recentActionLabel =
+                            !isRecentMode && item.recentActionType && item.recentActorName
+                              ? item.recentActionType === 'file_edit'
+                                ? `${item.recentActorName}이 수정하셨습니다`
+                                : `${item.recentActorName}이 열람했습니다`
+                              : undefined;
+
+                          const creatorDisplayName =
+                            isRecentMode && item.recentActionType
+                              ? item.recentActionType === 'file_edit'
+                                ? '내가 수정함'
+                                : '내가 열어본 항목'
+                              : item.owner || currentUserName;
                           return (
                             <DriveItemCard
                               key={item.id}
@@ -3096,13 +3342,14 @@ const FadditDrive: React.FC = () => {
                                     }
                                   : undefined
                               }
-                              creatorName={item.owner || currentUserName}
+                              creatorName={creatorDisplayName}
                               creatorAvatarUrl={
                                 item.ownerProfileImg ||
                                 ((item.owner || currentUserName) === currentUserName
                                   ? currentUserProfileImg
                                   : undefined)
                               }
+                              recentActionLabel={recentActionLabel}
                               isStarred={Boolean(item.isStarred)}
                               imageSrc={displayImageSrc}
                               imageAlt={item.imageAlt}
@@ -3160,6 +3407,10 @@ const FadditDrive: React.FC = () => {
                             onToggleSelect={(checked) => applySelection(entry.id, checked)}
                             onRowClick={handleListRowClick}
                             onRowDoubleClick={handleListRowDoubleClick}
+                            onMoveToFolder={handleOpenMoveDialog}
+                            onAddFavorite={handleAddFavoriteFromMenu}
+                            onRenameFolder={handleOpenRenameFolderDialog}
+                            onDeleteEntry={handleDeleteSingleItem}
                           />
                         );
                       })}

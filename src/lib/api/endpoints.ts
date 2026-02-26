@@ -14,6 +14,8 @@ export const AUTH_ENDPOINTS = {
 
 export const DRIVE_ENDPOINTS = {
   all: '/drive/all',
+  recent: '/drive/recent',
+  recentTrack: '/drive/recent/track',
   starredAll: '/drive/starred-all',
   trashAll: '/drive/trash-all',
   root: '/drive',
