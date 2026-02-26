@@ -45,7 +45,15 @@ export interface DriveItemCardProps {
   materialFetchedFromBackend?: boolean;
   categoryLabel?: string;
   summaryText?: string;
+  materialCardMeta?: {
+    codeInternal?: string;
+    vendorName?: string;
+    itemName?: string;
+    originCountry?: string;
+  };
   creatorName?: string;
+  creatorAvatarUrl?: string;
+  recentActionLabel?: string;
   isStarred?: boolean;
   hideHoverTools?: boolean;
   onMoveToFolder?: (id: string) => void;
@@ -78,6 +86,65 @@ const MoreIcon = ({ className }: { className?: string }) => (
     <circle cx='4' cy='8' r='1.25' />
     <circle cx='8' cy='8' r='1.25' />
     <circle cx='12' cy='8' r='1.25' />
+  </svg>
+);
+
+const CodeLineIcon = ({ className }: { className?: string }) => (
+  <svg
+    className={className}
+    viewBox='0 0 16 16'
+    fill='none'
+    stroke='currentColor'
+    strokeWidth='1.6'
+  >
+    <path d='M5.5 4 2.5 8l3 4' />
+    <path d='M10.5 4 13.5 8l-3 4' />
+  </svg>
+);
+
+const VendorLineIcon = ({ className }: { className?: string }) => (
+  <svg
+    className={className}
+    viewBox='0 0 16 16'
+    fill='none'
+    stroke='currentColor'
+    strokeWidth='1.6'
+  >
+    <path d='M2.5 6.5 8 3l5.5 3.5V13H2.5z' />
+    <path d='M6 13V9h4v4' />
+  </svg>
+);
+
+const ItemLineIcon = ({ className }: { className?: string }) => (
+  <svg
+    className={className}
+    viewBox='0 0 16 16'
+    fill='none'
+    stroke='currentColor'
+    strokeWidth='1.6'
+  >
+    <rect x='2.5' y='2.5' width='11' height='11' rx='1.5' />
+    <path d='M5.5 6.5h5M5.5 9h5' />
+  </svg>
+);
+
+const OriginLineIcon = ({ className }: { className?: string }) => (
+  <svg
+    className={className}
+    viewBox='0 0 16 16'
+    fill='none'
+    stroke='currentColor'
+    strokeWidth='1.6'
+  >
+    <circle cx='8' cy='8' r='5.5' />
+    <path d='M2.5 8h11M8 2.5c1.8 1.8 1.8 9.2 0 11M8 2.5c-1.8 1.8-1.8 9.2 0 11' />
+  </svg>
+);
+
+const DefaultAvatarIcon = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='1.8'>
+    <circle cx='12' cy='8.2' r='3.2' />
+    <path d='M5.5 19a6.5 6.5 0 0 1 13 0' />
   </svg>
 );
 
@@ -375,7 +442,10 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
   materialFetchedFromBackend,
   categoryLabel,
   summaryText,
+  materialCardMeta,
   creatorName,
+  creatorAvatarUrl,
+  recentActionLabel,
   isStarred = false,
   hideHoverTools = false,
   onMoveToFolder,
@@ -683,12 +753,21 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
           )}
           <div className='mt-3 grow'>
             <header className={subtitle || summaryText ? 'mb-2' : 'mb-3'}>
-              <h3 className='mb-1 text-[clamp(15px,1vw,18px)] font-semibold text-gray-800 dark:text-gray-100'>
+              <h3
+                className='mb-1 text-[clamp(14px,0.9vw,16px)] font-semibold text-gray-800 dark:text-gray-100'
+                style={{
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
                 {title}
               </h3>
 
               <PopoverPrimitive.Root open={chipEditorOpen} onOpenChange={setChipEditorOpen}>
-                <PopoverPrimitive.Trigger asChild>
+                {/* <PopoverPrimitive.Trigger asChild>
                   <button
                     type='button'
                     className='mb-2 flex min-h-7 w-full flex-wrap items-center gap-1 text-left'
@@ -721,7 +800,7 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
                       );
                     })}
                   </button>
-                </PopoverPrimitive.Trigger>
+                </PopoverPrimitive.Trigger> */}
                 <PopoverPrimitive.Portal>
                   <PopoverPrimitive.Content
                     align='start'
@@ -800,11 +879,32 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
                 </PopoverPrimitive.Portal>
               </PopoverPrimitive.Root>
 
-              {(summaryText || subtitle) && (
+              {/* {subtitle && (
                 <div className='text-[clamp(12px,0.86vw,14px)] font-medium text-gray-600 dark:text-gray-400'>
-                  {summaryText || subtitle}
+                  {subtitle}
                 </div>
-              )}
+              )} */}
+
+              {materialCardMeta ? (
+                <div className='mt-3 space-y-1.5 text-[12px] text-gray-600 dark:text-gray-300'>
+                  <div className='flex items-center gap-1.5'>
+                    <CodeLineIcon className='h-3.5 w-3.5 shrink-0' />
+                    <span className='truncate'>{materialCardMeta.codeInternal || '-'}</span>
+                  </div>
+                  <div className='flex items-center gap-1.5'>
+                    <VendorLineIcon className='h-3.5 w-3.5 shrink-0' />
+                    <span className='truncate'>{materialCardMeta.vendorName || '-'}</span>
+                  </div>
+                  <div className='flex items-center gap-1.5'>
+                    <ItemLineIcon className='h-3.5 w-3.5 shrink-0' />
+                    <span className='truncate'>{materialCardMeta.itemName || '-'}</span>
+                  </div>
+                  <div className='flex items-center gap-1.5'>
+                    <OriginLineIcon className='h-3.5 w-3.5 shrink-0' />
+                    <span className='truncate'>{materialCardMeta.originCountry || '-'}</span>
+                  </div>
+                </div>
+              ) : null}
 
               {/* <div className='mt-2 space-y-1 text-xs text-gray-500 dark:text-gray-400'>
                 {summaryText ? <div>{summaryText}</div> : null}
@@ -814,10 +914,28 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
             {children && <div className='mb-5'>{children}</div>}
           </div>
 
-          {/* Card footer */}
-          <div className='flex items-center justify-between'>
-            <div className='text-[clamp(11px,0.78vw,12px)] font-medium text-gray-500 dark:text-gray-400'>
-              생성자: {creatorName || '알 수 없음'}
+        {/* Card footer */}
+        <div className='flex items-center justify-between'>
+            <div className='flex flex-col gap-1'>
+              {recentActionLabel ? (
+                <div className='text-[11px] font-medium text-gray-500 dark:text-gray-400'>
+                  {recentActionLabel}
+                </div>
+              ) : null}
+              <div className='flex items-center gap-2 text-[clamp(11px,0.78vw,12px)] font-medium text-gray-500 dark:text-gray-400'>
+              {creatorAvatarUrl ? (
+                <img
+                  src={creatorAvatarUrl}
+                  alt={creatorName || 'creator avatar'}
+                  className='h-5 w-5 rounded-full object-cover'
+                />
+              ) : (
+                <span className='inline-flex h-5 w-5 items-center justify-center rounded-full border border-gray-300 text-gray-500 dark:border-gray-600 dark:text-gray-300'>
+                  <DefaultAvatarIcon className='h-3.5 w-3.5' />
+                </span>
+              )}
+              <span>{creatorName || '알 수 없음'}</span>
+              </div>
             </div>
             {isStarred ? (
               <svg

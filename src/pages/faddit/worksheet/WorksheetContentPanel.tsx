@@ -19,7 +19,46 @@ interface WorksheetContentPanelProps {
   readOnly?: boolean;
   autosaveEnabled: boolean;
   onToggleAutosave: () => void;
+  guideModeEnabled: boolean;
+  onToggleGuideMode: () => void;
 }
+
+const GUIDE_MANUAL_ITEMS: Array<{ title: string; shortcut: string; usage: string }> = [
+  { title: '선택 모드', shortcut: 'V', usage: '객체 선택/이동/크기 조절' },
+  { title: '브러쉬', shortcut: 'B', usage: '자유 드로잉 경로 생성' },
+  { title: '펜툴', shortcut: 'P', usage: '클릭은 직선, 드래그는 곡선 앵커 생성' },
+  { title: '텍스트', shortcut: 'T', usage: '캔버스 클릭으로 텍스트 박스 생성' },
+  { title: '사각형', shortcut: 'R', usage: '드래그로 사각형 생성' },
+  { title: '원', shortcut: 'O', usage: '드래그로 원/타원 생성' },
+  { title: '삼각형', shortcut: 'Y', usage: '드래그로 삼각형 생성' },
+  { title: '선', shortcut: 'L', usage: '드래그로 직선 생성' },
+  { title: '화살표', shortcut: '-', usage: '드래그로 화살표 생성' },
+  { title: '패스 편집', shortcut: 'A', usage: '선택한 패스를 직접 편집(더블클릭과 동일)' },
+  { title: '그룹화', shortcut: 'Cmd/Ctrl+G', usage: '선택 객체 그룹화' },
+  { title: '그룹 해제', shortcut: 'Cmd/Ctrl+Alt+G', usage: '그룹 해제' },
+  { title: '복사/붙여넣기', shortcut: 'Cmd/Ctrl+C, V', usage: '선택 객체 복사/붙여넣기' },
+  { title: '실행 취소/다시 실행', shortcut: 'Cmd/Ctrl+Z, Y', usage: '최근 작업 되돌리기/복원' },
+  { title: '팬', shortcut: 'Space + Drag', usage: '캔버스 이동(패닝)' },
+  {
+    title: '이동 축 고정',
+    shortcut: 'Shift + Drag',
+    usage: '드래그 중 수평/수직 한 축으로 이동 고정',
+  },
+  {
+    title: '스마트 가이드',
+    shortcut: '-',
+    usage: '정렬 지시선 + 끝점/중간/중심 구분 라벨 표시',
+  },
+  {
+    title: '거리 보조선',
+    shortcut: 'Alt/Cmd (Hold)',
+    usage: '선택 요소와 주변 요소 거리(px) 표시',
+  },
+  { title: '키보드 이동', shortcut: '↑ ↓ ← →', usage: '선택 요소를 방향키로 미세 이동' },
+  { title: '각도 스냅', shortcut: 'Shift', usage: '선/펜 핸들 각도 스냅' },
+  { title: '펜 비대칭 핸들', shortcut: 'Alt + Drag', usage: '펜 핸들을 한쪽만 조절' },
+  { title: '펜 앵커 삭제', shortcut: 'Backspace', usage: '마지막 펜 앵커 제거' },
+];
 
 const PAGE_TYPE_META: Record<
   PageType,
@@ -86,6 +125,8 @@ export default function WorksheetContentPanel({
   readOnly = false,
   autosaveEnabled,
   onToggleAutosave,
+  guideModeEnabled,
+  onToggleGuideMode,
 }: WorksheetContentPanelProps) {
   const pages = editorDocument.pages;
   const selectedId = editorDocument.activePageId;
@@ -97,10 +138,16 @@ export default function WorksheetContentPanel({
   const [editingName, setEditingName] = useState('');
   const addMenuRef = useRef<HTMLDivElement>(null);
   const addMenuPanelRef = useRef<HTMLDivElement>(null);
-  const [addMenuPosition, setAddMenuPosition] = useState<{ left: number; top: number } | null>(null);
+  const [addMenuPosition, setAddMenuPosition] = useState<{ left: number; top: number } | null>(
+    null,
+  );
   const previousSelectedIdRef = useRef<string>(selectedId);
   const sketchPagesRef = useRef(editorDocument.sketchPages);
-  const lastLoadedRef = useRef<{ pageId: string | null; json: string | null; session: string | null }>({
+  const lastLoadedRef = useRef<{
+    pageId: string | null;
+    json: string | null;
+    session: string | null;
+  }>({
     pageId: null,
     json: null,
     session: null,
@@ -112,7 +159,9 @@ export default function WorksheetContentPanel({
     const firstSketchPageId = pages.find((page) => page.type === 'sketch')?.id ?? null;
     const firstPatternPageId = pages.find((page) => page.type === 'pattern')?.id ?? null;
 
-    return new Set([firstSketchPageId, firstPatternPageId].filter((id): id is string => Boolean(id)));
+    return new Set(
+      [firstSketchPageId, firstPatternPageId].filter((id): id is string => Boolean(id)),
+    );
   }, [pages]);
 
   const selectedPage = pages.find((p) => p.id === selectedId) ?? pages[0];
@@ -409,137 +458,142 @@ export default function WorksheetContentPanel({
         )}
       </div>
 
-      <div className='relative z-[120] flex w-full min-w-0 shrink-0 flex-col rounded-md px-4 py-3'>
-        <div
-          className='w-full min-w-0 transition-[max-height,margin] duration-300 ease-in-out'
-          style={{
-            maxHeight: pageToggle ? PAGE_CARD_TOTAL_H + 34 : 0,
-            overflow: pageToggle ? 'visible' : 'hidden',
-          }}
-        >
+      <div className='relative z-[120] flex w-full min-w-0 shrink-0 items-end gap-3 rounded-md pt-0 pr-0 pb-0 pl-4 xl:px-4 xl:py-3'>
+        <div className='min-w-0 flex-1'>
           <div
-            className='w-full min-w-0 transition-opacity duration-300 ease-in-out'
-            style={{ opacity: pageToggle ? 1 : 0 }}
+            className='w-full min-w-0 transition-[max-height,margin] duration-300 ease-in-out'
+            style={{
+              maxHeight: pageToggle ? PAGE_CARD_TOTAL_H + 34 : 0,
+              overflow: pageToggle ? 'visible' : 'hidden',
+            }}
           >
-            <div className='flex w-full min-w-0 items-start gap-2'>
-              <div className='w-full min-w-0 flex-1 overflow-x-auto overflow-y-hidden'>
-                <div className='flex w-max items-start gap-2 pb-1'>
-                {orderedPages.map((page, idx) => {
-              const meta = PAGE_TYPE_META[page.type];
-              const isEditingName = editingPageId === page.id;
-              const thumbnail = editorDocument.pageThumbnails[page.id];
-              const isProtectedPage = protectedPageIds.has(page.id);
-              return (
-                <div key={page.id} className='relative flex shrink-0 flex-col gap-1'>
-                  <div className='group/thumb relative' style={{ width: THUMB_W, height: THUMB_H }}>
-                    <button
-                      type='button'
-                      onClick={() => {
-                        if (readOnly) return;
-                        updateDocument((prev) => ({ ...prev, activePageId: page.id }));
-                      }}
-                      className={`relative h-full w-full cursor-pointer overflow-hidden rounded-md bg-white transition-all ${
-                        selectedId === page.id
-                          ? 'border-2 border-violet-500'
-                          : 'border border-gray-300 hover:border-gray-400'
-                      }`}
-                    >
-                      <span
-                        className={`absolute top-2 left-2 z-10 rounded-full px-2 py-0.5 text-[11px] font-semibold ${PAGE_TYPE_CHIP_CLASS[page.type]}`}
-                      >
-                        {meta.defaultLabel}
-                      </span>
-                      <span className='absolute right-2 bottom-2 z-10 text-[10px] leading-none font-semibold text-gray-800'>
-                        {idx + 1}
-                      </span>
+            <div
+              className='w-full min-w-0 transition-opacity duration-300 ease-in-out'
+              style={{ opacity: pageToggle ? 1 : 0 }}
+            >
+              <div className='flex w-full min-w-0 items-start gap-2'>
+                <div className='w-full min-w-0 flex-1 overflow-x-auto overflow-y-hidden'>
+                  <div className='flex w-max items-start gap-2 pb-1'>
+                    {orderedPages.map((page, idx) => {
+                      const meta = PAGE_TYPE_META[page.type];
+                      const isEditingName = editingPageId === page.id;
+                      const thumbnail = editorDocument.pageThumbnails[page.id];
+                      const isProtectedPage = protectedPageIds.has(page.id);
+                      return (
+                        <div key={page.id} className='relative flex shrink-0 flex-col gap-1'>
+                          <div
+                            className='group/thumb relative'
+                            style={{ width: THUMB_W, height: THUMB_H }}
+                          >
+                            <button
+                              type='button'
+                              onClick={() => {
+                                if (readOnly) return;
+                                updateDocument((prev) => ({ ...prev, activePageId: page.id }));
+                              }}
+                              className={`relative h-full w-full cursor-pointer overflow-hidden rounded-md bg-white transition-all ${
+                                selectedId === page.id
+                                  ? 'border-2 border-violet-500'
+                                  : 'border border-gray-300 hover:border-gray-400'
+                              }`}
+                            >
+                              <span
+                                className={`absolute top-2 left-2 z-10 rounded-full px-2 py-0.5 text-[11px] font-semibold ${PAGE_TYPE_CHIP_CLASS[page.type]}`}
+                              >
+                                {meta.defaultLabel}
+                              </span>
+                              <span className='absolute right-2 bottom-2 z-10 text-[10px] leading-none font-semibold text-gray-800'>
+                                {idx + 1}
+                              </span>
 
-                      {thumbnail && (
-                        <img
-                          src={thumbnail}
-                          alt={`${page.label} 썸네일`}
-                          className='h-full w-full object-cover'
-                        />
-                      )}
-                    </button>
+                              {thumbnail && (
+                                <img
+                                  src={thumbnail}
+                                  alt={`${page.label} 썸네일`}
+                                  className='h-full w-full object-cover'
+                                />
+                              )}
+                            </button>
 
-                    {!isProtectedPage && (
+                            {!isProtectedPage && (
+                              <button
+                                type='button'
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeletePage(page.id);
+                                }}
+                                className='absolute top-1/2 right-1.5 z-30 flex h-5 w-6 -translate-y-1/2 translate-x-3 scale-95 cursor-pointer items-center justify-center rounded-md border border-red-200 bg-white text-red-500 opacity-0 shadow-sm transition-all duration-300 ease-out will-change-transform group-hover/thumb:translate-x-0 group-hover/thumb:scale-100 group-hover/thumb:opacity-100 hover:border-red-300 hover:bg-red-50 hover:text-red-600 active:scale-95'
+                                title='페이지 삭제'
+                              >
+                                <Trash2 size={11} strokeWidth={2.1} />
+                              </button>
+                            )}
+                          </div>
+
+                          <div className='group/title relative h-7 w-full'>
+                            {isEditingName ? (
+                              <div className='absolute inset-0 flex items-center gap-1'>
+                                <input
+                                  value={editingName}
+                                  onChange={(e) => setEditingName(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      commitPageLabelEdit();
+                                    }
+                                    if (e.key === 'Escape') {
+                                      setEditingPageId(null);
+                                      setEditingName('');
+                                    }
+                                  }}
+                                  onBlur={commitPageLabelEdit}
+                                  className='form-input h-7 min-w-0 flex-1 px-2 text-xs'
+                                  autoFocus
+                                />
+                                <button
+                                  type='button'
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={commitPageLabelEdit}
+                                  className='flex h-7 w-7 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-gray-100'
+                                  title='시트명 저장'
+                                >
+                                  <Check size={13} />
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <div className='absolute inset-0 flex items-center justify-center px-2 transition-all duration-300 ease-out group-hover/title:pr-8'>
+                                  <p className='w-full truncate text-center text-base font-semibold text-gray-800'>
+                                    {page.label}
+                                  </p>
+                                </div>
+                                <button
+                                  type='button'
+                                  onClick={() => startPageLabelEdit(page)}
+                                  className='absolute top-1/2 right-0 flex h-6 w-6 -translate-y-1/2 translate-x-1 items-center justify-center rounded-md text-gray-500 opacity-0 transition-all duration-300 ease-out group-hover/title:translate-x-0 group-hover/title:opacity-100 hover:bg-gray-100 hover:text-gray-700'
+                                  title='시트명 수정'
+                                >
+                                  <Pencil size={12} />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    <div className='relative flex h-[112px] shrink-0 items-start' ref={addMenuRef}>
                       <button
                         type='button'
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeletePage(page.id);
-                        }}
-                        className='absolute top-1/2 right-1.5 z-30 flex h-5 w-6 -translate-y-1/2 translate-x-3 scale-95 cursor-pointer items-center justify-center rounded-md border border-red-200 bg-white text-red-500 opacity-0 shadow-sm transition-all duration-300 ease-out will-change-transform group-hover/thumb:translate-x-0 group-hover/thumb:scale-100 group-hover/thumb:opacity-100 hover:border-red-300 hover:bg-red-50 hover:text-red-600 active:scale-95'
-                        title='페이지 삭제'
+                        disabled={readOnly}
+                        onClick={() => setAddMenuOpen((v) => !v)}
+                        className='flex shrink-0 cursor-pointer items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 transition-colors hover:border-gray-300 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50'
+                        aria-label='페이지 추가'
+                        style={{ width: THUMB_W, height: THUMB_H }}
                       >
-                        <Trash2 size={11} strokeWidth={2.1} />
+                        <span className='text-2xl leading-none'>+</span>
                       </button>
-                    )}
-                  </div>
-
-                  <div className='group/title relative h-7 w-full'>
-                    {isEditingName ? (
-                      <div className='absolute inset-0 flex items-center gap-1'>
-                        <input
-                          value={editingName}
-                          onChange={(e) => setEditingName(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              commitPageLabelEdit();
-                            }
-                            if (e.key === 'Escape') {
-                              setEditingPageId(null);
-                              setEditingName('');
-                            }
-                          }}
-                          onBlur={commitPageLabelEdit}
-                          className='form-input h-7 min-w-0 flex-1 px-2 text-xs'
-                          autoFocus
-                        />
-                        <button
-                          type='button'
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={commitPageLabelEdit}
-                          className='flex h-7 w-7 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-gray-100'
-                          title='시트명 저장'
-                        >
-                          <Check size={13} />
-                        </button>
-                      </div>
-                    ) : (
-                      <>
-                        <div className='absolute inset-0 flex items-center justify-center px-2 transition-all duration-300 ease-out group-hover/title:pr-8'>
-                          <p className='w-full truncate text-center text-base font-semibold text-gray-800'>
-                            {page.label}
-                          </p>
-                        </div>
-                        <button
-                          type='button'
-                          onClick={() => startPageLabelEdit(page)}
-                          className='absolute top-1/2 right-0 flex h-6 w-6 -translate-y-1/2 translate-x-1 items-center justify-center rounded-md text-gray-500 opacity-0 transition-all duration-300 ease-out group-hover/title:translate-x-0 group-hover/title:opacity-100 hover:bg-gray-100 hover:text-gray-700'
-                          title='시트명 수정'
-                        >
-                          <Pencil size={12} />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-
-                  <div className='relative flex h-[112px] shrink-0 items-start' ref={addMenuRef}>
-                    <button
-                      type='button'
-                      disabled={readOnly}
-                      onClick={() => setAddMenuOpen((v) => !v)}
-                      className='flex shrink-0 cursor-pointer items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 transition-colors hover:border-gray-300 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50'
-                      aria-label='페이지 추가'
-                      style={{ width: THUMB_W, height: THUMB_H }}
-                    >
-                      <span className='text-2xl leading-none'>+</span>
-                    </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -551,7 +605,11 @@ export default function WorksheetContentPanel({
           <div
             ref={addMenuPanelRef}
             className='fixed z-[260] w-36 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg'
-            style={{ left: addMenuPosition.left, top: addMenuPosition.top, transform: 'translateY(-100%)' }}
+            style={{
+              left: addMenuPosition.left,
+              top: addMenuPosition.top,
+              transform: 'translateY(-100%)',
+            }}
           >
             {ADDABLE_PAGE_TYPES.map((type) => {
               const meta = PAGE_TYPE_META[type];
@@ -571,7 +629,18 @@ export default function WorksheetContentPanel({
           </div>
         )}
 
-        <div className='mt-2 flex w-full min-w-0 items-center justify-end gap-3'>
+        <div className='flex shrink-0 items-center gap-3'>
+          <div className='shrink-0'>
+            <ToggleButton
+              label='단축키 가이드'
+              checked={guideModeEnabled}
+              onChange={() => {
+                if (readOnly) return;
+                onToggleGuideMode();
+              }}
+            />
+          </div>
+
           <div className='shrink-0'>
             <ToggleButton
               label='자동저장'
@@ -595,7 +664,7 @@ export default function WorksheetContentPanel({
           </div>
 
           {selectedPage && isCanvasPageType(selectedPage.type) && (
-            <div className='shrink-0 flex items-center gap-1'>
+            <div className='flex shrink-0 items-center gap-1'>
               <button
                 type='button'
                 onClick={() => {
@@ -621,6 +690,30 @@ export default function WorksheetContentPanel({
           )}
         </div>
       </div>
+
+      {guideModeEnabled && (
+        <aside className='pointer-events-auto fixed top-[72px] right-3 z-[240] w-[320px] rounded-xl border border-gray-200 bg-white/70 p-3 opacity-70 shadow-lg backdrop-blur-[2px] transition-opacity duration-200 hover:opacity-100'>
+          <h3 className='mb-2 text-sm font-semibold text-gray-800'>단축키 가이드</h3>
+          <div className='max-h-[70vh] overflow-y-auto pr-1'>
+            <div className='space-y-1.5'>
+              {GUIDE_MANUAL_ITEMS.map((item) => (
+                <div
+                  key={`${item.title}-${item.shortcut}`}
+                  className='rounded-md bg-white/70 px-2 py-1.5'
+                >
+                  <div className='flex items-center justify-between gap-2'>
+                    <span className='text-xs font-semibold text-gray-800'>{item.title}</span>
+                    <span className='rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600'>
+                      {item.shortcut}
+                    </span>
+                  </div>
+                  <p className='mt-1 text-[11px] leading-4 text-gray-600'>{item.usage}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </aside>
+      )}
     </section>
   );
 }

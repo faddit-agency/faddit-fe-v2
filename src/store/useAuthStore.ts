@@ -6,6 +6,8 @@ export type AuthUser = {
   name?: string;
   email?: string;
   profileImg?: string;
+  storageUsed?: number;
+  storageLimit?: number;
 };
 
 type AuthState = {
