@@ -234,6 +234,14 @@ function DiagramPlaceholder({
   canNext: boolean;
 }) {
   const selectedSheet = sheets.find((sheet) => sheet.id === selectedSheetId) ?? sheets[0] ?? null;
+  const stripScrollRef = useRef<HTMLDivElement | null>(null);
+  const sheetIdsKey = useMemo(() => sheets.map((sheet) => sheet.id).join('|'), [sheets]);
+
+  useEffect(() => {
+    const node = stripScrollRef.current;
+    if (!node) return;
+    node.scrollLeft = 0;
+  }, [sheetIdsKey]);
 
   return (
     <div className='relative flex h-full flex-col bg-white'>
@@ -269,8 +277,8 @@ function DiagramPlaceholder({
         </button>
       </div>
 
-      <div className='worksheet-v2-no-drag shrink-0 px-4 pb-3'>
-        <div className='flex items-center justify-start gap-3 overflow-x-auto py-1 pr-1 pl-0.5'>
+      <div ref={stripScrollRef} className='worksheet-v2-no-drag shrink-0 overflow-x-auto overflow-y-hidden px-4 pb-3'>
+        <div className='flex w-max min-w-full items-center justify-start gap-3 py-1 pr-1 pl-0.5 lg:justify-center'>
           {sheets.map((sheet, index) => {
             const isSelected = sheet.id === selectedSheet?.id;
             return (
@@ -833,7 +841,9 @@ export default function WorksheetV2GridContent({
         <ReactGridLayout
           key={activeTab}
           layout={visibleLayout}
-          width={gridMetrics.colWidth * GRID_CONFIG.cols + gridMetrics.marginX * (GRID_CONFIG.cols - 1)}
+          width={
+            gridMetrics.colWidth * GRID_CONFIG.cols + gridMetrics.marginX * (GRID_CONFIG.cols - 1)
+          }
           gridConfig={{
             cols: GRID_CONFIG.cols,
             rowHeight: gridMetrics.rowHeight,
