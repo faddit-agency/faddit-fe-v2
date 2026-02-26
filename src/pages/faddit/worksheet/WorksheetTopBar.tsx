@@ -1,8 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowLeft, Check, Loader2, Redo2, Save, Undo2 } from 'lucide-react';
-
-const ICON_BUTTON_CLASS =
-  'flex h-9 w-9 cursor-pointer items-center justify-center rounded-md text-gray-500 transition-all duration-300 hover:bg-gray-100 hover:text-gray-800';
+import { ArrowLeft, Check, Loader2, Save } from 'lucide-react';
 
 interface WorksheetTopBarProps {
   onExit?: () => void;
@@ -21,10 +18,12 @@ export default function WorksheetTopBar({
   const SAVED_BADGE_MS = 900;
   const [visualState, setVisualState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [saveButtonWidth, setSaveButtonWidth] = useState<number>(0);
+  const [shareBaseWidth, setShareBaseWidth] = useState<number>(0);
   const saveStartRef = useRef<number>(0);
-  const saveContentRef = useRef<HTMLSpanElement | null>(null);
   const finishTimerRef = useRef<number | null>(null);
   const resetTimerRef = useRef<number | null>(null);
+  const shareMeasureRef = useRef<HTMLSpanElement | null>(null);
+  const saveMeasureRef = useRef<HTMLSpanElement | null>(null);
 
   useEffect(() => {
     return () => {
@@ -84,80 +83,82 @@ export default function WorksheetTopBar({
           ? 'Save*'
           : 'Save';
 
-  const isSaveDisabled = !onSave || visualState === 'saving';
+  const showStatusIcon = visualState !== 'idle';
 
   useLayoutEffect(() => {
-    if (!saveContentRef.current) return;
-    const contentWidth = Math.ceil(saveContentRef.current.getBoundingClientRect().width);
-    const horizontalPadding = 22;
-    setSaveButtonWidth(contentWidth + horizontalPadding);
-  }, [saveLabel, visualState]);
+    if (!shareMeasureRef.current) return;
+    const baseLabelWidth = Math.ceil(shareMeasureRef.current.getBoundingClientRect().width);
+    const horizontalPadding = 32;
+    setShareBaseWidth(baseLabelWidth + horizontalPadding);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!saveMeasureRef.current) return;
+    const contentWidth = Math.ceil(saveMeasureRef.current.getBoundingClientRect().width);
+    const horizontalPadding = 32;
+    const minWidth = shareBaseWidth > 0 ? shareBaseWidth : 0;
+    setSaveButtonWidth(Math.max(minWidth, contentWidth + horizontalPadding));
+  }, [saveLabel, showStatusIcon, shareBaseWidth]);
+
+  const isSaveDisabled = !onSave || visualState === 'saving';
 
   return (
-    <header className='flex h-14 items-center justify-between rounded-xl bg-white px-3'>
-      <div className='flex h-full items-center gap-x-1'>
-        <button type='button' className={ICON_BUTTON_CLASS} aria-label='실행 취소'>
-          <Undo2 size={18} />
-        </button>
-        <button type='button' className={ICON_BUTTON_CLASS} aria-label='다시 실행'>
-          <Redo2 size={18} />
-        </button>
-      </div>
-      <div className='flex h-full items-center gap-x-3'>
-        <button
-          type='button'
-          onClick={onExit}
-          className='flex h-9 cursor-pointer items-center justify-center gap-1 rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 transition-all duration-300 ease-out hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900'
-        >
-          <ArrowLeft size={14} />
-          나가기
-        </button>
+    <div className='pointer-events-none absolute top-11 right-6 z-[180] flex items-center gap-x-2'>
+      <button
+        type='button'
+        onClick={onExit}
+        className='pointer-events-auto inline-flex h-9 w-[116px] cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-900 transition-colors hover:bg-violet-50'
+      >
+        <ArrowLeft size={14} className='shrink-0 translate-y-[0.5px]' />
+        나가기
+      </button>
 
-        <button
-          type='button'
-          onClick={onSave}
-          disabled={isSaveDisabled}
-          className={`relative flex h-9 cursor-pointer items-center justify-center gap-1 overflow-hidden rounded-lg px-4 text-sm font-medium text-white transition-all duration-300 ease-out disabled:cursor-not-allowed disabled:opacity-60 ${
+      <button
+        type='button'
+        onClick={onSave}
+        disabled={isSaveDisabled}
+        className={`pointer-events-auto relative inline-flex h-9 cursor-pointer items-center justify-center overflow-hidden rounded-lg px-4 text-sm font-semibold text-white transition-[width,background-color,box-shadow,transform] duration-250 ease-out disabled:cursor-not-allowed disabled:opacity-60 ${
+          visualState === 'saving'
+            ? 'bg-zinc-700 shadow-[0_0_0_2px_rgba(113,113,122,0.28)]'
+            : visualState === 'saved'
+              ? 'bg-emerald-600 shadow-[0_0_0_2px_rgba(16,185,129,0.28)]'
+              : 'bg-zinc-900 hover:bg-zinc-700'
+        }`}
+        style={saveButtonWidth > 0 ? { width: `${saveButtonWidth}px` } : undefined}
+      >
+        <span
+          className={`absolute inset-x-0 bottom-0 h-[2px] bg-white/75 transition-[width,opacity] duration-300 ease-out ${
             visualState === 'saving'
-              ? 'bg-zinc-700'
+              ? 'w-full opacity-100'
               : visualState === 'saved'
-                ? 'bg-emerald-600 hover:bg-emerald-500'
-                : hasUnsavedChanges
-                ? 'bg-zinc-900 hover:bg-zinc-700'
-                : 'bg-zinc-800 hover:bg-zinc-700'
+                ? 'w-full opacity-35'
+                : 'w-0 opacity-0'
           }`}
-          style={{ width: saveButtonWidth > 0 ? `${saveButtonWidth}px` : undefined }}
-        >
-          <span
-            className={`absolute inset-x-0 bottom-0 h-[2px] transition-opacity duration-300 ease-out ${
-              visualState === 'saving' || visualState === 'saved' ? 'opacity-100' : 'opacity-0'
-            }`}
-          >
-            <span
-              className={`block h-full bg-white/70 transition-[width,opacity] duration-300 ease-out ${
-                visualState === 'saving'
-                  ? 'w-full opacity-100'
-                  : visualState === 'saved'
-                    ? 'w-full opacity-100'
-                    : 'w-0 opacity-0'
-              }`}
+        />
+        <span className='relative z-10 flex items-center gap-1.5 leading-none'>
+          {visualState === 'saving' ? (
+            <Loader2 size={14} className='shrink-0 translate-y-[0.5px] animate-spin' />
+          ) : visualState === 'saved' ? (
+            <Check
+              size={14}
+              className='shrink-0 translate-y-[0.5px] scale-100 transition-transform duration-200 ease-out'
             />
-          </span>
+          ) : showStatusIcon ? (
+            <Save size={14} className='shrink-0 translate-y-[0.5px]' />
+          ) : null}
+          <span className='text-left whitespace-nowrap transition-all duration-200 ease-out'>{saveLabel}</span>
+        </span>
+      </button>
 
-          <span ref={saveContentRef} className='relative z-10 flex items-center gap-1'>
-            {visualState === 'saving' ? (
-              <Loader2 size={14} className='animate-spin' />
-            ) : visualState === 'saved' ? (
-              <Check size={14} />
-            ) : (
-              <Save size={14} />
-            )}
-            <span className='whitespace-nowrap text-left transition-all duration-300 ease-out'>
-              {saveLabel}
-            </span>
-          </span>
-        </button>
+      <div className='pointer-events-none absolute -z-10 opacity-0'>
+        <span ref={shareMeasureRef} className='text-sm font-semibold'>
+          Share
+        </span>
+        <span ref={saveMeasureRef} className='inline-flex items-center gap-1.5 text-sm font-semibold'>
+          {showStatusIcon ? <span className='h-[14px] w-[14px]' /> : null}
+          <span className='whitespace-nowrap'>{saveLabel}</span>
+        </span>
       </div>
-    </header>
+    </div>
   );
 }

@@ -20,7 +20,10 @@ import {
   RIB_FABRIC_INFO_STATE,
 } from './worksheetV2Constants';
 import type { CardDefinition } from './worksheetV2Types';
-import type { WorksheetEditorDocument, WorksheetEditorPage } from '../worksheet/worksheetEditorSchema';
+import type {
+  WorksheetEditorDocument,
+  WorksheetEditorPage,
+} from '../worksheet/worksheetEditorSchema';
 
 const WORKSHEET_MODULE_DRAG_TYPE = 'application/x-faddit-worksheet-card';
 
@@ -231,6 +234,14 @@ function DiagramPlaceholder({
   canNext: boolean;
 }) {
   const selectedSheet = sheets.find((sheet) => sheet.id === selectedSheetId) ?? sheets[0] ?? null;
+  const stripScrollRef = useRef<HTMLDivElement | null>(null);
+  const sheetIdsKey = useMemo(() => sheets.map((sheet) => sheet.id).join('|'), [sheets]);
+
+  useEffect(() => {
+    const node = stripScrollRef.current;
+    if (!node) return;
+    node.scrollLeft = 0;
+  }, [sheetIdsKey]);
 
   return (
     <div className='relative flex h-full flex-col bg-white'>
@@ -266,31 +277,38 @@ function DiagramPlaceholder({
         </button>
       </div>
 
-      <div className='worksheet-v2-no-drag shrink-0 px-4 pb-3'>
-        <div className='flex items-center justify-center gap-2 overflow-x-auto py-1'>
+      <div ref={stripScrollRef} className='worksheet-v2-no-drag shrink-0 overflow-x-auto overflow-y-hidden px-4 pb-3'>
+        <div className='flex w-max min-w-full items-center justify-start gap-3 py-1 pr-1 pl-0.5 lg:justify-center'>
           {sheets.map((sheet, index) => {
             const isSelected = sheet.id === selectedSheet?.id;
             return (
-              <button
-                key={sheet.id}
-                type='button'
-                onClick={() => onSelectSheet(sheet.id)}
-                className={`flex w-[116px] shrink-0 flex-col gap-1 rounded-md bg-white p-1.5 text-left transition-all duration-200 ${
-                  isSelected
-                    ? 'bg-violet-50 shadow-[0_0_0_1px_rgba(118,59,255,0.5)]'
-                    : 'hover:bg-gray-50 active:scale-[0.98]'
-                }`}
-              >
-                <div className='relative h-16 overflow-hidden rounded-sm bg-white'>
-                  {sheet.thumbnail ? (
-                    <img src={sheet.thumbnail} alt={`${sheet.label} 썸네일`} className='h-full w-full object-cover' />
-                  ) : null}
-                  <span className='absolute right-1 bottom-0.5 text-[10px] font-semibold text-gray-700'>
-                    {index + 1}
-                  </span>
-                </div>
-                <div className='truncate text-xs font-medium text-gray-700'>{sheet.label}</div>
-              </button>
+              <div key={sheet.id} className='flex w-[116px] shrink-0 flex-col gap-1'>
+                <button
+                  type='button'
+                  onClick={() => onSelectSheet(sheet.id)}
+                  className={`flex w-full shrink-0 flex-col rounded-md border bg-white p-1.5 text-left transition-all duration-200 ${
+                    isSelected
+                      ? 'border-faddit'
+                      : 'border-gray-200 hover:bg-gray-50 active:scale-[0.98]'
+                  }`}
+                >
+                  <div className='relative h-16 overflow-hidden rounded-sm bg-white'>
+                    {sheet.thumbnail ? (
+                      <img
+                        src={sheet.thumbnail}
+                        alt={`${sheet.label} 썸네일`}
+                        className='h-full w-full object-cover'
+                      />
+                    ) : null}
+                    <span className='absolute right-1 bottom-0.5 text-[10px] font-semibold text-gray-700'>
+                      {index + 1}
+                    </span>
+                  </div>
+                </button>
+                <span className='truncate text-center text-[11px] text-gray-600'>
+                  {sheet.label}
+                </span>
+              </div>
             );
           })}
         </div>
@@ -579,7 +597,8 @@ export default function WorksheetV2GridContent({
   }, [visibleLayout]);
 
   const gridRowHeight = useMemo(() => {
-    const innerHeight = Math.max(0, containerHeight - 12);
+    const paddingY = GRID_CONFIG.containerPadding[1];
+    const innerHeight = Math.max(0, containerHeight - paddingY * 2);
     const marginY = GRID_CONFIG.margin[1];
     const totalMargins = Math.max(0, usedRows - 1) * marginY;
     const availableHeight = innerHeight - totalMargins;
@@ -593,7 +612,8 @@ export default function WorksheetV2GridContent({
 
   const gridMetrics = useMemo(() => {
     const [marginX, marginY] = GRID_CONFIG.margin;
-    const gridWidth = Math.max(0, width - 12);
+    const paddingX = GRID_CONFIG.containerPadding[0];
+    const gridWidth = Math.max(0, width - paddingX * 2);
     const colWidth = (gridWidth - marginX * (GRID_CONFIG.cols - 1)) / GRID_CONFIG.cols;
 
     return {
@@ -666,8 +686,8 @@ export default function WorksheetV2GridContent({
       }
 
       const rect = event.currentTarget.getBoundingClientRect();
-      const relX = Math.max(0, event.clientX - rect.left - 6);
-      const relY = Math.max(0, event.clientY - rect.top - 6);
+      const relX = Math.max(0, event.clientX - rect.left - GRID_CONFIG.containerPadding[0]);
+      const relY = Math.max(0, event.clientY - rect.top - GRID_CONFIG.containerPadding[1]);
 
       const w = Math.min(card.defaultLayout.w, cols);
       const h = card.defaultLayout.h;
@@ -698,40 +718,42 @@ export default function WorksheetV2GridContent({
             };
 
             return (
-          <WorksheetV2GridCard
-            cardId={card.id}
-            title={card.title}
-            headerExtra={card.id === 'size-spec' ? <SizeSpecUnitSelector /> : undefined}
-            headerActions={
-              card.id === 'diagram-view' ? (
-                <button
-                  type='button'
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleEnterEditMode();
-                  }}
-                  className='worksheet-v2-no-drag inline-flex h-7 items-center gap-1 rounded-md bg-gray-800 px-2.5 text-xs font-medium text-white transition-colors hover:bg-gray-700'
-                >
-                  <LogIn size={13} />
-                  Edit Mode
-                </button>
-              ) : undefined
-            }
-            onClose={card.id === 'diagram-view' ? undefined : () => removeCard(activeTab, card.id)}
-            isActive={activeCardId === card.id}
-            onActivate={(cardId) => setActiveCard(activeTab, cardId)}
-          >
-            <CardBodyRenderer
-              card={card}
-              customCardContent={customCardContent}
-              onChangeCustomContent={updateCustomCardContent}
-              diagramSheets={diagramSheets}
-              selectedDiagramSheetId={selectedDiagramSheetId}
-              onSelectDiagramSheet={setSelectedDiagramSheetId}
-              onPrevDiagramSheet={handlePrevDiagramSheet}
-              onNextDiagramSheet={handleNextDiagramSheet}
-            />
-          </WorksheetV2GridCard>
+              <WorksheetV2GridCard
+                cardId={card.id}
+                title={card.title}
+                headerExtra={card.id === 'size-spec' ? <SizeSpecUnitSelector /> : undefined}
+                headerActions={
+                  card.id === 'diagram-view' ? (
+                    <button
+                      type='button'
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleEnterEditMode();
+                      }}
+                      className='worksheet-v2-no-drag inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-zinc-700'
+                    >
+                      <LogIn size={14} className='shrink-0 translate-y-[0.5px]' />
+                      Edit Mode
+                    </button>
+                  ) : undefined
+                }
+                onClose={
+                  card.id === 'diagram-view' ? undefined : () => removeCard(activeTab, card.id)
+                }
+                isActive={activeCardId === card.id}
+                onActivate={(cardId) => setActiveCard(activeTab, cardId)}
+              >
+                <CardBodyRenderer
+                  card={card}
+                  customCardContent={customCardContent}
+                  onChangeCustomContent={updateCustomCardContent}
+                  diagramSheets={diagramSheets}
+                  selectedDiagramSheetId={selectedDiagramSheetId}
+                  onSelectDiagramSheet={setSelectedDiagramSheetId}
+                  onPrevDiagramSheet={handlePrevDiagramSheet}
+                  onNextDiagramSheet={handleNextDiagramSheet}
+                />
+              </WorksheetV2GridCard>
             );
           })()}
         </div>
@@ -803,8 +825,12 @@ export default function WorksheetV2GridContent({
         <div
           className='pointer-events-none absolute z-[210] rounded-md border-2 border-dashed border-blue-400 bg-blue-100/45'
           style={{
-            left: 6 + dropPreview.x * (gridMetrics.colWidth + gridMetrics.marginX),
-            top: 6 + dropPreview.y * (gridMetrics.rowHeight + gridMetrics.marginY),
+            left:
+              GRID_CONFIG.containerPadding[0] +
+              dropPreview.x * (gridMetrics.colWidth + gridMetrics.marginX),
+            top:
+              GRID_CONFIG.containerPadding[1] +
+              dropPreview.y * (gridMetrics.rowHeight + gridMetrics.marginY),
             width: dropPreview.w * gridMetrics.colWidth + (dropPreview.w - 1) * gridMetrics.marginX,
             height:
               dropPreview.h * gridMetrics.rowHeight + (dropPreview.h - 1) * gridMetrics.marginY,
@@ -815,11 +841,14 @@ export default function WorksheetV2GridContent({
         <ReactGridLayout
           key={activeTab}
           layout={visibleLayout}
-          width={width - 12}
+          width={
+            gridMetrics.colWidth * GRID_CONFIG.cols + gridMetrics.marginX * (GRID_CONFIG.cols - 1)
+          }
           gridConfig={{
             cols: GRID_CONFIG.cols,
             rowHeight: gridMetrics.rowHeight,
             margin: GRID_CONFIG.margin,
+            containerPadding: GRID_CONFIG.containerPadding,
           }}
           dragConfig={{
             enabled: true,

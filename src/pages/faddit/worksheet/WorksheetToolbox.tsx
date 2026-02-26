@@ -70,7 +70,7 @@ const SHAPE_ITEMS: { tool: ToolType; label: string; icon: React.ReactNode }[] = 
   { tool: 'ellipse', label: '원 (O)', icon: <Circle size={18} strokeWidth={1.5} /> },
   { tool: 'triangle', label: '삼각형 (Y)', icon: <Triangle size={18} strokeWidth={1.5} /> },
   { tool: 'line', label: '선 (L)', icon: <Minus size={18} strokeWidth={1.5} /> },
-  { tool: 'arrow', label: '화살표 (A)', icon: <ArrowRight size={18} strokeWidth={1.5} /> },
+  { tool: 'arrow', label: '화살표', icon: <ArrowRight size={18} strokeWidth={1.5} /> },
   { tool: 'draw', label: '브러쉬 (B)', icon: <Paintbrush size={18} strokeWidth={1.5} /> },
   { tool: 'pen', label: '펜 (P)', icon: <PenTool size={18} strokeWidth={1.5} /> },
   { tool: 'text', label: '텍스트 (T)', icon: <Type size={18} strokeWidth={1.5} /> },
@@ -86,6 +86,7 @@ export default function WorksheetToolbox() {
   const {
     layers,
     alignSelected,
+    applyPathfinder,
     toggleLayerVisibility,
     toggleLayerLock,
     toggleLayerExpanded,
@@ -228,6 +229,94 @@ export default function WorksheetToolbox() {
                         {icon}
                       </button>
                     ))}
+                  </div>
+                </div>
+
+                <div className='shrink-0'>
+                  <p className='mb-1.5 text-[11px] font-semibold tracking-wider text-gray-400 uppercase'>
+                    Pathfinder
+                  </p>
+                  <div className='grid grid-cols-2 gap-1.5'>
+                    <button
+                      type='button'
+                      onClick={() => applyPathfinder('unite')}
+                      title='Unite'
+                      className='h-8 cursor-pointer rounded-md border border-gray-200 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900'
+                    >
+                      결합
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => applyPathfinder('minusFront')}
+                      title='Minus Front'
+                      className='h-8 cursor-pointer rounded-md border border-gray-200 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900'
+                    >
+                      앞면 빼기
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => applyPathfinder('intersect')}
+                      title='Intersect'
+                      className='h-8 cursor-pointer rounded-md border border-gray-200 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900'
+                    >
+                      교차
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => applyPathfinder('exclude')}
+                      title='Exclude'
+                      className='h-8 cursor-pointer rounded-md border border-gray-200 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900'
+                    >
+                      제외
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => applyPathfinder('minusBack')}
+                      title='Minus Back'
+                      className='h-8 cursor-pointer rounded-md border border-gray-200 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900'
+                    >
+                      뒷면 빼기
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => applyPathfinder('divide')}
+                      title='Divide'
+                      className='h-8 cursor-pointer rounded-md border border-gray-200 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900'
+                    >
+                      나누기
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => applyPathfinder('trim')}
+                      title='Trim'
+                      className='h-8 cursor-pointer rounded-md border border-gray-200 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900'
+                    >
+                      다듬기
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => applyPathfinder('merge')}
+                      title='Merge'
+                      className='h-8 cursor-pointer rounded-md border border-gray-200 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900'
+                    >
+                      병합
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => applyPathfinder('crop')}
+                      title='Crop'
+                      className='h-8 cursor-pointer rounded-md border border-gray-200 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900'
+                    >
+                      자르기
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => applyPathfinder('outline')}
+                      title='Outline'
+                      className='h-8 cursor-pointer rounded-md border border-gray-200 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900'
+                    >
+                      윤곽선
+                    </button>
                   </div>
                 </div>
 

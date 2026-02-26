@@ -125,4 +125,5 @@ export const GRID_CONFIG = {
   cols: 12,
   rowHeight: 60,
   margin: [8, 8] as [number, number],
+  containerPadding: [0, 0] as [number, number],
 };

@@ -1,5 +1,4 @@
-import React from 'react';
-import { ChevronDown, Play } from 'lucide-react';
+import { Play } from 'lucide-react';
 import { useWorksheetV2Store } from './useWorksheetV2Store';
 import { MENU_TABS } from './worksheetV2Constants';
 
@@ -11,7 +10,7 @@ export default function WorksheetV2Header() {
   const worksheetLoadError = useWorksheetV2Store((s) => s.worksheetLoadError);
 
   return (
-    <header className='flex shrink-0 flex-col p-2 pr-5'>
+    <header className='flex shrink-0 flex-col'>
       <div className='flex items-start justify-between'>
         <div className='min-w-0'>
           <h1 className='truncate text-[18px] leading-[1.15] font-semibold tracking-[-0.02em] text-gray-800'>
@@ -46,21 +45,14 @@ export default function WorksheetV2Header() {
         <div className='flex items-center gap-x-2'>
           <button
             type='button'
-            className='inline-flex cursor-pointer items-center gap-1 rounded-lg border border-gray-200 bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-200'
+            className='border-faddit inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-lg border bg-white px-4 text-sm font-medium text-gray-900 transition-colors hover:bg-violet-50'
           >
-            화면 편집
-            <ChevronDown size={14} />
-          </button>
-          <button
-            type='button'
-            className='border-faddit inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border bg-white px-4 py-2 text-sm font-medium text-gray-900 transition-colors hover:bg-violet-50'
-          >
-            <Play size={13} fill='currentColor' />
+            <Play size={14} fill='currentColor' className='shrink-0 translate-y-[0.5px]' />
             Play
           </button>
           <button
             type='button'
-            className='bg-faddit inline-flex cursor-pointer items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90'
+            className='bg-faddit inline-flex h-9 cursor-pointer items-center justify-center rounded-lg px-4 text-sm font-semibold text-white transition-opacity hover:opacity-90'
           >
             Share
           </button>
