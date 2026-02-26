@@ -17,6 +17,7 @@ import { useDriveViewStore } from '../store/useDriveViewStore';
 
 export interface DriveItem {
   id: string;
+  worksheetId?: string;
   nodeType?: DriveNode['type'];
   imageSrc: string;
   imageAlt: string;
@@ -303,6 +304,7 @@ const formatBytes = (value?: number) => {
 
 const toDriveItem = (node: DriveNode, imageSrc: string): DriveItem => ({
   id: node.fileSystemId,
+  worksheetId: node.worksheetId,
   nodeType: node.type,
   imageSrc,
   imageAlt: node.name,
