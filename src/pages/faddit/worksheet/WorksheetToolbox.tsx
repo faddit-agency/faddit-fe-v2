@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   AlignCenterHorizontal,
@@ -116,55 +116,65 @@ function SidePanelTooltip({
   const triggerRef = useRef<HTMLSpanElement | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ left: 0, top: 0 });
 
+  const updateTooltipPosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    setTooltipPos({
+      left: rect.left + rect.width / 2,
+      top: rect.top - 6,
+    });
+  }, []);
+
   useEffect(() => {
     if (!open) return;
 
-    const updatePosition = () => {
-      const trigger = triggerRef.current;
-      if (!trigger) return;
-      const rect = trigger.getBoundingClientRect();
-      setTooltipPos({
-        left: rect.left + rect.width / 2,
-        top: rect.top - 6,
-      });
-    };
-
-    updatePosition();
-    window.addEventListener('resize', updatePosition);
-    window.addEventListener('scroll', updatePosition, true);
+    updateTooltipPosition();
+    window.addEventListener('resize', updateTooltipPosition);
+    window.addEventListener('scroll', updateTooltipPosition, true);
 
     return () => {
-      window.removeEventListener('resize', updatePosition);
-      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', updateTooltipPosition);
+      window.removeEventListener('scroll', updateTooltipPosition, true);
     };
-  }, [open]);
+  }, [open, updateTooltipPosition]);
 
   return (
     <span
       ref={triggerRef}
       className={`inline-flex ${className ?? ''}`}
-      onMouseEnter={() => setOpen(true)}
+      onMouseEnter={() => {
+        updateTooltipPosition();
+        setOpen(true);
+      }}
       onMouseLeave={() => setOpen(false)}
-      onFocusCapture={() => setOpen(true)}
+      onFocusCapture={() => {
+        updateTooltipPosition();
+        setOpen(true);
+      }}
       onBlurCapture={() => setOpen(false)}
     >
       {children}
-      {open
-        ? createPortal(
-            <span
-              role='tooltip'
-              className='pointer-events-none fixed z-[500] rounded-md bg-gray-900 px-2 py-1 text-[11px] whitespace-nowrap text-white shadow-sm'
-              style={{
-                left: tooltipPos.left,
-                top: tooltipPos.top,
-                transform: 'translate(-50%, -100%)',
-              }}
-            >
-              {title}
-            </span>,
-            document.body,
-          )
-        : null}
+      {createPortal(
+        <span
+          role='tooltip'
+          className='pointer-events-none fixed z-[500]'
+          style={{
+            left: tooltipPos.left,
+            top: tooltipPos.top,
+            transform: 'translate(-50%, -100%)',
+          }}
+        >
+          <span
+            className={`block rounded-md bg-gray-900 px-2 py-1 text-[11px] whitespace-nowrap text-white shadow-sm transition-all duration-150 ease-out ${
+              open ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0'
+            }`}
+          >
+            {title}
+          </span>
+        </span>,
+        document.body,
+      )}
     </span>
   );
 }
