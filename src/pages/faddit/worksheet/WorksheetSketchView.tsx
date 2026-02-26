@@ -1956,6 +1956,17 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     canvas.selection = activeTool === 'select';
     canvas.defaultCursor = activeTool === 'select' ? 'default' : 'crosshair';
 
+    const clearTransientHoverOverlay = () => {
+      hoverApplySeqRef.current += 1;
+      hoverTargetRef.current = null;
+
+      const hoverOutline = hoverOutlineRef.current;
+      hoverOutlineRef.current = null;
+      if (hoverOutline) {
+        canvas.remove(hoverOutline);
+      }
+    };
+
     const handleMouseDown = (opt: TPointerEventInfo<TPointerEvent>) => {
       if (ENABLE_CANVA_INTERACTION_ENGINE && interactionControllerRef.current) {
         const consumed = interactionControllerRef.current.onMouseDown(opt);
@@ -1969,6 +1980,9 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         if (consumed) return;
       }
       if (activeTool === 'select') return;
+
+      clearTransientHoverOverlay();
+
       const pointer = canvas.getScenePoint(opt.e);
       drawStartRef.current = { x: pointer.x, y: pointer.y };
 
@@ -1996,6 +2010,8 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         const rect = new Rect({
           left: pointer.x,
           top: pointer.y,
+          originX: 'left',
+          originY: 'top',
           width: 0,
           height: 0,
           fill: fillColor,
@@ -2015,6 +2031,8 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         const ellipse = new Ellipse({
           left: pointer.x,
           top: pointer.y,
+          originX: 'left',
+          originY: 'top',
           rx: 0,
           ry: 0,
           fill: fillColor,
@@ -2032,6 +2050,8 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         const tri = new Triangle({
           left: pointer.x,
           top: pointer.y,
+          originX: 'left',
+          originY: 'top',
           width: 0,
           height: 0,
           fill: fillColor,
@@ -2081,9 +2101,34 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         }
       }
       if (!drawStartRef.current || !activeShapeRef.current) return;
-      const pointer = canvas.getScenePoint(opt.e);
+
+      clearTransientHoverOverlay();
+
       const { x: startX, y: startY } = drawStartRef.current;
       const shape = activeShapeRef.current;
+
+      const getConstrainedDrawPoint = (moving: ArrowPoint, event: TPointerEvent): ArrowPoint => {
+        if (!('shiftKey' in event) || !event.shiftKey) {
+          return moving;
+        }
+
+        if (activeTool === 'line' || activeTool === 'arrow') {
+          return snapPointToAngle({ x: startX, y: startY }, moving, 45);
+        }
+
+        if (activeTool === 'rect' || activeTool === 'ellipse' || activeTool === 'triangle') {
+          const dx = moving.x - startX;
+          const dy = moving.y - startY;
+          const size = Math.max(Math.abs(dx), Math.abs(dy));
+          const nextX = startX + (dx >= 0 ? size : -size);
+          const nextY = startY + (dy >= 0 ? size : -size);
+          return { x: nextX, y: nextY };
+        }
+
+        return moving;
+      };
+
+      const pointer = getConstrainedDrawPoint(canvas.getScenePoint(opt.e), opt.e);
 
       if (activeTool === 'rect') {
         const rect = shape as Rect;
@@ -2140,8 +2185,33 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         if (consumed) return;
       }
       if (!drawStartRef.current) return;
-      const pointer = canvas.getScenePoint(opt.e);
+
+      clearTransientHoverOverlay();
+
       const { x: startX, y: startY } = drawStartRef.current;
+
+      const getConstrainedDrawPoint = (moving: ArrowPoint, event: TPointerEvent): ArrowPoint => {
+        if (!('shiftKey' in event) || !event.shiftKey) {
+          return moving;
+        }
+
+        if (activeTool === 'line' || activeTool === 'arrow') {
+          return snapPointToAngle({ x: startX, y: startY }, moving, 45);
+        }
+
+        if (activeTool === 'rect' || activeTool === 'ellipse' || activeTool === 'triangle') {
+          const dx = moving.x - startX;
+          const dy = moving.y - startY;
+          const size = Math.max(Math.abs(dx), Math.abs(dy));
+          const nextX = startX + (dx >= 0 ? size : -size);
+          const nextY = startY + (dy >= 0 ? size : -size);
+          return { x: nextX, y: nextY };
+        }
+
+        return moving;
+      };
+
+      const pointer = getConstrainedDrawPoint(canvas.getScenePoint(opt.e), opt.e);
 
       if (activeTool === 'arrow' && activeShapeRef.current) {
         canvas.remove(activeShapeRef.current);

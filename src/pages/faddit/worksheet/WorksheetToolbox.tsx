@@ -269,6 +269,54 @@ export default function WorksheetToolbox() {
                     >
                       제외
                     </button>
+                    <button
+                      type='button'
+                      onClick={() => applyPathfinder('minusBack')}
+                      title='Minus Back'
+                      className='h-8 cursor-pointer rounded-md border border-gray-200 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900'
+                    >
+                      뒷면 빼기
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => applyPathfinder('divide')}
+                      title='Divide'
+                      className='h-8 cursor-pointer rounded-md border border-gray-200 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900'
+                    >
+                      나누기
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => applyPathfinder('trim')}
+                      title='Trim'
+                      className='h-8 cursor-pointer rounded-md border border-gray-200 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900'
+                    >
+                      다듬기
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => applyPathfinder('merge')}
+                      title='Merge'
+                      className='h-8 cursor-pointer rounded-md border border-gray-200 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900'
+                    >
+                      병합
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => applyPathfinder('crop')}
+                      title='Crop'
+                      className='h-8 cursor-pointer rounded-md border border-gray-200 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900'
+                    >
+                      자르기
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => applyPathfinder('outline')}
+                      title='Outline'
+                      className='h-8 cursor-pointer rounded-md border border-gray-200 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900'
+                    >
+                      윤곽선
+                    </button>
                   </div>
                 </div>
 
