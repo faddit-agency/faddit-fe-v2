@@ -58,6 +58,8 @@ const formatBytes = (value?: number) => {
 };
 
 const DeletedDrive: React.FC = () => {
+  const authUser = useAuthStore((state) => state.user);
+  const setAuthUser = useAuthStore((state) => state.setUser);
   const userId = useAuthStore((state) => state.user?.userId);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [loading, setLoading] = useState(false);
@@ -299,7 +301,20 @@ const DeletedDrive: React.FC = () => {
 
     try {
       const removeSet = collectDescendantTrashIds(selectedIds);
-      await destroyDriveItems({ userId, ids: Array.from(removeSet) });
+      const storageSummary = await destroyDriveItems({ userId, ids: Array.from(removeSet) });
+      if (authUser) {
+        setAuthUser({
+          ...authUser,
+          storageUsed:
+            typeof storageSummary?.storageUsed === 'number'
+              ? storageSummary.storageUsed
+              : authUser.storageUsed,
+          storageLimit:
+            typeof storageSummary?.storageLimit === 'number'
+              ? storageSummary.storageLimit
+              : authUser.storageLimit,
+        });
+      }
       setFolders((prev) => prev.filter((node) => !removeSet.has(node.fileSystemId)));
       setFiles((prev) => prev.filter((node) => !removeSet.has(node.fileSystemId)));
       setSelectedIds([]);

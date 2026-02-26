@@ -1,8 +1,9 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { useDrive } from '../context/DriveContext';
+import { useAuthStore } from '../store/useAuthStore';
 
 import LogoOnly from '../images/icons/faddit-logo-only.svg?react';
 
@@ -38,6 +39,24 @@ const DragDropSection = ({ id, title, children, className, droppable = true }) =
       {children}
     </div>
   );
+};
+
+const toDisplayStorage = (bytes) => {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '0B';
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  const fixed = value >= 100 || unitIndex === 0 ? 0 : 1;
+  return `${value.toFixed(fixed)}${units[unitIndex]}`;
 };
 
 const SidebarTreeNode = ({
@@ -112,12 +131,7 @@ const SidebarTreeNode = ({
       return;
     }
 
-    if (
-      item.type !== 'folder' ||
-      item.childrenLoaded ||
-      loadingChildren ||
-      loadAttempted
-    ) {
+    if (item.type !== 'folder' || item.childrenLoaded || loadingChildren || loadAttempted) {
       return;
     }
 
@@ -246,7 +260,7 @@ const SidebarTreeNode = ({
           {item.type === 'folder' && (
             <button
               type='button'
-              className='ml-2 flex shrink-0 cursor-pointer rounded p-0.5 text-gray-400 hover:bg-gray-100/80 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-700/60 dark:hover:text-gray-200'
+              className='lg:sidebar-expanded:flex ml-2 flex shrink-0 cursor-pointer rounded p-0.5 text-gray-400 hover:bg-gray-100/80 hover:text-gray-600 lg:hidden 2xl:flex dark:text-gray-500 dark:hover:bg-gray-700/60 dark:hover:text-gray-200'
               onClick={handleChevronClick}
               aria-label={isOpen ? '폴더 닫기' : '폴더 열기'}
             >
@@ -318,17 +332,26 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
   const trigger = useRef(null);
   const sidebar = useRef(null);
 
-  const storedSidebarExpanded = localStorage.getItem('sidebar-expanded');
-  const [sidebarExpanded, setSidebarExpanded] = useState(
-    storedSidebarExpanded === null ? false : storedSidebarExpanded === 'true',
-  );
+  const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [expandedFolders, setExpandedFolders] = useState({});
   const [myWorkspaceOpen, setMyWorkspaceOpen] = useState(true);
   const [pointedFolderId, setPointedFolderId] = useState('my-workspace');
+  const storageUsed = useAuthStore((state) => state.user?.storageUsed ?? 0);
+  const storageLimit = useAuthStore((state) => state.user?.storageLimit ?? 0);
   const { setNodeRef: setMyWorkspaceDropRef, isOver: isMyWorkspaceOver } = useDroppable({
     id: 'my-workspace',
     data: { type: 'folder', id: 'my-workspace' },
   });
+
+  const usagePercent = useMemo(() => {
+    if (!Number.isFinite(storageLimit) || storageLimit <= 0) {
+      return 0;
+    }
+    return Math.max(0, Math.min(100, (storageUsed / storageLimit) * 100));
+  }, [storageLimit, storageUsed]);
+
+  const usedLabel = useMemo(() => toDisplayStorage(storageUsed), [storageUsed]);
+  const limitLabel = useMemo(() => toDisplayStorage(storageLimit), [storageLimit]);
 
   // close on click outside
   useEffect(() => {
@@ -409,12 +432,7 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
       .finally(() => {
         setSidebarAutoOpenFolderId(null);
       });
-  }, [
-    getItemParentId,
-    sidebarAutoOpenFolderId,
-    loadFolderChildren,
-    setSidebarAutoOpenFolderId,
-  ]);
+  }, [getItemParentId, sidebarAutoOpenFolderId, loadFolderChildren, setSidebarAutoOpenFolderId]);
 
   useEffect(() => {
     if (!pathname.startsWith('/faddit/drive')) {
@@ -522,7 +540,7 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
       <div
         id='sidebar'
         ref={sidebar}
-        className={`no-scrollbar lg:sidebar-expanded:!w-64 absolute top-0 left-0 z-40 flex h-[100dvh] w-64 shrink-0 flex-col overflow-y-scroll bg-gray-100 p-4 transition-all duration-200 ease-in-out lg:static lg:top-auto lg:left-auto lg:flex! lg:w-20 lg:translate-x-0 lg:overflow-y-auto 2xl:w-64! dark:bg-gray-800 ${sidebarOpen ? 'translate-x-0' : '-translate-x-64'} ${variant === 'v2' ? 'border-r border-gray-200 dark:border-gray-700/60' : 'rounded-r-2xl shadow-xs'}`}
+        className={`lg:sidebar-expanded:!w-64 absolute top-0 left-0 z-40 flex h-[100dvh] w-64 shrink-0 flex-col overflow-hidden bg-gray-100 p-4 transition-all duration-200 ease-in-out lg:static lg:top-auto lg:left-auto lg:flex! lg:w-20 lg:translate-x-0 2xl:w-64! dark:bg-gray-800 ${sidebarOpen ? 'translate-x-0' : '-translate-x-64'} ${variant === 'v2' ? 'border-r border-gray-200 dark:border-gray-700/60' : 'rounded-r-2xl shadow-xs'}`}
       >
         {/* Sidebar header */}
         <div className='mb-10 flex justify-between pr-3 sm:px-2'>
@@ -549,276 +567,267 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
           </NavLink>
         </div>
 
-        {/* Links */}
-        <div className='space-y-8'>
-          {/* Pages group */}
-          <div>
-            <h3 className='pl-3 text-xs font-semibold text-gray-400 uppercase dark:text-gray-500'>
-              <span
-                className='lg:sidebar-expanded:hidden hidden w-6 text-center lg:block 2xl:hidden'
-                aria-hidden='true'
-              >
-                •••
-              </span>
-            </h3>
-            <ul className='mt-3'>
-              {/* Home */}
-              <li
-                className={`mb-3 rounded-lg bg-linear-to-r py-2 pr-3 pl-4 last:mb-0 ${
-                  isHomeActive
-                    ? 'from-violet-500/[0.12] to-violet-500/[0.04] dark:from-violet-500/[0.24]'
-                    : ''
+        <div className='mb-4'>
+          <h3 className='pl-3 text-xs font-semibold text-gray-400 uppercase dark:text-gray-500'>
+            <span
+              className='lg:sidebar-expanded:hidden hidden w-6 text-center lg:block 2xl:hidden'
+              aria-hidden='true'
+            >
+              •••
+            </span>
+          </h3>
+          <ul className='mt-3'>
+            <li
+              className={`mb-3 rounded-lg bg-linear-to-r py-2 pr-3 pl-4 last:mb-0 ${
+                isHomeActive
+                  ? 'from-violet-500/[0.12] to-violet-500/[0.04] dark:from-violet-500/[0.24]'
+                  : ''
+              }`}
+            >
+              <NavLink
+                end
+                to='/faddit/drive'
+                className={`block truncate text-gray-800 transition duration-150 dark:text-gray-100 ${
+                  isHomeActive ? '' : 'hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
-                <NavLink
-                  end
-                  to='/faddit/drive'
-                  className={`block truncate text-gray-800 transition duration-150 dark:text-gray-100 ${
-                    isHomeActive ? '' : 'hover:text-gray-900 dark:hover:text-white'
-                  }`}
-                >
-                  <div className='flex items-center'>
-                    <House
+                <div className='flex items-center'>
+                  <House
+                    className={`shrink-0 ${
+                      isHomeActive ? 'text-violet-500' : 'text-gray-400 dark:text-gray-400'
+                    }`}
+                    width='18'
+                    height='18'
+                    strokeWidth={3}
+                  />
+                  <span className='lg:sidebar-expanded:opacity-100 ml-3 text-sm font-bold duration-200 lg:opacity-0 2xl:opacity-100'>
+                    홈
+                  </span>
+                </div>
+              </NavLink>
+            </li>
+            <li
+              className={`mb-3 rounded-lg bg-linear-to-r py-2 pr-3 pl-4 last:mb-0 ${
+                isSearchActive
+                  ? 'from-violet-500/[0.12] to-violet-500/[0.04] dark:from-violet-500/[0.24]'
+                  : ''
+              }`}
+            >
+              <button
+                type='button'
+                onClick={onOpenSearch}
+                className='block w-full cursor-pointer truncate text-left text-gray-800 transition duration-150 hover:text-gray-900 dark:text-gray-100 dark:hover:text-white'
+              >
+                <div className='flex items-center'>
+                  <Search
+                    className={`shrink-0 ${
+                      isSearchActive ? 'text-violet-500' : 'text-gray-400 dark:text-gray-400'
+                    }`}
+                    width='18'
+                    height='18'
+                    strokeWidth={3}
+                  />
+                  <span className='lg:sidebar-expanded:opacity-100 ml-3 text-sm font-bold duration-200 lg:opacity-0 2xl:opacity-100'>
+                    검색
+                  </span>
+                </div>
+              </button>
+            </li>
+            <li
+              className={`mb-3 rounded-lg bg-linear-to-r py-2 pr-3 pl-4 last:mb-0 ${pathname.includes('messages') && 'from-violet-500/[0.12] to-violet-500/[0.04] dark:from-violet-500/[0.24]'}`}
+            >
+              <NavLink
+                end
+                to='/messages'
+                className={`block truncate text-gray-800 transition duration-150 dark:text-gray-100 ${
+                  pathname.includes('messages') ? '' : 'hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                <div className='flex items-center justify-between'>
+                  <div className='flex grow items-center'>
+                    <MessagesSquare
                       className={`shrink-0 ${
-                        isHomeActive ? 'text-violet-500' : 'text-gray-400 dark:text-gray-400'
+                        pathname === '/faddit/message'
+                          ? 'text-violet-500'
+                          : 'text-gray-400 dark:text-gray-400'
                       }`}
                       width='18'
                       height='18'
                       strokeWidth={3}
                     />
                     <span className='lg:sidebar-expanded:opacity-100 ml-3 text-sm font-bold duration-200 lg:opacity-0 2xl:opacity-100'>
-                      홈
+                      수신함
                     </span>
                   </div>
-                </NavLink>
-              </li>
-              {/* Search */}
-              <li
-                className={`mb-3 rounded-lg bg-linear-to-r py-2 pr-3 pl-4 last:mb-0 ${
-                  isSearchActive
-                    ? 'from-violet-500/[0.12] to-violet-500/[0.04] dark:from-violet-500/[0.24]'
-                    : ''
+                  <div className='ml-2 flex shrink-0'>
+                    <span className='bg-faddit inline-flex h-5 items-center justify-center rounded-sm px-2 text-xs font-medium text-white'>
+                      4
+                    </span>
+                  </div>
+                </div>
+              </NavLink>
+            </li>
+            <li
+              className={`rounded-lg bg-linear-to-r py-2 pr-3 pl-4 last:mb-0 ${
+                isDeletedActive
+                  ? 'from-violet-500/[0.12] to-violet-500/[0.04] dark:from-violet-500/[0.24]'
+                  : ''
+              }`}
+            >
+              <NavLink
+                to='/faddit/deleted'
+                className={`block truncate text-gray-800 transition duration-150 dark:text-gray-100 ${
+                  isDeletedActive ? '' : 'hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
-                <button
-                  type='button'
-                  onClick={onOpenSearch}
-                  className='block w-full cursor-pointer truncate text-left text-gray-800 transition duration-150 hover:text-gray-900 dark:text-gray-100 dark:hover:text-white'
-                >
-                  <div className='flex items-center'>
-                    <Search
-                      className={`shrink-0 ${
-                        isSearchActive ? 'text-violet-500' : 'text-gray-400 dark:text-gray-400'
-                      }`}
-                      width='18'
-                      height='18'
-                      strokeWidth={3}
-                    />
-                    <span className='lg:sidebar-expanded:opacity-100 ml-3 text-sm font-bold duration-200 lg:opacity-0 2xl:opacity-100'>
-                      검색
-                    </span>
-                  </div>
-                </button>
-              </li>
-              {/* 수신함 */}
-              <li
-                className={`mb-3 rounded-lg bg-linear-to-r py-2 pr-3 pl-4 last:mb-0 ${pathname.includes('messages') && 'from-violet-500/[0.12] to-violet-500/[0.04] dark:from-violet-500/[0.24]'}`}
-              >
-                <NavLink
-                  end
-                  to='/messages'
-                  className={`block truncate text-gray-800 transition duration-150 dark:text-gray-100 ${
-                    pathname.includes('messages') ? '' : 'hover:text-gray-900 dark:hover:text-white'
-                  }`}
-                >
-                  <div className='flex items-center justify-between'>
-                    <div className='flex grow items-center'>
-                      <MessagesSquare
-                        className={`shrink-0 ${
-                          pathname === '/faddit/message'
-                            ? 'text-violet-500'
-                            : 'text-gray-400 dark:text-gray-400'
-                        }`}
-                        width='18'
-                        height='18'
-                        strokeWidth={3}
-                      />
-                      <span className='lg:sidebar-expanded:opacity-100 ml-3 text-sm font-bold duration-200 lg:opacity-0 2xl:opacity-100'>
-                        수신함
-                      </span>
-                    </div>
-                    {/* Badge */}
-                    <div className='ml-2 flex shrink-0'>
-                      <span className='bg-faddit inline-flex h-5 items-center justify-center rounded-sm px-2 text-xs font-medium text-white'>
-                        4
-                      </span>
-                    </div>
-                  </div>
-                </NavLink>
-              </li>
-
-              <li
-                className={`mb-3 rounded-lg bg-linear-to-r py-2 pr-3 pl-4 last:mb-0 ${
-                  isDeletedActive
-                    ? 'from-violet-500/[0.12] to-violet-500/[0.04] dark:from-violet-500/[0.24]'
-                    : ''
-                }`}
-              >
-                <NavLink
-                  to='/faddit/deleted'
-                  className={`block truncate text-gray-800 transition duration-150 dark:text-gray-100 ${
-                    isDeletedActive ? '' : 'hover:text-gray-900 dark:hover:text-white'
-                  }`}
-                >
-                  <div className='flex items-center'>
-                    <Trash2
-                      className={`shrink-0 ${
-                        isDeletedActive ? 'text-violet-500' : 'text-gray-400 dark:text-gray-400'
-                      }`}
-                      width='18'
-                      height='18'
-                      strokeWidth={3}
-                    />
-                    <span className='lg:sidebar-expanded:opacity-100 ml-3 text-sm font-bold duration-200 lg:opacity-0 2xl:opacity-100'>
-                      휴지통
-                    </span>
-                  </div>
-                </NavLink>
-              </li>
-
-              {/* Workspace Section */}
-              <DragDropSection id='section-workspace' title='워크스페이스' droppable={false}>
-                <ul>
-                  <li>
-                    <div
-                      ref={setMyWorkspaceDropRef}
-                      className={`mb-0.5 cursor-pointer rounded-md py-2 pr-3 transition duration-150 hover:bg-white/80 dark:hover:bg-gray-700/70 ${
-                        pointedFolderId === 'my-workspace'
-                          ? 'bg-violet-50 dark:bg-violet-500/15'
-                          : isMyWorkspaceOver
-                            ? 'bg-violet-100/70 outline outline-1 outline-violet-300 dark:bg-violet-500/20 dark:outline-violet-500/60'
-                            : ''
-                      }`}
-                      onClick={() => {
-                        setPointedFolderId('my-workspace');
-                        navigate('/faddit/drive');
-                      }}
-                    >
-                      <div className='flex items-center justify-between pl-4'>
-                        <div className='flex min-w-0 items-center'>
-                          {myWorkspaceOpen ? (
-                            <FolderOpen
-                              width={16}
-                              height={16}
-                              strokeWidth={3}
-                              className='text-faddit dark:text-faddit shrink-0'
-                            />
-                          ) : (
-                            <FolderClosed
-                              width={16}
-                              height={16}
-                              strokeWidth={3}
-                              className='shrink-0 text-gray-400 dark:text-gray-500'
-                            />
-                          )}
-                          <span className='ml-4 truncate text-sm font-medium text-gray-800 dark:text-gray-100'>
-                            내 워크스페이스
-                          </span>
-                        </div>
-                        <button
-                          type='button'
-                          className='ml-2 flex shrink-0 cursor-pointer rounded p-0.5 text-gray-400 hover:bg-gray-100/80 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-700/60 dark:hover:text-gray-200'
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setPointedFolderId('my-workspace');
-                            setMyWorkspaceOpen((prev) => !prev);
-                            setSidebarExpanded(true);
-                          }}
-                          aria-label={
-                            myWorkspaceOpen ? '내 워크스페이스 닫기' : '내 워크스페이스 열기'
-                          }
-                        >
-                          {myWorkspaceOpen ? (
-                            <ChevronUp
-                              width={16}
-                              height={16}
-                              strokeWidth={3}
-                              className='text-gray-500 dark:text-gray-300'
-                            />
-                          ) : (
-                            <ChevronDown
-                              width={16}
-                              height={16}
-                              strokeWidth={3}
-                              className='text-gray-500 dark:text-gray-300'
-                            />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  </li>
-                  {myWorkspaceOpen &&
-                    workspaces.map((item) => (
-                      <SidebarTreeNode
-                        key={item.id}
-                        item={item}
-                        depth={1}
-                        expandedFolders={expandedFolders}
-                        setExpandedFolders={setExpandedFolders}
-                        setSidebarExpanded={setSidebarExpanded}
-                        pointedFolderId={pointedFolderId}
-                        setPointedFolderId={setPointedFolderId}
-                        loadFolderChildren={loadFolderChildren}
-                        onNavigateFolder={navigateToFolder}
-                        onOpenFile={openFileDetail}
-                      />
-                    ))}
-                </ul>
-              </DragDropSection>
-
-              {/* Favorites Section */}
-              <DragDropSection id='section-favorite' title='즐겨찾기'>
-                <ul>
-                  {favorites.map((item) => (
-                    <SidebarTreeNode
-                      key={item.id}
-                      item={item}
-                      depth={0}
-                      expandedFolders={expandedFolders}
-                      setExpandedFolders={setExpandedFolders}
-                      setSidebarExpanded={setSidebarExpanded}
-                      pointedFolderId={pointedFolderId}
-                      setPointedFolderId={setPointedFolderId}
-                      loadFolderChildren={loadFolderChildren}
-                      onNavigateFolder={navigateToFolder}
-                      onOpenFile={openFileDetail}
-                    />
-                  ))}
-                </ul>
-              </DragDropSection>
-            </ul>
-          </div>
+                <div className='flex items-center'>
+                  <Trash2
+                    className={`shrink-0 ${
+                      isDeletedActive ? 'text-violet-500' : 'text-gray-400 dark:text-gray-400'
+                    }`}
+                    width='18'
+                    height='18'
+                    strokeWidth={3}
+                  />
+                  <span className='lg:sidebar-expanded:opacity-100 ml-3 text-sm font-bold duration-200 lg:opacity-0 2xl:opacity-100'>
+                    휴지통
+                  </span>
+                </div>
+              </NavLink>
+            </li>
+          </ul>
         </div>
 
-        {/* Expand / collapse button */}
-        <div className='mt-auto hidden justify-end pt-3 lg:inline-flex 2xl:hidden'>
-          <div className='w-12 py-2 pr-3 pl-4'>
-            <button
-              className='text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400'
-              onClick={() => setSidebarExpanded(!sidebarExpanded)}
-            >
-              <span className='sr-only'>Expand / collapse sidebar</span>
-              <svg
-                className='sidebar-expanded:rotate-180 shrink-0 fill-current text-gray-400 dark:text-gray-500'
-                xmlns='http://www.w3.org/2000/svg'
-                width='16'
-                height='16'
-                viewBox='0 0 16 16'
-              >
-                <path d='M15 16a1 1 0 0 1-1-1V1a1 1 0 1 1 2 0v14a1 1 0 0 1-1 1ZM8.586 7H1a1 1 0 1 0 0 2h7.586l-2.793 2.793a1 1 0 1 0 1.414 1.414l4.5-4.5A.997.997 0 0 0 12 8.01M11.924 7.617a.997.997 0 0 0-.217-.324l-4.5-4.5a1 1 0 0 0-1.414 1.414L8.586 7M12 7.99a.996.996 0 0 0-.076-.373Z' />
-              </svg>
-            </button>
+        <div className='no-scrollbar min-h-0 flex-1 overflow-y-auto'>
+          <DragDropSection id='section-workspace' title='워크스페이스' droppable={false}>
+            <ul>
+              <li>
+                <div
+                  ref={setMyWorkspaceDropRef}
+                  className={`mb-0.5 cursor-pointer rounded-md py-2 pr-3 transition duration-150 hover:bg-white/80 dark:hover:bg-gray-700/70 ${
+                    pointedFolderId === 'my-workspace'
+                      ? 'bg-violet-50 dark:bg-violet-500/15'
+                      : isMyWorkspaceOver
+                        ? 'bg-violet-100/70 outline outline-1 outline-violet-300 dark:bg-violet-500/20 dark:outline-violet-500/60'
+                        : ''
+                  }`}
+                  onClick={() => {
+                    setPointedFolderId('my-workspace');
+                    navigate('/faddit/drive');
+                  }}
+                >
+                  <div className='flex items-center justify-between pl-4'>
+                    <div className='flex min-w-0 items-center'>
+                      {myWorkspaceOpen ? (
+                        <FolderOpen
+                          width={16}
+                          height={16}
+                          strokeWidth={3}
+                          className='text-faddit dark:text-faddit shrink-0'
+                        />
+                      ) : (
+                        <FolderClosed
+                          width={16}
+                          height={16}
+                          strokeWidth={3}
+                          className='shrink-0 text-gray-400 dark:text-gray-500'
+                        />
+                      )}
+                      <span className='ml-4 truncate text-sm font-medium text-gray-800 dark:text-gray-100'>
+                        내 워크스페이스
+                      </span>
+                    </div>
+                    <button
+                      type='button'
+                      className='lg:sidebar-expanded:flex ml-2 flex shrink-0 cursor-pointer rounded p-0.5 text-gray-400 hover:bg-gray-100/80 hover:text-gray-600 lg:hidden 2xl:flex dark:text-gray-500 dark:hover:bg-gray-700/60 dark:hover:text-gray-200'
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setPointedFolderId('my-workspace');
+                        setMyWorkspaceOpen((prev) => !prev);
+                        setSidebarExpanded(true);
+                      }}
+                      aria-label={myWorkspaceOpen ? '내 워크스페이스 닫기' : '내 워크스페이스 열기'}
+                    >
+                      {myWorkspaceOpen ? (
+                        <ChevronUp
+                          width={16}
+                          height={16}
+                          strokeWidth={3}
+                          className='text-gray-500 dark:text-gray-300'
+                        />
+                      ) : (
+                        <ChevronDown
+                          width={16}
+                          height={16}
+                          strokeWidth={3}
+                          className='text-gray-500 dark:text-gray-300'
+                        />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </li>
+              {myWorkspaceOpen &&
+                workspaces.map((item) => (
+                  <SidebarTreeNode
+                    key={item.id}
+                    item={item}
+                    depth={1}
+                    expandedFolders={expandedFolders}
+                    setExpandedFolders={setExpandedFolders}
+                    setSidebarExpanded={setSidebarExpanded}
+                    pointedFolderId={pointedFolderId}
+                    setPointedFolderId={setPointedFolderId}
+                    loadFolderChildren={loadFolderChildren}
+                    onNavigateFolder={navigateToFolder}
+                    onOpenFile={openFileDetail}
+                  />
+                ))}
+            </ul>
+          </DragDropSection>
+
+          <DragDropSection id='section-favorite' title='즐겨찾기'>
+            <ul>
+              {favorites.map((item) => (
+                <SidebarTreeNode
+                  key={item.id}
+                  item={item}
+                  depth={0}
+                  expandedFolders={expandedFolders}
+                  setExpandedFolders={setExpandedFolders}
+                  setSidebarExpanded={setSidebarExpanded}
+                  pointedFolderId={pointedFolderId}
+                  setPointedFolderId={setPointedFolderId}
+                  loadFolderChildren={loadFolderChildren}
+                  onNavigateFolder={navigateToFolder}
+                  onOpenFile={openFileDetail}
+                />
+              ))}
+            </ul>
+          </DragDropSection>
+        </div>
+
+        <div className='mt-4 border-t border-gray-200 pt-4 dark:border-gray-700/60'>
+          <div className='lg:sidebar-expanded:block rounded-xl p-3 shadow-xs lg:hidden 2xl:block dark:bg-gray-900/40'>
+            <div className='text-sm font-semibold text-gray-700 dark:text-gray-200'>저장용량</div>
+            <div className='mt-3 h-1.5 w-full rounded-full bg-gray-200 dark:bg-gray-700'>
+              <div
+                className='h-full rounded-full bg-gray-700 dark:bg-gray-300'
+                style={{ width: `${usagePercent}%` }}
+              />
+            </div>
+            <div className='mt-2 text-sm font-semibold text-gray-700 dark:text-gray-200'>
+              {limitLabel} 중 {usedLabel} 사용
+            </div>
+            <div className='mt-3 rounded-lg bg-white px-3 py-3 text-sm text-gray-700 dark:bg-gray-800/80 dark:text-gray-300'>
+              <div className='text-faddit font-semibold'>✨ 저장공간 10GB 사용하기</div>
+              <p className='mt-1'>
+                Pro 요금제로 업그레이드하면 10GB의 저장 공간을 사용할 수 있습니다.
+              </p>
+              <p className='mt-2 font-semibold text-gray-400'>Pro 요금제 업그레이드 (출시 예정)</p>
+            </div>
           </div>
+
         </div>
       </div>
     </div>

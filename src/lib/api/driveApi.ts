@@ -49,6 +49,11 @@ export type RestoreDriveItemsPayload = {
   ids: string[];
 };
 
+export type DriveStorageSummary = {
+  storageUsed?: number;
+  storageLimit?: number;
+};
+
 export type DriveUploadTag =
   | 'worksheet'
   | 'schematic'
@@ -144,9 +149,10 @@ export const deleteDriveItems = async (payload: DeleteDriveItemsPayload) => {
 };
 
 export const destroyDriveItems = async (payload: DeleteDriveItemsPayload) => {
-  await baseHttpClient.delete('/drive/destroy', {
+  const response = await baseHttpClient.delete<DriveStorageSummary>('/drive/destroy', {
     data: payload,
   });
+  return response.data;
 };
 
 export const restoreDriveItems = async (payload: RestoreDriveItemsPayload) => {

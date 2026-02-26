@@ -29,6 +29,8 @@ export type SignOutRequest = {
 export type SignInResponse = {
   userId: string;
   rootFolder?: string;
+  storageUsed?: number;
+  storageLimit?: number;
   accessToken: string;
   accessTokenExpiresAt: string;
   serverNow: string;
@@ -72,6 +74,18 @@ const toAuthUser = (payload: Record<string, unknown>) => {
         ? payload.profileImg
         : typeof payload.profile_img === 'string'
           ? payload.profile_img
+          : undefined,
+    storageUsed:
+      typeof payload.storageUsed === 'number'
+        ? payload.storageUsed
+        : typeof payload.storage_used === 'number'
+          ? payload.storage_used
+          : undefined,
+    storageLimit:
+      typeof payload.storageLimit === 'number'
+        ? payload.storageLimit
+        : typeof payload.storage_limit === 'number'
+          ? payload.storage_limit
           : undefined,
   };
 };

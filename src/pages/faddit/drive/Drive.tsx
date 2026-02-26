@@ -523,6 +523,8 @@ const FadditDrive: React.FC = () => {
   const navigate = useNavigate();
   const { folderId } = useParams<{ folderId?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
+  const authUser = useAuthStore((state) => state.user);
+  const setAuthUser = useAuthStore((state) => state.setUser);
   const rootFolderFromAuth = useAuthStore((state) => state.user?.rootFolder);
   const userId = useAuthStore((state) => state.user?.userId);
   const currentUserName = useAuthStore((state) => state.user?.name);
@@ -1581,6 +1583,20 @@ const FadditDrive: React.FC = () => {
         files: [value.file],
         tags: [tagByCategory[value.category]],
       });
+
+      if (authUser) {
+        setAuthUser({
+          ...authUser,
+          storageUsed:
+            typeof uploadResult.storageUsed === 'number'
+              ? uploadResult.storageUsed
+              : authUser.storageUsed,
+          storageLimit:
+            typeof uploadResult.storageLimit === 'number'
+              ? uploadResult.storageLimit
+              : authUser.storageLimit,
+        });
+      }
 
       const createdFile = uploadResult.result.find((entry) => entry.success && entry.result);
       if (!createdFile?.result?.fileSystemId) {

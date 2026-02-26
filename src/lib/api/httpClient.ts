@@ -26,12 +26,18 @@ type RefreshResponse = {
   email?: string;
   profileImg?: string;
   profile_img?: string;
+  rootFolder?: string;
+  root_folder?: string;
+  storageUsed?: number;
+  storageLimit?: number;
   accessToken: string;
   accessTokenExpiresAt: string;
   serverNow: string;
 };
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:1004';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://192.168.0.124:1004';
+/* const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://hd24sfvs-1004.asse.devtunnels.ms/'; */
+
 const REFRESH_BUFFER_MS = 90 * 1000;
 
 let accessToken = '';
@@ -138,9 +144,18 @@ export const refreshAccessToken = async () => {
       const mergedUser = response.data.userId
         ? {
             userId: response.data.userId,
+            rootFolder: response.data.rootFolder || response.data.root_folder || user?.rootFolder,
             name: response.data.name || user?.name,
             email: response.data.email || user?.email,
             profileImg: profileImg || user?.profileImg,
+            storageUsed:
+              typeof response.data.storageUsed === 'number'
+                ? response.data.storageUsed
+                : user?.storageUsed,
+            storageLimit:
+              typeof response.data.storageLimit === 'number'
+                ? response.data.storageLimit
+                : user?.storageLimit,
           }
         : user;
 
