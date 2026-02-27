@@ -7,6 +7,7 @@ import type {
   CardVisibilityMap,
   TabLayoutsMap,
   SizeSpecDisplayUnit,
+  WorksheetElementItem,
 } from './worksheetV2Types';
 import { CARD_DEFINITIONS, GRID_CONFIG } from './worksheetV2Constants';
 
@@ -268,7 +269,9 @@ interface WorksheetV2State {
   activeCardIdByTab: Record<MenuTab, string | null>;
   customCards: Record<MenuTab, CardDefinition[]>;
   customCardContent: Record<string, string>;
+  moduleElements: Record<string, WorksheetElementItem[]>;
   draggingCardId: string | null;
+  draggingElement: WorksheetElementItem | null;
   sizeSpecUnit: SizeSpecDisplayUnit;
   worksheetTitle: string;
   isLoadingWorksheet: boolean;
@@ -289,7 +292,13 @@ interface WorksheetV2State {
   updateCustomCardTitle: (tab: MenuTab, cardId: string, title: string) => void;
   deleteCustomCard: (tab: MenuTab, cardId: string) => void;
   updateCustomCardContent: (cardId: string, content: string) => void;
+  addElementToModule: (cardId: string, item: WorksheetElementItem) => void;
+  setElementAtModuleRow: (cardId: string, rowIndex: number, item: WorksheetElementItem) => void;
+  removeElementAtModuleRow: (cardId: string, rowIndex: number) => void;
+  moveElementModuleRow: (cardId: string, fromIndex: number, toIndex: number) => void;
+  removeElementFromModule: (cardId: string, itemId: string) => void;
   setDraggingCardId: (cardId: string | null) => void;
+  setDraggingElement: (item: WorksheetElementItem | null) => void;
   setSizeSpecUnit: (unit: SizeSpecDisplayUnit) => void;
   setWorksheetTitle: (title: string) => void;
   setWorksheetLoading: (isLoading: boolean) => void;
@@ -306,7 +315,14 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
       activeCardIdByTab: buildInitialActiveCards(),
       customCards: { diagram: [], basic: [], size: [], cost: [] },
       customCardContent: {},
+      moduleElements: {
+        'fabric-info': [],
+        'rib-fabric-info': [],
+        'label-sheet': [],
+        'trim-sheet': [],
+      },
       draggingCardId: null,
+      draggingElement: null,
       sizeSpecUnit: 'cm',
       worksheetTitle: '작업지시서 명',
       isLoadingWorksheet: false,
@@ -606,7 +622,75 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
           },
         })),
 
+      addElementToModule: (cardId, item) =>
+        set((state) => {
+          const current = state.moduleElements[cardId] ?? [];
+
+          return {
+            moduleElements: {
+              ...state.moduleElements,
+              [cardId]: [...current, item],
+            },
+          };
+        }),
+
+      setElementAtModuleRow: (cardId, rowIndex, item) =>
+        set((state) => {
+          const current = state.moduleElements[cardId] ?? [];
+          const next = [...current];
+          next[rowIndex] = item;
+
+          return {
+            moduleElements: {
+              ...state.moduleElements,
+              [cardId]: next,
+            },
+          };
+        }),
+
+      removeElementAtModuleRow: (cardId, rowIndex) =>
+        set((state) => {
+          const current = state.moduleElements[cardId] ?? [];
+          const next = [...current];
+          next.splice(rowIndex, 1);
+
+          return {
+            moduleElements: {
+              ...state.moduleElements,
+              [cardId]: next,
+            },
+          };
+        }),
+
+      moveElementModuleRow: (cardId, fromIndex, toIndex) =>
+        set((state) => {
+          const current = [...(state.moduleElements[cardId] ?? [])];
+          if (fromIndex < 0 || toIndex < 0 || fromIndex >= current.length || toIndex >= current.length) {
+            return state;
+          }
+
+          const [moved] = current.splice(fromIndex, 1);
+          current.splice(toIndex, 0, moved);
+
+          return {
+            moduleElements: {
+              ...state.moduleElements,
+              [cardId]: current,
+            },
+          };
+        }),
+
+      removeElementFromModule: (cardId, itemId) =>
+        set((state) => ({
+          moduleElements: {
+            ...state.moduleElements,
+            [cardId]: (state.moduleElements[cardId] ?? []).filter((item) => item.id !== itemId),
+          },
+        })),
+
       setDraggingCardId: (cardId) => set({ draggingCardId: cardId }),
+
+      setDraggingElement: (item) => set({ draggingElement: item }),
 
       setSizeSpecUnit: (unit) => set({ sizeSpecUnit: unit }),
 
@@ -625,6 +709,7 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
             tabLayouts?: TabLayoutsMap;
             cardVisibility?: CardVisibilityMap;
             sizeSpecUnit?: SizeSpecDisplayUnit;
+            moduleElements?: Record<string, WorksheetElementItem[]>;
           };
 
           set((state) => {
@@ -663,6 +748,12 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
                     : state.activeCardIdByTab.diagram,
               },
               sizeSpecUnit: parsed.sizeSpecUnit ?? state.sizeSpecUnit,
+              moduleElements: parsed.moduleElements
+                ? {
+                    ...state.moduleElements,
+                    ...parsed.moduleElements,
+                  }
+                : state.moduleElements,
             };
           });
         } catch {
