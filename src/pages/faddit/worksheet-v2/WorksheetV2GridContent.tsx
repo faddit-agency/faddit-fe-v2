@@ -55,16 +55,16 @@ const MODULE_ELEMENT_ACCEPT_CATEGORY: Record<string, WorksheetElementCategory> =
 
 function buildWorkspaceElementRowValues(cardId: string, item: WorksheetElementItem): string[] {
   if (cardId === 'fabric-info') {
-    return [item.name, '-', '-', '-', '-'];
+    return [item.name, '', '', '', '', ''];
   }
   if (cardId === 'rib-fabric-info') {
-    return [item.name, '-', '-', '-', '-', '-'];
+    return [item.name, '', '', '', '', ''];
   }
   if (cardId === 'label-sheet') {
-    return [item.name, '1EA', '자동 삽입', '자동 삽입', '자동 생성', '-', '자동 생성'];
+    return [item.name, '', '', '', '', '', ''];
   }
   if (cardId === 'trim-sheet') {
-    return [item.name, '1EA', '-', '-', '자동 산출', '자동 산출'];
+    return [item.name, '', '', '', '', ''];
   }
 
   return [];
@@ -547,12 +547,6 @@ function CardBodyRenderer({
             uploadingRowIndex,
             emptyLabel: '드래그/클릭 업로드',
           }}
-          autoColumnDefaultValues={{
-            2: '자동 삽입',
-            3: '자동 삽입',
-            4: '자동 생성',
-            6: '자동 생성',
-          }}
         />
       );
     case 'trim-sheet':
@@ -575,10 +569,6 @@ function CardBodyRenderer({
             onUploadFile: onRowImageUpload,
             uploadingRowIndex,
             emptyLabel: '드래그/클릭 업로드',
-          }}
-          autoColumnDefaultValues={{
-            4: '자동 산출',
-            5: '자동 산출',
           }}
         />
       );
@@ -1060,6 +1050,17 @@ export default function WorksheetV2GridContent({
             const uploadingRowIndexForCard =
               modulePhotoUploading?.cardId === card.id ? modulePhotoUploading.rowIndex : null;
             const rowValuePatchesForCard = moduleRowValuePatches[card.id] ?? {};
+            const isElementAllowedForModule = (draggedElement: WorksheetElementItem) => {
+              if (!acceptedCategory) {
+                return false;
+              }
+
+              if (draggedElement.source === 'upload') {
+                return true;
+              }
+
+              return draggedElement.category === acceptedCategory;
+            };
 
             const handleRowImageDragOver = (rowIndex: number, event: React.DragEvent<HTMLDivElement>) => {
               if (!canDropElement || !acceptedCategory) {
@@ -1072,7 +1073,7 @@ export default function WorksheetV2GridContent({
               }
 
               event.stopPropagation();
-              if (draggedElement.category !== acceptedCategory) {
+              if (!isElementAllowedForModule(draggedElement)) {
                 return;
               }
 
@@ -1091,7 +1092,7 @@ export default function WorksheetV2GridContent({
               }
 
               event.stopPropagation();
-              if (draggedElement.category !== acceptedCategory) {
+              if (!isElementAllowedForModule(draggedElement)) {
                 return;
               }
 
@@ -1159,7 +1160,7 @@ export default function WorksheetV2GridContent({
                     }
 
                     event.stopPropagation();
-                    if (draggedElement.category !== acceptedCategory) {
+                    if (!isElementAllowedForModule(draggedElement)) {
                       return;
                     }
 
@@ -1185,7 +1186,7 @@ export default function WorksheetV2GridContent({
                     }
 
                     event.stopPropagation();
-                    if (draggedElement.category !== acceptedCategory) {
+                    if (!isElementAllowedForModule(draggedElement)) {
                       return;
                     }
 

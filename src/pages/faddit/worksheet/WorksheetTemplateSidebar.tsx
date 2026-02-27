@@ -35,10 +35,14 @@ import { CARD_DEFINITIONS } from '../worksheet-v2/worksheetV2Constants';
 import type { WorksheetElementCategory, WorksheetElementItem } from '../worksheet-v2/worksheetV2Types';
 import {
   getWorksheetElementFolderName,
-  mapWorksheetElementCategoryToUploadTag,
-  normalizeWorksheetElementUploadFile,
   WORKSHEET_ELEMENT_UPLOAD_REFRESH_EVENT,
 } from './worksheetElementUploadUtils';
+import {
+  getMaterialFieldDefs,
+  getMaterialsByFileSystem,
+  type MaterialFieldDef,
+  type MaterialItem,
+} from '../../../lib/api/materialApi';
 
 type ToolTab = 'template' | 'module' | 'element' | 'history' | 'comment';
 
@@ -126,7 +130,21 @@ const stringifyDetailValue = (value: unknown) => {
   if (typeof value === 'boolean') {
     return value ? 'true' : 'false';
   }
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
   return String(value);
+};
+
+const getMaterialCategoryLabel = (category: MaterialItem['category']) => {
+  if (category === 'fabric') return '원단';
+  if (category === 'rib_fabric') return '시보리원단';
+  if (category === 'label') return '라벨';
+  return '부자재';
 };
 
 export default function WorksheetTemplateSidebar({
@@ -141,7 +159,7 @@ export default function WorksheetTemplateSidebar({
   const [customTitle, setCustomTitle] = useState('');
   const [editingCustomCardId, setEditingCustomCardId] = useState<string | null>(null);
   const [editingCustomTitle, setEditingCustomTitle] = useState('');
-  const [elementWorkspaceView, setElementWorkspaceView] = useState<'overview' | 'workspace'>('overview');
+  const [elementWorkspaceView, setElementWorkspaceView] = useState<'overview' | 'workspace' | 'upload'>('overview');
   const [elementWorkspaceCategory, setElementWorkspaceCategory] = useState<ElementWorkspaceCategory>(
     ELEMENT_WORKSPACE_CATEGORIES[0],
   );
@@ -150,10 +168,18 @@ export default function WorksheetTemplateSidebar({
   const [elementWorkspaceLoading, setElementWorkspaceLoading] = useState(false);
   const [elementWorkspaceError, setElementWorkspaceError] = useState<string | null>(null);
   const [uploadedElementFiles, setUploadedElementFiles] = useState<ElementWorkspaceFile[]>([]);
-  const [elementUploadCategory, setElementUploadCategory] = useState<WorksheetElementCategory>('원단');
   const [elementUploadLoading, setElementUploadLoading] = useState(false);
   const [elementUploadError, setElementUploadError] = useState<string | null>(null);
   const [worksheetElementFolderId, setWorksheetElementFolderId] = useState<string | null>(null);
+  const [selectedElementMaterials, setSelectedElementMaterials] = useState<MaterialItem[]>([]);
+  const [selectedElementMaterialsLoading, setSelectedElementMaterialsLoading] = useState(false);
+  const [selectedElementMaterialsError, setSelectedElementMaterialsError] = useState<string | null>(null);
+  const [materialFieldDefsByCategory, setMaterialFieldDefsByCategory] = useState<
+    Partial<Record<MaterialItem['category'], MaterialFieldDef[]>>
+  >({});
+  const [materialFieldDefsLoadingCategory, setMaterialFieldDefsLoadingCategory] = useState<
+    MaterialItem['category'] | null
+  >(null);
   const [selectedElementDetailId, setSelectedElementDetailId] = useState<string | null>(null);
   const [isElementDetailExpanded, setIsElementDetailExpanded] = useState(false);
   const [elementDetailPosition, setElementDetailPosition] = useState<{ top: number; left: number } | null>(
@@ -204,6 +230,16 @@ export default function WorksheetTemplateSidebar({
     [searchedElementWorkspaceFiles],
   );
 
+  const searchedUploadedElementFiles = useMemo(() => {
+    if (!normalizedElementSearchQuery) {
+      return uploadedElementFiles;
+    }
+
+    return uploadedElementFiles.filter((file) =>
+      file.name.toLowerCase().includes(normalizedElementSearchQuery),
+    );
+  }, [normalizedElementSearchQuery, uploadedElementFiles]);
+
   const previewUploadedElementFiles = useMemo(
     () => uploadedElementFiles.slice(0, ELEMENT_UPLOAD_PREVIEW_COUNT),
     [uploadedElementFiles],
@@ -227,6 +263,48 @@ export default function WorksheetTemplateSidebar({
     return allElementFiles.find((file) => file.id === selectedElementDetailId) ?? null;
   }, [allElementFiles, selectedElementDetailId]);
 
+  const isSelectedDetailUploaded = useMemo(() => {
+    if (!selectedElementDetailFile) {
+      return false;
+    }
+    return uploadedElementIdSet.has(selectedElementDetailFile.id);
+  }, [selectedElementDetailFile, uploadedElementIdSet]);
+
+  const selectedPrimaryMaterial = useMemo(() => {
+    if (selectedElementMaterials.length === 0) {
+      return null;
+    }
+
+    const preferred = selectedElementMaterials.find(
+      (material) => getMaterialCategoryLabel(material.category) === selectedElementDetailFile?.category,
+    );
+    return preferred ?? selectedElementMaterials[0];
+  }, [selectedElementDetailFile?.category, selectedElementMaterials]);
+
+  const selectedMaterialFieldDefs = useMemo(() => {
+    if (!selectedPrimaryMaterial) {
+      return [] as MaterialFieldDef[];
+    }
+
+    return materialFieldDefsByCategory[selectedPrimaryMaterial.category] ?? [];
+  }, [materialFieldDefsByCategory, selectedPrimaryMaterial]);
+
+  const selectedMaterialFieldLabelMap = useMemo(() => {
+    const map = new Map<string, string>();
+    selectedMaterialFieldDefs.forEach((fieldDef) => {
+      map.set(fieldDef.field_key, fieldDef.label);
+    });
+    return map;
+  }, [selectedMaterialFieldDefs]);
+
+  const isSelectedMaterialFieldDefsLoading = useMemo(() => {
+    if (!selectedPrimaryMaterial) {
+      return false;
+    }
+
+    return materialFieldDefsLoadingCategory === selectedPrimaryMaterial.category;
+  }, [materialFieldDefsLoadingCategory, selectedPrimaryMaterial]);
+
   const elementDetailSummaryRows = useMemo(() => {
     if (!selectedElementDetailFile) {
       return [] as Array<{ label: string; value: string }>;
@@ -239,67 +317,44 @@ export default function WorksheetTemplateSidebar({
     return [
       { label: '파일명', value: selectedElementDetailFile.name },
       { label: '출처', value: sourceLabel },
-      { label: '카테고리', value: selectedElementDetailFile.category },
-      { label: '타입', value: selectedElementDetailFile.type },
+      { label: '카테고리', value: sourceLabel === '업로드 항목' ? '이미지' : selectedElementDetailFile.category },
+      {
+        label: '품명',
+        value: stringifyDetailValue(selectedPrimaryMaterial?.item_name ?? selectedElementDetailFile.name),
+      },
+      { label: '업체명', value: stringifyDetailValue(selectedPrimaryMaterial?.vendor_name) },
+      { label: '원산지', value: stringifyDetailValue(selectedPrimaryMaterial?.origin_country) },
       { label: '태그', value: stringifyDetailValue(selectedElementDetailFile.tag) },
-      { label: '경로', value: stringifyDetailValue(selectedElementDetailFile.node.path) },
       { label: '수정 시각', value: stringifyDetailValue(selectedElementDetailFile.node.updatedAt) },
     ];
-  }, [selectedElementDetailFile, uploadedElementIdSet]);
+  }, [selectedElementDetailFile, selectedPrimaryMaterial, uploadedElementIdSet]);
 
-  const elementDetailRows = useMemo(() => {
+  const elementDetailServiceRows = useMemo(() => {
     if (!selectedElementDetailFile) {
       return [] as Array<{ label: string; value: string }>;
     }
 
-    const node = selectedElementDetailFile.node;
-    const sourceLabel = uploadedElementIdSet.has(selectedElementDetailFile.id)
-      ? '업로드 항목'
-      : '나의 워크스페이스';
-    return [
-      { label: 'fileSystemId', value: stringifyDetailValue(node.fileSystemId) },
-      { label: 'name', value: stringifyDetailValue(node.name) },
-      { label: 'path', value: stringifyDetailValue(node.path) },
-      { label: 'idPath', value: stringifyDetailValue(node.idPath) },
-      { label: 'type', value: stringifyDetailValue(node.type) },
-      { label: 'isStarred', value: stringifyDetailValue(node.isStarred) },
-      { label: 'isRoot', value: stringifyDetailValue(node.isRoot) },
-      { label: 'childrenCount', value: stringifyDetailValue(node.childrenCount) },
-      { label: 'updatedAt', value: stringifyDetailValue(node.updatedAt) },
-      { label: 'parentId', value: stringifyDetailValue(node.parentId) },
-      { label: 'size', value: stringifyDetailValue(node.size) },
-      { label: 'mimetype', value: stringifyDetailValue(node.mimetype) },
-      { label: 'tag', value: stringifyDetailValue(node.tag) },
-      { label: 'creatorName', value: stringifyDetailValue(node.creatorName) },
-      { label: 'creatorProfileImg', value: stringifyDetailValue(node.creatorProfileImg) },
-      { label: 'recentActionType', value: stringifyDetailValue(node.recentActionType) },
-      { label: 'recentActorName', value: stringifyDetailValue(node.recentActorName) },
-      { label: 'deletedAt', value: stringifyDetailValue(node.deletedAt) },
-      { label: 'worksheetThumbnail', value: stringifyDetailValue(node.worksheetThumbnail) },
-      { label: 'source(derived)', value: sourceLabel },
-      { label: 'category(derived)', value: stringifyDetailValue(selectedElementDetailFile.category) },
-      {
-        label: 'thumbnailUrl(derived)',
-        value: stringifyDetailValue(selectedElementDetailFile.thumbnailUrl),
-      },
-    ];
-  }, [selectedElementDetailFile, uploadedElementIdSet]);
-
-  const elementDetailRawJson = useMemo(() => {
-    if (!selectedElementDetailFile) {
-      return '';
+    if (!selectedPrimaryMaterial) {
+      return [] as Array<{ label: string; value: string }>;
     }
 
-    return JSON.stringify(
-      {
-        ...selectedElementDetailFile.node,
-        category: selectedElementDetailFile.category,
-        thumbnailUrl: selectedElementDetailFile.thumbnailUrl,
-      },
-      null,
-      2,
-    );
-  }, [selectedElementDetailFile]);
+    const rows: Array<{ label: string; value: string }> = [
+      { label: '소재 분류', value: getMaterialCategoryLabel(selectedPrimaryMaterial.category) },
+      { label: '코드', value: stringifyDetailValue(selectedPrimaryMaterial.code_internal) },
+      { label: '업체명', value: stringifyDetailValue(selectedPrimaryMaterial.vendor_name) },
+      { label: '품명', value: stringifyDetailValue(selectedPrimaryMaterial.item_name) },
+      { label: '원산지', value: stringifyDetailValue(selectedPrimaryMaterial.origin_country) },
+    ];
+
+    Object.entries(selectedPrimaryMaterial.attributes || {}).forEach(([key, value]) => {
+      rows.push({
+        label: selectedMaterialFieldLabelMap.get(key) ?? key,
+        value: stringifyDetailValue(value),
+      });
+    });
+
+    return rows;
+  }, [selectedElementDetailFile, selectedMaterialFieldLabelMap, selectedPrimaryMaterial]);
 
   const updateElementDetailPosition = useCallback(() => {
     if (!selectedElementDetailId) {
@@ -439,7 +494,6 @@ export default function WorksheetTemplateSidebar({
         ) : null}
         <div className='pointer-events-none absolute inset-x-0 bottom-0 rounded-b-md bg-gradient-to-t from-black/70 via-black/20 to-transparent px-2 py-1.5'>
           <p className='truncate text-[10px] font-semibold text-white'>{file.name}</p>
-          {isUploadedCard ? <p className='truncate text-[10px] text-white/75'>{file.category}</p> : null}
         </div>
       </div>
     );
@@ -579,10 +633,8 @@ export default function WorksheetTemplateSidebar({
           throw new Error('target folder not found');
         }
 
-        const uploadTag = mapWorksheetElementCategoryToUploadTag(elementUploadCategory);
-        const uploadFiles = Array.from(files).map((file) =>
-          normalizeWorksheetElementUploadFile(file, elementUploadCategory),
-        );
+        const uploadTag = 'etc' as const;
+        const uploadFiles = Array.from(files);
 
         await createDriveFile({
           parentId: targetFolderId,
@@ -608,14 +660,7 @@ export default function WorksheetTemplateSidebar({
         }
       }
     },
-    [
-      elementUploadCategory,
-      getOrCreateWorksheetElementFolderId,
-      loadUploadedElementFiles,
-      rootFolderId,
-      userId,
-      worksheetId,
-    ],
+    [getOrCreateWorksheetElementFolderId, loadUploadedElementFiles, rootFolderId, userId, worksheetId],
   );
 
   useEffect(() => {
@@ -729,7 +774,12 @@ export default function WorksheetTemplateSidebar({
     setIsElementDetailExpanded(false);
     setElementDetailPosition(null);
     setElementUploadError(null);
-  }, [activeTab, elementWorkspaceView, elementWorkspaceCategory, normalizedElementSearchQuery]);
+  }, [
+    activeTab,
+    elementWorkspaceView,
+    elementWorkspaceCategory,
+    normalizedElementSearchQuery,
+  ]);
 
   useEffect(() => {
     if (!selectedElementDetailId) {
@@ -792,6 +842,85 @@ export default function WorksheetTemplateSidebar({
       document.removeEventListener('keydown', closeOnEscape);
     };
   }, [selectedElementDetailId]);
+
+  useEffect(() => {
+    if (!selectedElementDetailFile || !userId) {
+      setSelectedElementMaterials([]);
+      setSelectedElementMaterialsError(null);
+      setSelectedElementMaterialsLoading(false);
+      return;
+    }
+
+    let disposed = false;
+
+    const loadMaterials = async () => {
+      try {
+        setSelectedElementMaterialsLoading(true);
+        setSelectedElementMaterialsError(null);
+        const materials = await getMaterialsByFileSystem(selectedElementDetailFile.id, userId);
+        if (disposed) {
+          return;
+        }
+        setSelectedElementMaterials(materials);
+      } catch {
+        if (disposed) {
+          return;
+        }
+        setSelectedElementMaterials([]);
+        setSelectedElementMaterialsError('소재 속성 정보를 불러오지 못했습니다.');
+      } finally {
+        if (disposed) {
+          return;
+        }
+        setSelectedElementMaterialsLoading(false);
+      }
+    };
+
+    void loadMaterials();
+
+    return () => {
+      disposed = true;
+    };
+  }, [selectedElementDetailFile, userId]);
+
+  useEffect(() => {
+    if (!selectedPrimaryMaterial) {
+      setMaterialFieldDefsLoadingCategory(null);
+      return;
+    }
+
+    const category = selectedPrimaryMaterial.category;
+    if (materialFieldDefsByCategory[category]) {
+      return;
+    }
+
+    let disposed = false;
+
+    const loadMaterialFieldDefs = async () => {
+      try {
+        setMaterialFieldDefsLoadingCategory(category);
+        const fieldDefs = await getMaterialFieldDefs(category);
+        if (disposed) {
+          return;
+        }
+
+        setMaterialFieldDefsByCategory((prev) => ({
+          ...prev,
+          [category]: fieldDefs,
+        }));
+      } finally {
+        if (!disposed) {
+          setMaterialFieldDefsLoadingCategory((prev) => (prev === category ? null : prev));
+        }
+      }
+    };
+
+    void loadMaterialFieldDefs();
+
+    return () => {
+      disposed = true;
+    };
+  }, [materialFieldDefsByCategory, selectedPrimaryMaterial]);
 
   const tabContent = (
     <>
@@ -1063,25 +1192,6 @@ export default function WorksheetTemplateSidebar({
                   <Upload size={14} />
                   {elementUploadLoading ? '업로드 중...' : '업로드'}
                 </button>
-                <div className='flex flex-wrap gap-1'>
-                  {(['원단', '시보리원단', '라벨', '부자재'] as const).map((category) => {
-                    const active = elementUploadCategory === category;
-                    return (
-                      <button
-                        key={`upload-category-${category}`}
-                        type='button'
-                        onClick={() => setElementUploadCategory(category)}
-                        className={`rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
-                          active
-                            ? 'border-violet-500 bg-violet-50 text-violet-600'
-                            : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:text-gray-700'
-                        }`}
-                      >
-                        {category}
-                      </button>
-                    );
-                  })}
-                </div>
                 {elementUploadError ? <p className='text-[11px] text-rose-500'>{elementUploadError}</p> : null}
               </div>
 
@@ -1090,7 +1200,7 @@ export default function WorksheetTemplateSidebar({
                   <h4 className='text-xs font-semibold text-gray-700'>업로드 항목</h4>
                   <button
                     type='button'
-                    onClick={() => setElementWorkspaceView('workspace')}
+                    onClick={() => setElementWorkspaceView('upload')}
                     className='text-[11px] text-gray-500 hover:text-gray-700'
                   >
                     더보기
@@ -1152,6 +1262,38 @@ export default function WorksheetTemplateSidebar({
                   <p className='text-[11px] text-gray-400'>표시할 파일이 없습니다.</p>
                 ) : null}
               </section>
+            </>
+          ) : elementWorkspaceView === 'upload' ? (
+            <>
+              <div className='flex items-center gap-1'>
+                <button
+                  type='button'
+                  onClick={() => setElementWorkspaceView('overview')}
+                  className='inline-flex h-6 w-6 items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                  aria-label='요소 목록으로 돌아가기'
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <p className='text-sm font-semibold text-gray-800'>업로드 항목</p>
+              </div>
+
+              <div className='grid grid-cols-2 gap-2'>
+                {elementWorkspaceLoading
+                  ? Array.from({ length: 6 }).map((_, index) => (
+                      <div key={`upload-filtered-loading-${index}`} className='aspect-square rounded-md bg-[#f3f3f5]' />
+                    ))
+                  : searchedUploadedElementFiles.map((file) =>
+                      renderElementWorkspaceFileCard(file, 'element-upload', (targetFile) => {
+                        toggleElementDetail(targetFile.id);
+                      }, true),
+                    )}
+              </div>
+              {!elementWorkspaceLoading && elementUploadError ? (
+                <p className='text-[11px] text-rose-500'>{elementUploadError}</p>
+              ) : null}
+              {!elementWorkspaceLoading && !elementUploadError && searchedUploadedElementFiles.length === 0 ? (
+                <p className='text-[11px] text-gray-400'>업로드된 항목이 없습니다.</p>
+              ) : null}
             </>
           ) : (
             <>
@@ -1276,7 +1418,9 @@ export default function WorksheetTemplateSidebar({
                   {selectedElementDetailFile.name}
                 </p>
                 <p className='mt-0.5 text-[11px] text-gray-500'>
-                  {selectedElementDetailFile.category} · {selectedElementDetailFile.type}
+                  {isSelectedDetailUploaded
+                    ? '업로드 이미지'
+                    : `${selectedElementDetailFile.category} · ${selectedElementDetailFile.type}`}
                 </p>
                 <p className='mt-1 text-[10px] text-violet-500'>모듈 영역으로 드래그해 추가</p>
               </div>
@@ -1311,21 +1455,36 @@ export default function WorksheetTemplateSidebar({
               }`}
             >
               <div className='max-h-48 overflow-y-auto rounded-md border border-gray-100 bg-gray-50 px-2 py-1.5'>
-                <div className='grid grid-cols-[100px_1fr] gap-x-2 gap-y-1'>
-                  {elementDetailRows.map((row) => (
-                    <React.Fragment key={`detail-${row.label}`}>
-                      <span className='text-[10px] font-semibold text-gray-500'>{row.label}</span>
-                      <span className='break-all text-[10px] text-gray-700'>{row.value}</span>
-                    </React.Fragment>
-                  ))}
-                </div>
+                {elementDetailServiceRows.length === 0 ? (
+                  <p className='text-[10px] text-gray-500'>표시할 속성 정보가 없습니다.</p>
+                ) : (
+                  <div className='grid grid-cols-[100px_1fr] gap-x-2 gap-y-1'>
+                    {elementDetailServiceRows.map((row) => (
+                      <React.Fragment key={`detail-${row.label}`}>
+                        <span className='text-[10px] font-semibold text-gray-500'>{row.label}</span>
+                        <span className='break-all text-[10px] text-gray-700'>{row.value}</span>
+                      </React.Fragment>
+                    ))}
+                  </div>
+                )}
+                {isSelectedMaterialFieldDefsLoading ? (
+                  <p className='mt-1 text-[10px] text-gray-400'>속성 라벨 정보를 동기화하는 중...</p>
+                ) : null}
               </div>
-
-              <div className='mt-2'>
-                <p className='mb-1 text-[10px] font-semibold tracking-[0.02em] text-gray-500 uppercase'>raw json</p>
-                <pre className='max-h-36 overflow-auto rounded-md border border-gray-100 bg-gray-50 px-2 py-1.5 text-[10px] leading-4 text-gray-600'>
-                  {elementDetailRawJson}
-                </pre>
+              <div className='mt-2 rounded-md border border-gray-100 bg-white px-2 py-1.5'>
+                <p className='text-[10px] font-semibold text-gray-500'>소재 연결 상태</p>
+                {selectedElementMaterialsLoading ? (
+                  <p className='mt-1 text-[10px] text-gray-500'>소재 정보를 불러오는 중...</p>
+                ) : selectedElementMaterialsError ? (
+                  <p className='mt-1 text-[10px] text-rose-500'>{selectedElementMaterialsError}</p>
+                ) : selectedElementMaterials.length === 0 ? (
+                  <p className='mt-1 text-[10px] text-gray-500'>연결된 소재 정보가 없습니다.</p>
+                ) : (
+                  <p className='mt-1 text-[10px] text-gray-700'>
+                    소재 {selectedElementMaterials.length}건 연결됨
+                    {selectedPrimaryMaterial ? ` · 대표: ${stringifyDetailValue(selectedPrimaryMaterial.item_name)}` : ''}
+                  </p>
+                )}
               </div>
             </div>
           </div>,

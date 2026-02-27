@@ -79,12 +79,20 @@ export const SIZE_UNIT_OPTIONS = [
 ];
 
 export const LABEL_SHEET_STATE = {
-  headers: ['부착 위치', '사용 수량', '원단 혼용률', '제조국', '세탁 기호(내구성)', '피부 자극 정도', '기업 정보'],
+  headers: [
+    '부착 위치',
+    '사용 수량',
+    '원단 혼용률 자동 삽입',
+    '제조국 자동 삽입',
+    '세탁 기호(내구성) 자동 생성',
+    '피부 자극 정도',
+    '기업 정보 자동 생성',
+  ],
   rows: [],
 };
 
 export const FABRIC_INFO_STATE = {
-  headers: ['위치', '컬러', '패턴 총 면적', '마커 효율', '총 필요 원단량'],
+  headers: ['위치', '컬러', '패턴 총 면적', '마커 효율', '요척', '총 필요 원단량'],
   rows: [],
 };
 
@@ -94,7 +102,7 @@ export const RIB_FABRIC_INFO_STATE = {
 };
 
 export const TRIM_SHEET_STATE = {
-  headers: ['부착 위치', '사용 수량(1벌)', '사용 길이', '컬러', '1벌당 원가(개별)', '총 부자재 원가'],
+  headers: ['부착 위치', '사용 수량(1벌)', '사용 길이', '컬러', '1벌당 자동 원가(개별)', '총 부자재 원가'],
   rows: [],
 };
 
