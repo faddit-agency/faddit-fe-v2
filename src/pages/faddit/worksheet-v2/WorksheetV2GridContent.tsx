@@ -19,13 +19,57 @@ import {
   FABRIC_INFO_STATE,
   RIB_FABRIC_INFO_STATE,
 } from './worksheetV2Constants';
-import type { CardDefinition } from './worksheetV2Types';
+import {
+  WORKSHEET_ELEMENT_CATEGORIES,
+  type CardDefinition,
+  type WorksheetElementCategory,
+  type WorksheetElementItem,
+  type WorksheetModuleSheetState,
+} from './worksheetV2Types';
 import type {
   WorksheetEditorDocument,
   WorksheetEditorPage,
 } from '../worksheet/worksheetEditorSchema';
+import {
+  createDriveFile,
+  createDriveFolder,
+  getDriveAll,
+  getDriveFilePreviewUrl,
+} from '../../../lib/api/driveApi';
+import { useAuthStore } from '../../../store/useAuthStore';
+import {
+  getWorksheetElementFolderName,
+  mapWorksheetElementCategoryToUploadTag,
+  normalizeWorksheetElementUploadFile,
+  WORKSHEET_ELEMENT_UPLOAD_REFRESH_EVENT,
+} from '../worksheet/worksheetElementUploadUtils';
 
 const WORKSHEET_MODULE_DRAG_TYPE = 'application/x-faddit-worksheet-card';
+const WORKSHEET_ELEMENT_DRAG_TYPE = 'application/x-faddit-worksheet-element';
+
+const MODULE_ELEMENT_ACCEPT_CATEGORY: Record<string, WorksheetElementCategory> = {
+  'fabric-info': '원단',
+  'rib-fabric-info': '시보리원단',
+  'label-sheet': '라벨',
+  'trim-sheet': '부자재',
+};
+
+function buildWorkspaceElementRowValues(cardId: string, item: WorksheetElementItem): string[] {
+  if (cardId === 'fabric-info') {
+    return [item.name, '', '', '', '', ''];
+  }
+  if (cardId === 'rib-fabric-info') {
+    return [item.name, '', '', '', '', ''];
+  }
+  if (cardId === 'label-sheet') {
+    return [item.name, '', '', '', '', '', ''];
+  }
+  if (cardId === 'trim-sheet') {
+    return [item.name, '', '', '', '', ''];
+  }
+
+  return [];
+}
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
@@ -343,6 +387,46 @@ function CostCalcPlaceholder() {
   );
 }
 
+function readDraggedWorksheetElement(event: React.DragEvent<HTMLElement>): WorksheetElementItem | null {
+  const rawCustom = event.dataTransfer.getData(WORKSHEET_ELEMENT_DRAG_TYPE);
+  const rawPlain = event.dataTransfer.getData('text/plain');
+  const raw =
+    rawCustom ||
+    (rawPlain.startsWith('faddit-element:') ? rawPlain.replace('faddit-element:', '') : '');
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<WorksheetElementItem>;
+    if (
+      !parsed ||
+      typeof parsed.id !== 'string' ||
+      typeof parsed.name !== 'string' ||
+      typeof parsed.category !== 'string'
+    ) {
+      return null;
+    }
+
+    if (!WORKSHEET_ELEMENT_CATEGORIES.includes(parsed.category as WorksheetElementCategory)) {
+      return null;
+    }
+
+    return {
+      id: parsed.id,
+      name: parsed.name,
+      category: parsed.category as WorksheetElementCategory,
+      thumbnailUrl: typeof parsed.thumbnailUrl === 'string' && parsed.thumbnailUrl ? parsed.thumbnailUrl : null,
+      source:
+        parsed.source === 'workspace' || parsed.source === 'upload' ? parsed.source : undefined,
+      path: typeof parsed.path === 'string' ? parsed.path : null,
+      tag: typeof parsed.tag === 'string' ? parsed.tag : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function CustomWebEditorCell({
   value,
   onChange,
@@ -386,6 +470,17 @@ function CardBodyRenderer({
   onSelectDiagramSheet,
   onPrevDiagramSheet,
   onNextDiagramSheet,
+  moduleElements,
+  moduleSheetStates,
+  onRowImageDragOver,
+  onRowImageDrop,
+  onRowImageUpload,
+  onDeleteRow,
+  onMoveRow,
+  onSheetStateChange,
+  uploadingRowIndex,
+  rowValuePatches,
+  onConsumeRowValuePatch,
 }: {
   card: CardDefinition;
   customCardContent: Record<string, string>;
@@ -395,6 +490,17 @@ function CardBodyRenderer({
   onSelectDiagramSheet: (sheetId: string) => void;
   onPrevDiagramSheet: () => void;
   onNextDiagramSheet: () => void;
+  moduleElements: WorksheetElementItem[];
+  moduleSheetStates: Record<string, WorksheetModuleSheetState>;
+  onRowImageDragOver: (rowIndex: number, event: React.DragEvent<HTMLDivElement>) => void;
+  onRowImageDrop: (rowIndex: number, event: React.DragEvent<HTMLDivElement>) => void;
+  onRowImageUpload: (rowIndex: number, file: File) => void | Promise<void>;
+  onDeleteRow: (rowIndex: number) => void;
+  onMoveRow: (fromIndex: number, toIndex: number) => void;
+  onSheetStateChange: (cardId: string, state: WorksheetModuleSheetState) => void;
+  uploadingRowIndex: number | null;
+  rowValuePatches: Record<number, string[]>;
+  onConsumeRowValuePatch: (rowIndex: number) => void;
 }) {
   const cardId = card.id;
   const sizeSpecUnit = useWorksheetV2Store((s) => s.sizeSpecUnit);
@@ -432,7 +538,21 @@ function CardBodyRenderer({
           enableUnitConversion={false}
           showRowDeleteButton
           fillWidth
-          initialState={LABEL_SHEET_STATE}
+          initialState={moduleSheetStates['label-sheet'] ?? LABEL_SHEET_STATE}
+          onStateChange={(nextState) => onSheetStateChange('label-sheet', nextState)}
+          onDeleteRow={onDeleteRow}
+          onMoveRow={onMoveRow}
+          rowValuePatches={rowValuePatches}
+          onConsumeRowValuePatch={onConsumeRowValuePatch}
+          leadingImageColumn={{
+            header: '라벨 사진',
+            items: moduleElements,
+            onDragOverCell: onRowImageDragOver,
+            onDropCell: onRowImageDrop,
+            onUploadFile: onRowImageUpload,
+            uploadingRowIndex,
+            emptyLabel: '드래그/클릭 업로드',
+          }}
         />
       );
     case 'trim-sheet':
@@ -442,7 +562,21 @@ function CardBodyRenderer({
           enableUnitConversion={false}
           showRowDeleteButton
           fillWidth
-          initialState={TRIM_SHEET_STATE}
+          initialState={moduleSheetStates['trim-sheet'] ?? TRIM_SHEET_STATE}
+          onStateChange={(nextState) => onSheetStateChange('trim-sheet', nextState)}
+          onDeleteRow={onDeleteRow}
+          onMoveRow={onMoveRow}
+          rowValuePatches={rowValuePatches}
+          onConsumeRowValuePatch={onConsumeRowValuePatch}
+          leadingImageColumn={{
+            header: '부자재 사진',
+            items: moduleElements,
+            onDragOverCell: onRowImageDragOver,
+            onDropCell: onRowImageDrop,
+            onUploadFile: onRowImageUpload,
+            uploadingRowIndex,
+            emptyLabel: '드래그/클릭 업로드',
+          }}
         />
       );
     case 'color-size-qty':
@@ -451,7 +585,8 @@ function CardBodyRenderer({
           enableUnitConversion={false}
           showTotals
           fillWidth
-          initialState={COLOR_SIZE_QTY_STATE}
+          initialState={moduleSheetStates['color-size-qty'] ?? COLOR_SIZE_QTY_STATE}
+          onStateChange={(nextState) => onSheetStateChange('color-size-qty', nextState)}
         />
       );
     case 'fabric-info':
@@ -461,7 +596,21 @@ function CardBodyRenderer({
           enableUnitConversion={false}
           showRowDeleteButton
           fillWidth
-          initialState={FABRIC_INFO_STATE}
+          initialState={moduleSheetStates['fabric-info'] ?? FABRIC_INFO_STATE}
+          onStateChange={(nextState) => onSheetStateChange('fabric-info', nextState)}
+          onDeleteRow={onDeleteRow}
+          onMoveRow={onMoveRow}
+          rowValuePatches={rowValuePatches}
+          onConsumeRowValuePatch={onConsumeRowValuePatch}
+          leadingImageColumn={{
+            header: '원단 사진',
+            items: moduleElements,
+            onDragOverCell: onRowImageDragOver,
+            onDropCell: onRowImageDrop,
+            onUploadFile: onRowImageUpload,
+            uploadingRowIndex,
+            emptyLabel: '드래그/클릭 업로드',
+          }}
         />
       );
     case 'rib-fabric-info':
@@ -471,7 +620,21 @@ function CardBodyRenderer({
           enableUnitConversion={false}
           showRowDeleteButton
           fillWidth
-          initialState={RIB_FABRIC_INFO_STATE}
+          initialState={moduleSheetStates['rib-fabric-info'] ?? RIB_FABRIC_INFO_STATE}
+          onStateChange={(nextState) => onSheetStateChange('rib-fabric-info', nextState)}
+          onDeleteRow={onDeleteRow}
+          onMoveRow={onMoveRow}
+          rowValuePatches={rowValuePatches}
+          onConsumeRowValuePatch={onConsumeRowValuePatch}
+          leadingImageColumn={{
+            header: '원단 사진',
+            items: moduleElements,
+            onDragOverCell: onRowImageDragOver,
+            onDropCell: onRowImageDrop,
+            onUploadFile: onRowImageUpload,
+            uploadingRowIndex,
+            emptyLabel: '드래그/클릭 업로드',
+          }}
         />
       );
     case 'cost-calc':
@@ -502,6 +665,8 @@ export default function WorksheetV2GridContent({
   const { width, containerRef, mounted } = useContainerWidth();
   const navigate = useNavigate();
   const { worksheetId } = useParams<{ worksheetId?: string }>();
+  const userId = useAuthStore((state) => state.user?.userId || null);
+  const rootFolderId = useAuthStore((state) => state.user?.rootFolder || null);
 
   const activeTab = useWorksheetV2Store((s) => s.activeTab);
   const tabLayouts = useWorksheetV2Store((s) => s.tabLayouts);
@@ -509,13 +674,22 @@ export default function WorksheetV2GridContent({
   const activeCardIdByTab = useWorksheetV2Store((s) => s.activeCardIdByTab);
   const customCards = useWorksheetV2Store((s) => s.customCards);
   const customCardContent = useWorksheetV2Store((s) => s.customCardContent);
+  const moduleElements = useWorksheetV2Store((s) => s.moduleElements);
+  const moduleSheetStates = useWorksheetV2Store((s) => s.moduleSheetStates);
   const draggingCardId = useWorksheetV2Store((s) => s.draggingCardId);
+  const draggingElement = useWorksheetV2Store((s) => s.draggingElement);
   const updateLayout = useWorksheetV2Store((s) => s.updateLayout);
   const removeCard = useWorksheetV2Store((s) => s.removeCard);
   const showCardAt = useWorksheetV2Store((s) => s.showCardAt);
   const updateCustomCardContent = useWorksheetV2Store((s) => s.updateCustomCardContent);
+  const addElementToModule = useWorksheetV2Store((s) => s.addElementToModule);
+  const setElementAtModuleRow = useWorksheetV2Store((s) => s.setElementAtModuleRow);
+  const removeElementAtModuleRow = useWorksheetV2Store((s) => s.removeElementAtModuleRow);
+  const moveElementModuleRow = useWorksheetV2Store((s) => s.moveElementModuleRow);
   const setDraggingCardId = useWorksheetV2Store((s) => s.setDraggingCardId);
+  const setDraggingElement = useWorksheetV2Store((s) => s.setDraggingElement);
   const setActiveCard = useWorksheetV2Store((s) => s.setActiveCard);
+  const setModuleSheetState = useWorksheetV2Store((s) => s.setModuleSheetState);
 
   const [isInteracting, setIsInteracting] = useState(false);
   const [pendingLayout, setPendingLayout] = useState<LayoutItem[] | null>(null);
@@ -527,6 +701,20 @@ export default function WorksheetV2GridContent({
     w: number;
     h: number;
   } | null>(null);
+  const [moduleDropTargetId, setModuleDropTargetId] = useState<string | null>(null);
+  const [worksheetElementFolderId, setWorksheetElementFolderId] = useState<string | null>(null);
+  const [modulePhotoUploading, setModulePhotoUploading] = useState<{
+    cardId: string;
+    rowIndex: number;
+  } | null>(null);
+  const [moduleRowValuePatches, setModuleRowValuePatches] = useState<
+    Record<string, Record<number, string[]>>
+  >({});
+
+  useEffect(() => {
+    setWorksheetElementFolderId(null);
+    setModulePhotoUploading(null);
+  }, [rootFolderId, worksheetId]);
   const interactionStartLayoutRef = useRef<LayoutItem[] | null>(null);
 
   const diagramSheets = useMemo<DiagramSheetItem[]>(() => {
@@ -572,6 +760,148 @@ export default function WorksheetV2GridContent({
     if (selectedDiagramIndex < 0 || selectedDiagramIndex >= diagramSheets.length - 1) return;
     setSelectedDiagramSheetId(diagramSheets[selectedDiagramIndex + 1].id);
   }, [diagramSheets, selectedDiagramIndex]);
+
+  const getOrCreateWorksheetElementFolderId = useCallback(async () => {
+    if (!worksheetId || !rootFolderId) {
+      return null;
+    }
+
+    if (worksheetElementFolderId) {
+      return worksheetElementFolderId;
+    }
+
+    const rootData = await getDriveAll(rootFolderId);
+    const folderName = getWorksheetElementFolderName(worksheetId);
+    const existingFolder = rootData.folders.find((folder) => folder.name === folderName);
+
+    if (existingFolder) {
+      setWorksheetElementFolderId(existingFolder.fileSystemId);
+      return existingFolder.fileSystemId;
+    }
+
+    await createDriveFolder({
+      parentId: rootFolderId,
+      name: folderName,
+    });
+
+    const refreshedRootData = await getDriveAll(rootFolderId);
+    const createdFolder = refreshedRootData.folders.find((folder) => folder.name === folderName);
+    if (!createdFolder) {
+      return null;
+    }
+
+    setWorksheetElementFolderId(createdFolder.fileSystemId);
+    return createdFolder.fileSystemId;
+  }, [rootFolderId, worksheetElementFolderId, worksheetId]);
+
+  const uploadModulePhotoFile = useCallback(
+    async (cardId: string, rowIndex: number, category: WorksheetElementCategory, file: File) => {
+      if (!worksheetId || !userId || !rootFolderId) {
+        return;
+      }
+
+      const targetFolderId = await getOrCreateWorksheetElementFolderId();
+      if (!targetFolderId) {
+        return;
+      }
+
+      setModulePhotoUploading({ cardId, rowIndex });
+
+      try {
+        const normalizedFile = normalizeWorksheetElementUploadFile(file, category);
+        const tag = mapWorksheetElementCategoryToUploadTag(category);
+
+        const uploadResult = await createDriveFile({
+          parentId: targetFolderId,
+          userId,
+          files: [normalizedFile],
+          tags: [tag],
+        });
+
+        const createdEntry = uploadResult.result.find((entry) => entry.success && entry.result?.fileSystemId);
+        const fileSystemId = createdEntry?.result?.fileSystemId;
+        if (!fileSystemId) {
+          return;
+        }
+
+        const thumbnailUrl = await getDriveFilePreviewUrl(fileSystemId);
+        setElementAtModuleRow(cardId, rowIndex, {
+          id: fileSystemId,
+          name: createdEntry?.result?.name ?? normalizedFile.name,
+          category,
+          thumbnailUrl: thumbnailUrl || null,
+          source: 'upload',
+          path: null,
+          tag,
+        });
+
+        window.dispatchEvent(
+          new CustomEvent(WORKSHEET_ELEMENT_UPLOAD_REFRESH_EVENT, {
+            detail: {
+              worksheetId,
+            },
+          }),
+        );
+      } finally {
+        setModulePhotoUploading((prev) => {
+          if (!prev) {
+            return null;
+          }
+          if (prev.cardId !== cardId || prev.rowIndex !== rowIndex) {
+            return prev;
+          }
+          return null;
+        });
+      }
+    },
+    [
+      getOrCreateWorksheetElementFolderId,
+      rootFolderId,
+      setElementAtModuleRow,
+      userId,
+      worksheetId,
+    ],
+  );
+
+  const queueModuleRowValuePatch = useCallback((cardId: string, rowIndex: number, rowValues: string[]) => {
+    setModuleRowValuePatches((prev) => ({
+      ...prev,
+      [cardId]: {
+        ...(prev[cardId] ?? {}),
+        [rowIndex]: rowValues,
+      },
+    }));
+  }, []);
+
+  const consumeModuleRowValuePatch = useCallback((cardId: string, rowIndex: number) => {
+    setModuleRowValuePatches((prev) => {
+      const cardPatches = prev[cardId];
+      if (!cardPatches || !(rowIndex in cardPatches)) {
+        return prev;
+      }
+
+      const nextCardPatches = { ...cardPatches };
+      delete nextCardPatches[rowIndex];
+
+      if (Object.keys(nextCardPatches).length === 0) {
+        const next = { ...prev };
+        delete next[cardId];
+        return next;
+      }
+
+      return {
+        ...prev,
+        [cardId]: nextCardPatches,
+      };
+    });
+  }, []);
+
+  const getDraggedElement = useCallback(
+    (event: React.DragEvent<HTMLElement>) => {
+      return draggingElement ?? readDraggedWorksheetElement(event);
+    },
+    [draggingElement],
+  );
 
   const currentLayout = tabLayouts[activeTab];
   const visMap = cardVisibility[activeTab];
@@ -660,7 +990,16 @@ export default function WorksheetV2GridContent({
     (event: React.DragEvent<HTMLDivElement>) => {
       const byCustomType = event.dataTransfer.getData(WORKSHEET_MODULE_DRAG_TYPE);
       const byPlainText = event.dataTransfer.getData('text/plain');
-      return byCustomType || byPlainText || draggingCardId || '';
+
+      if (byCustomType) {
+        return byCustomType;
+      }
+
+      if (byPlainText.startsWith('faddit-card:')) {
+        return byPlainText.replace('faddit-card:', '');
+      }
+
+      return draggingCardId || '';
     },
     [draggingCardId],
   );
@@ -717,6 +1056,88 @@ export default function WorksheetV2GridContent({
               navigate(`/faddit/worksheet/edit${selectedPageQuery}`);
             };
 
+            const acceptedCategory =
+              activeTab === 'basic' ? MODULE_ELEMENT_ACCEPT_CATEGORY[card.id] : undefined;
+            const canDropElement = Boolean(acceptedCategory);
+            const uploadingRowIndexForCard =
+              modulePhotoUploading?.cardId === card.id ? modulePhotoUploading.rowIndex : null;
+            const rowValuePatchesForCard = moduleRowValuePatches[card.id] ?? {};
+            const isElementAllowedForModule = (draggedElement: WorksheetElementItem) => {
+              if (!acceptedCategory) {
+                return false;
+              }
+
+              if (draggedElement.source === 'upload') {
+                return true;
+              }
+
+              return draggedElement.category === acceptedCategory;
+            };
+
+            const handleRowImageDragOver = (rowIndex: number, event: React.DragEvent<HTMLDivElement>) => {
+              if (!canDropElement || !acceptedCategory) {
+                return;
+              }
+
+              const draggedElement = getDraggedElement(event);
+              if (!draggedElement) {
+                return;
+              }
+
+              event.stopPropagation();
+              if (!isElementAllowedForModule(draggedElement)) {
+                return;
+              }
+
+              event.preventDefault();
+              event.dataTransfer.dropEffect = 'copy';
+            };
+
+            const handleRowImageDrop = (rowIndex: number, event: React.DragEvent<HTMLDivElement>) => {
+              if (!canDropElement || !acceptedCategory) {
+                return;
+              }
+
+              const draggedElement = getDraggedElement(event);
+              if (!draggedElement) {
+                return;
+              }
+
+              event.stopPropagation();
+              if (!isElementAllowedForModule(draggedElement)) {
+                return;
+              }
+
+              event.preventDefault();
+
+              if (draggedElement.source === 'workspace') {
+                queueModuleRowValuePatch(card.id, rowIndex, buildWorkspaceElementRowValues(card.id, draggedElement));
+              }
+
+              setElementAtModuleRow(card.id, rowIndex, draggedElement);
+              setDraggingElement(null);
+            };
+
+            const handleRowImageUpload = (rowIndex: number, file: File) => {
+              if (!acceptedCategory) {
+                return;
+              }
+
+              return uploadModulePhotoFile(card.id, rowIndex, acceptedCategory, file);
+            };
+
+            const handleDeleteModuleRow = (rowIndex: number) => {
+              removeElementAtModuleRow(card.id, rowIndex);
+            };
+
+            const handleMoveModuleRow = (fromIndex: number, toIndex: number) => {
+              moveElementModuleRow(card.id, fromIndex, toIndex);
+            };
+
+            const handleModuleSheetStateChange = (cardId: string, state: WorksheetModuleSheetState) => {
+              setModuleSheetState(cardId, state);
+            };
+
             return (
               <WorksheetV2GridCard
                 cardId={card.id}
@@ -743,16 +1164,89 @@ export default function WorksheetV2GridContent({
                 isActive={activeCardId === card.id}
                 onActivate={(cardId) => setActiveCard(activeTab, cardId)}
               >
-                <CardBodyRenderer
-                  card={card}
-                  customCardContent={customCardContent}
-                  onChangeCustomContent={updateCustomCardContent}
-                  diagramSheets={diagramSheets}
-                  selectedDiagramSheetId={selectedDiagramSheetId}
-                  onSelectDiagramSheet={setSelectedDiagramSheetId}
-                  onPrevDiagramSheet={handlePrevDiagramSheet}
-                  onNextDiagramSheet={handleNextDiagramSheet}
-                />
+                <div
+                  className='relative h-full'
+                  onDragOver={(event) => {
+                    if (!canDropElement || !acceptedCategory) {
+                      return;
+                    }
+                    const draggedElement = getDraggedElement(event);
+                    if (!draggedElement) {
+                      return;
+                    }
+
+                    event.stopPropagation();
+                    if (!isElementAllowedForModule(draggedElement)) {
+                      return;
+                    }
+
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = 'copy';
+                    if (moduleDropTargetId !== card.id) {
+                      setModuleDropTargetId(card.id);
+                    }
+                  }}
+                  onDragLeave={() => {
+                    if (moduleDropTargetId === card.id) {
+                      setModuleDropTargetId(null);
+                    }
+                  }}
+                  onDrop={(event) => {
+                    if (!canDropElement || !acceptedCategory) {
+                      return;
+                    }
+
+                    const draggedElement = getDraggedElement(event);
+                    if (!draggedElement) {
+                      return;
+                    }
+
+                    event.stopPropagation();
+                    if (!isElementAllowedForModule(draggedElement)) {
+                      return;
+                    }
+
+                    event.preventDefault();
+
+                    const nextRowIndex = (moduleElements[card.id] ?? []).length;
+                    if (draggedElement.source === 'workspace') {
+                      queueModuleRowValuePatch(
+                        card.id,
+                        nextRowIndex,
+                        buildWorkspaceElementRowValues(card.id, draggedElement),
+                      );
+                    }
+
+                    addElementToModule(card.id, draggedElement);
+                    setDraggingElement(null);
+                    setModuleDropTargetId(null);
+                  }}
+                >
+                  <CardBodyRenderer
+                    card={card}
+                    customCardContent={customCardContent}
+                    onChangeCustomContent={updateCustomCardContent}
+                    diagramSheets={diagramSheets}
+                    selectedDiagramSheetId={selectedDiagramSheetId}
+                    onSelectDiagramSheet={setSelectedDiagramSheetId}
+                    onPrevDiagramSheet={handlePrevDiagramSheet}
+                    onNextDiagramSheet={handleNextDiagramSheet}
+                    moduleElements={moduleElements[card.id] ?? []}
+                    moduleSheetStates={moduleSheetStates}
+                    onRowImageDragOver={handleRowImageDragOver}
+                    onRowImageDrop={handleRowImageDrop}
+                    onRowImageUpload={handleRowImageUpload}
+                    onDeleteRow={handleDeleteModuleRow}
+                    onMoveRow={handleMoveModuleRow}
+                    onSheetStateChange={handleModuleSheetStateChange}
+                    uploadingRowIndex={uploadingRowIndexForCard}
+                    rowValuePatches={rowValuePatchesForCard}
+                    onConsumeRowValuePatch={(rowIndex) => consumeModuleRowValuePatch(card.id, rowIndex)}
+                  />
+                  {moduleDropTargetId === card.id ? (
+                    <div className='pointer-events-none absolute inset-2 rounded-md border-2 border-dashed border-violet-400 bg-violet-100/30' />
+                  ) : null}
+                </div>
               </WorksheetV2GridCard>
             );
           })()}
@@ -766,13 +1260,28 @@ export default function WorksheetV2GridContent({
       activeCardId,
       setActiveCard,
       customCardContent,
+      moduleElements,
+      moduleSheetStates,
       updateCustomCardContent,
+      addElementToModule,
+      setElementAtModuleRow,
+      removeElementAtModuleRow,
+      moveElementModuleRow,
+      uploadModulePhotoFile,
+      queueModuleRowValuePatch,
+      consumeModuleRowValuePatch,
+      getDraggedElement,
       navigate,
       worksheetId,
       diagramSheets,
       selectedDiagramSheetId,
       handlePrevDiagramSheet,
       handleNextDiagramSheet,
+      moduleDropTargetId,
+      modulePhotoUploading,
+      moduleRowValuePatches,
+      setDraggingElement,
+      setModuleSheetState,
     ],
   );
 
@@ -789,6 +1298,7 @@ export default function WorksheetV2GridContent({
 
         event.preventDefault();
         event.dataTransfer.dropEffect = 'move';
+        setModuleDropTargetId(null);
 
         const preview = calculateDropPreview(event, draggedCardId);
         if (!preview) {
@@ -800,13 +1310,18 @@ export default function WorksheetV2GridContent({
       }}
       onDragLeave={() => {
         setDropPreview(null);
+        setModuleDropTargetId(null);
       }}
       onDrop={(event) => {
         const draggedCardId = resolveDraggedCardId(event);
+        if (!draggedCardId) {
+          return;
+        }
         event.preventDefault();
 
         const preview = draggedCardId ? calculateDropPreview(event, draggedCardId) : null;
         setDropPreview(null);
+        setModuleDropTargetId(null);
         setDraggingCardId(null);
 
         if (!preview) {
