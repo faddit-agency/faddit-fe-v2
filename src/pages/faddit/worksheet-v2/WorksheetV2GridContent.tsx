@@ -24,6 +24,7 @@ import {
   type CardDefinition,
   type WorksheetElementCategory,
   type WorksheetElementItem,
+  type WorksheetModuleSheetState,
 } from './worksheetV2Types';
 import type {
   WorksheetEditorDocument,
@@ -470,11 +471,13 @@ function CardBodyRenderer({
   onPrevDiagramSheet,
   onNextDiagramSheet,
   moduleElements,
+  moduleSheetStates,
   onRowImageDragOver,
   onRowImageDrop,
   onRowImageUpload,
   onDeleteRow,
   onMoveRow,
+  onSheetStateChange,
   uploadingRowIndex,
   rowValuePatches,
   onConsumeRowValuePatch,
@@ -488,11 +491,13 @@ function CardBodyRenderer({
   onPrevDiagramSheet: () => void;
   onNextDiagramSheet: () => void;
   moduleElements: WorksheetElementItem[];
+  moduleSheetStates: Record<string, WorksheetModuleSheetState>;
   onRowImageDragOver: (rowIndex: number, event: React.DragEvent<HTMLDivElement>) => void;
   onRowImageDrop: (rowIndex: number, event: React.DragEvent<HTMLDivElement>) => void;
   onRowImageUpload: (rowIndex: number, file: File) => void | Promise<void>;
   onDeleteRow: (rowIndex: number) => void;
   onMoveRow: (fromIndex: number, toIndex: number) => void;
+  onSheetStateChange: (cardId: string, state: WorksheetModuleSheetState) => void;
   uploadingRowIndex: number | null;
   rowValuePatches: Record<number, string[]>;
   onConsumeRowValuePatch: (rowIndex: number) => void;
@@ -533,7 +538,8 @@ function CardBodyRenderer({
           enableUnitConversion={false}
           showRowDeleteButton
           fillWidth
-          initialState={LABEL_SHEET_STATE}
+          initialState={moduleSheetStates['label-sheet'] ?? LABEL_SHEET_STATE}
+          onStateChange={(nextState) => onSheetStateChange('label-sheet', nextState)}
           onDeleteRow={onDeleteRow}
           onMoveRow={onMoveRow}
           rowValuePatches={rowValuePatches}
@@ -556,7 +562,8 @@ function CardBodyRenderer({
           enableUnitConversion={false}
           showRowDeleteButton
           fillWidth
-          initialState={TRIM_SHEET_STATE}
+          initialState={moduleSheetStates['trim-sheet'] ?? TRIM_SHEET_STATE}
+          onStateChange={(nextState) => onSheetStateChange('trim-sheet', nextState)}
           onDeleteRow={onDeleteRow}
           onMoveRow={onMoveRow}
           rowValuePatches={rowValuePatches}
@@ -578,7 +585,8 @@ function CardBodyRenderer({
           enableUnitConversion={false}
           showTotals
           fillWidth
-          initialState={COLOR_SIZE_QTY_STATE}
+          initialState={moduleSheetStates['color-size-qty'] ?? COLOR_SIZE_QTY_STATE}
+          onStateChange={(nextState) => onSheetStateChange('color-size-qty', nextState)}
         />
       );
     case 'fabric-info':
@@ -588,7 +596,8 @@ function CardBodyRenderer({
           enableUnitConversion={false}
           showRowDeleteButton
           fillWidth
-          initialState={FABRIC_INFO_STATE}
+          initialState={moduleSheetStates['fabric-info'] ?? FABRIC_INFO_STATE}
+          onStateChange={(nextState) => onSheetStateChange('fabric-info', nextState)}
           onDeleteRow={onDeleteRow}
           onMoveRow={onMoveRow}
           rowValuePatches={rowValuePatches}
@@ -611,7 +620,8 @@ function CardBodyRenderer({
           enableUnitConversion={false}
           showRowDeleteButton
           fillWidth
-          initialState={RIB_FABRIC_INFO_STATE}
+          initialState={moduleSheetStates['rib-fabric-info'] ?? RIB_FABRIC_INFO_STATE}
+          onStateChange={(nextState) => onSheetStateChange('rib-fabric-info', nextState)}
           onDeleteRow={onDeleteRow}
           onMoveRow={onMoveRow}
           rowValuePatches={rowValuePatches}
@@ -665,6 +675,7 @@ export default function WorksheetV2GridContent({
   const customCards = useWorksheetV2Store((s) => s.customCards);
   const customCardContent = useWorksheetV2Store((s) => s.customCardContent);
   const moduleElements = useWorksheetV2Store((s) => s.moduleElements);
+  const moduleSheetStates = useWorksheetV2Store((s) => s.moduleSheetStates);
   const draggingCardId = useWorksheetV2Store((s) => s.draggingCardId);
   const draggingElement = useWorksheetV2Store((s) => s.draggingElement);
   const updateLayout = useWorksheetV2Store((s) => s.updateLayout);
@@ -678,6 +689,7 @@ export default function WorksheetV2GridContent({
   const setDraggingCardId = useWorksheetV2Store((s) => s.setDraggingCardId);
   const setDraggingElement = useWorksheetV2Store((s) => s.setDraggingElement);
   const setActiveCard = useWorksheetV2Store((s) => s.setActiveCard);
+  const setModuleSheetState = useWorksheetV2Store((s) => s.setModuleSheetState);
 
   const [isInteracting, setIsInteracting] = useState(false);
   const [pendingLayout, setPendingLayout] = useState<LayoutItem[] | null>(null);
@@ -1122,6 +1134,10 @@ export default function WorksheetV2GridContent({
               moveElementModuleRow(card.id, fromIndex, toIndex);
             };
 
+            const handleModuleSheetStateChange = (cardId: string, state: WorksheetModuleSheetState) => {
+              setModuleSheetState(cardId, state);
+            };
+
             return (
               <WorksheetV2GridCard
                 cardId={card.id}
@@ -1216,11 +1232,13 @@ export default function WorksheetV2GridContent({
                     onPrevDiagramSheet={handlePrevDiagramSheet}
                     onNextDiagramSheet={handleNextDiagramSheet}
                     moduleElements={moduleElements[card.id] ?? []}
+                    moduleSheetStates={moduleSheetStates}
                     onRowImageDragOver={handleRowImageDragOver}
                     onRowImageDrop={handleRowImageDrop}
                     onRowImageUpload={handleRowImageUpload}
                     onDeleteRow={handleDeleteModuleRow}
                     onMoveRow={handleMoveModuleRow}
+                    onSheetStateChange={handleModuleSheetStateChange}
                     uploadingRowIndex={uploadingRowIndexForCard}
                     rowValuePatches={rowValuePatchesForCard}
                     onConsumeRowValuePatch={(rowIndex) => consumeModuleRowValuePatch(card.id, rowIndex)}
@@ -1243,6 +1261,7 @@ export default function WorksheetV2GridContent({
       setActiveCard,
       customCardContent,
       moduleElements,
+      moduleSheetStates,
       updateCustomCardContent,
       addElementToModule,
       setElementAtModuleRow,
@@ -1262,6 +1281,7 @@ export default function WorksheetV2GridContent({
       modulePhotoUploading,
       moduleRowValuePatches,
       setDraggingElement,
+      setModuleSheetState,
     ],
   );
 

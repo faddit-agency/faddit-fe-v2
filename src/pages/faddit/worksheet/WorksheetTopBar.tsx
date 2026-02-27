@@ -6,6 +6,7 @@ interface WorksheetTopBarProps {
   onSave?: () => void;
   isSaving?: boolean;
   hasUnsavedChanges?: boolean;
+  inline?: boolean;
 }
 
 export default function WorksheetTopBar({
@@ -13,6 +14,7 @@ export default function WorksheetTopBar({
   onSave,
   isSaving = false,
   hasUnsavedChanges = false,
+  inline = false,
 }: WorksheetTopBarProps) {
   const MIN_SPIN_MS = 1000;
   const SAVED_BADGE_MS = 900;
@@ -101,17 +103,22 @@ export default function WorksheetTopBar({
   }, [saveLabel, showStatusIcon, shareBaseWidth]);
 
   const isSaveDisabled = !onSave || visualState === 'saving';
+  const containerClassName = inline
+    ? 'flex items-center gap-x-2'
+    : 'pointer-events-none absolute top-11 right-6 z-[180] flex items-center gap-x-2';
 
   return (
-    <div className='pointer-events-none absolute top-11 right-6 z-[180] flex items-center gap-x-2'>
-      <button
-        type='button'
-        onClick={onExit}
-        className='pointer-events-auto inline-flex h-9 w-[116px] cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-900 transition-colors hover:bg-violet-50'
-      >
-        <ArrowLeft size={14} className='shrink-0 translate-y-[0.5px]' />
-        나가기
-      </button>
+    <div className={containerClassName}>
+      {onExit ? (
+        <button
+          type='button'
+          onClick={onExit}
+          className='pointer-events-auto inline-flex h-9 w-[116px] cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-900 transition-colors hover:bg-violet-50'
+        >
+          <ArrowLeft size={14} className='shrink-0 translate-y-[0.5px]' />
+          나가기
+        </button>
+      ) : null}
 
       <button
         type='button'

@@ -38,12 +38,18 @@ type WorksheetSizeSpecViewProps = {
     emptyLabel?: string;
   };
   autoColumnDefaultValues?: Record<number, string>;
+  onStateChange?: (nextState: SizeSpec) => void;
 };
 
 interface SizeSpec {
   headers: string[];
   rows: string[][];
 }
+
+const cloneSizeSpec = (spec: SizeSpec): SizeSpec => ({
+  headers: [...spec.headers],
+  rows: spec.rows.map((row) => [...row]),
+});
 
 type DragItem =
   | { type: 'row'; index: number }
@@ -178,6 +184,7 @@ export default function WorksheetSizeSpecView({
   onConsumeRowValuePatch,
   leadingImageColumn,
   autoColumnDefaultValues,
+  onStateChange,
 }: WorksheetSizeSpecViewProps) {
   const [spec, updateSpec] = useImmer<SizeSpec>({
     headers: [...initialState.headers],
@@ -191,6 +198,7 @@ export default function WorksheetSizeSpecView({
   const [hoveredDataCol, setHoveredDataCol] = useState<number | null>(null);
   const [pendingImageUploadRow, setPendingImageUploadRow] = useState<number | null>(null);
   const leadingImageUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const initialStateSignature = useMemo(() => JSON.stringify(initialState), [initialState]);
 
   const rowHeaderExpanded = rowHeaderHovered || dragItem?.type === 'row';
   const rowHeaderPadding = rowHeaderExpanded
@@ -252,6 +260,22 @@ export default function WorksheetSizeSpecView({
   useEffect(() => {
     setCellDrafts({});
   }, [displayUnit]);
+
+  useEffect(() => {
+    updateSpec((draft) => {
+      draft.headers = [...initialState.headers];
+      draft.rows = initialState.rows.map((row) => [...row]);
+    });
+    setCellDrafts({});
+  }, [initialStateSignature, updateSpec]);
+
+  useEffect(() => {
+    if (!onStateChange) {
+      return;
+    }
+
+    onStateChange(cloneSizeSpec(spec));
+  }, [onStateChange, spec]);
 
   useEffect(() => {
     const imageCount = leadingImageColumn?.items.length ?? 0;
@@ -846,8 +870,8 @@ export default function WorksheetSizeSpecView({
                   {hasLeadingImageColumn && (
                     <td className='border border-slate-200 bg-white p-0'>
                       <div
-                        className={`group/photo flex h-full min-h-[56px] items-center justify-center p-1 ${
-                          leadingImageColumn?.onUploadFile ? 'cursor-pointer' : ''
+                        className={`group/photo relative flex h-full min-h-[56px] items-center justify-center p-1 transition-colors ${
+                          leadingImageColumn?.onUploadFile ? 'cursor-pointer hover:bg-violet-50/30' : ''
                         }`}
                         onDragOver={(event) => {
                           leadingImageColumn?.onDragOverCell?.(rowIndex, event);
@@ -858,27 +882,32 @@ export default function WorksheetSizeSpecView({
                         onClick={() => triggerLeadingImageUpload(rowIndex)}
                       >
                         {leadingImageColumn?.uploadingRowIndex === rowIndex ? (
-                          <span className='text-[10px] font-medium text-violet-500'>업로드 중...</span>
+                          <div className='flex h-12 w-full flex-col items-center justify-center rounded-md border border-violet-200 bg-violet-50 text-violet-600'>
+                            <Upload size={12} className='mb-0.5 animate-pulse' />
+                            <span className='text-[10px] font-medium'>업로드 중...</span>
+                          </div>
                         ) : rowImageItem?.thumbnailUrl ? (
                           <div className='relative h-full w-full'>
                             <img
                               src={rowImageItem.thumbnailUrl}
                               alt={rowImageItem.name}
-                              className='h-12 w-full rounded object-cover'
+                              className='h-12 w-full rounded-md object-cover ring-1 ring-slate-200'
                               loading='lazy'
                             />
                             {leadingImageColumn?.onUploadFile ? (
-                              <div className='pointer-events-none absolute inset-0 flex items-center justify-center rounded bg-black/0 opacity-0 transition-all duration-150 group-hover/photo:bg-black/30 group-hover/photo:opacity-100'>
-                                <span className='rounded bg-white/90 px-1.5 py-0.5 text-[10px] font-medium text-gray-700'>
+                              <div className='pointer-events-none absolute inset-0 flex items-center justify-center rounded-md bg-black/0 opacity-0 transition-all duration-150 group-hover/photo:bg-black/35 group-hover/photo:opacity-100'>
+                                <span className='rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-medium text-gray-700'>
                                   클릭해서 교체
                                 </span>
                               </div>
                             ) : null}
                           </div>
                         ) : (
-                          <div className='flex h-12 w-full flex-col items-center justify-center rounded border border-dashed border-slate-300 bg-slate-50 text-[10px] text-slate-400'>
-                            <Upload size={12} className='mb-0.5' />
-                            {leadingImageColumn?.emptyLabel ?? '드래그/클릭 업로드'}
+                          <div className='flex h-12 w-full flex-col items-center justify-center rounded-md border border-dashed border-slate-300 bg-gradient-to-b from-white to-slate-50 text-[10px] text-slate-500 transition-colors group-hover/photo:border-violet-300 group-hover/photo:text-violet-600'>
+                            <span className='mb-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-100 transition-colors group-hover/photo:bg-violet-100'>
+                              <Upload size={10} />
+                            </span>
+                            <span className='font-medium'>{leadingImageColumn?.emptyLabel ?? '드래그/클릭 업로드'}</span>
                           </div>
                         )}
                       </div>

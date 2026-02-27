@@ -101,6 +101,13 @@ const getElementCategoryBadgeClass = (category: ElementWorkspaceCategory) => {
   return 'bg-violet-500/90 text-white';
 };
 
+const MATERIAL_CATEGORY_TO_WORKSHEET_CATEGORY: Record<MaterialItem['category'], WorksheetElementCategory> = {
+  fabric: '원단',
+  rib_fabric: '시보리원단',
+  label: '라벨',
+  trim: '부자재',
+};
+
 const getElementWorkspaceCategory = (node: DriveNode): WorksheetElementCategory => {
   const tag = (node.tag || '').toLowerCase();
   const name = (node.name || '').toLowerCase();
@@ -119,6 +126,39 @@ const getElementWorkspaceCategory = (node: DriveNode): WorksheetElementCategory 
   }
 
   return '부자재';
+};
+
+const resolveElementWorkspaceCategory = async (
+  node: DriveNode,
+  userId: string | null,
+): Promise<WorksheetElementCategory> => {
+  const baseCategory = getElementWorkspaceCategory(node);
+  const tag = (node.tag || '').toLowerCase();
+
+  if (!userId) {
+    return baseCategory;
+  }
+
+  const shouldResolveByMaterial = tag === 'fabric' || tag === '' || baseCategory === '원단';
+  if (!shouldResolveByMaterial) {
+    return baseCategory;
+  }
+
+  try {
+    const materials = await getMaterialsByFileSystem(node.fileSystemId, userId);
+    if (materials.length === 0) {
+      return baseCategory;
+    }
+
+    const preferredMaterial =
+      materials.find((material) => material.category === 'rib_fabric') ??
+      materials.find((material) => material.category === 'fabric') ??
+      materials[0];
+
+    return MATERIAL_CATEGORY_TO_WORKSHEET_CATEGORY[preferredMaterial.category] ?? baseCategory;
+  } catch {
+    return baseCategory;
+  }
 };
 
 const ELEMENT_DETAIL_PANEL_WIDTH = 308;
@@ -544,23 +584,24 @@ export default function WorksheetTemplateSidebar({
         nodes
           .filter((node) => node.type !== 'folder' && node.type !== 'worksheet')
         .map(async (node): Promise<ElementWorkspaceFile> => {
-          let thumbnailUrl: string | null = null;
-
-          try {
-            const previewUrl = await getDriveFilePreviewUrl(node.fileSystemId);
-            if (previewUrl) {
-              thumbnailUrl = previewUrl;
-            }
-          } catch {
-            thumbnailUrl = null;
-          }
+          const [thumbnailUrl, category] = await Promise.all([
+            (async () => {
+              try {
+                const previewUrl = await getDriveFilePreviewUrl(node.fileSystemId);
+                return previewUrl || null;
+              } catch {
+                return null;
+              }
+            })(),
+            resolveElementWorkspaceCategory(node, userId),
+          ]);
 
           return {
             id: node.fileSystemId,
             name: node.name,
             type: node.type,
             tag: node.tag,
-            category: getElementWorkspaceCategory(node),
+            category,
             thumbnailUrl,
             source,
             path: node.path,
@@ -569,7 +610,7 @@ export default function WorksheetTemplateSidebar({
         }),
     );
     },
-    [],
+    [userId],
   );
 
   const loadUploadedElementFiles = useCallback(

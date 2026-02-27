@@ -37,3 +37,8 @@ export type WorksheetElementItem = {
   path?: string | null;
   tag?: string | null;
 };
+
+export type WorksheetModuleSheetState = {
+  headers: string[];
+  rows: string[][];
+};
