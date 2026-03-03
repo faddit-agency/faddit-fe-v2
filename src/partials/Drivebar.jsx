@@ -514,14 +514,13 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
   };
 
   const openFileDetail = (fileId, parentFolderId) => {
+    const workspaceRoot = rootFolderId || rootFolderFromAuth || null;
     const resolvedParentFolderId =
       parentFolderId ||
       getItemParentId(fileId) ||
       findParentFolderIdInTree(workspaces, fileId) ||
       findParentFolderIdInTree(favorites, fileId);
-    const pathname = resolvedParentFolderId
-      ? `/faddit/drive/${resolvedParentFolderId}`
-      : '/faddit/drive';
+    const pathname = `/faddit/drive/${resolvedParentFolderId || workspaceRoot || ''}`.replace(/\/$/, '');
     navigate({
       pathname,
       search: `?file=${fileId}`,
@@ -542,7 +541,7 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
       <div
         id='sidebar'
         ref={sidebar}
-        className={`lg:sidebar-expanded:!w-64 absolute top-0 left-0 z-40 flex h-[100dvh] w-64 shrink-0 flex-col overflow-hidden bg-gray-100 p-4 transition-all duration-200 ease-in-out lg:static lg:top-auto lg:left-auto lg:flex! lg:w-20 lg:translate-x-0 2xl:w-64! dark:bg-gray-800 ${sidebarOpen ? 'translate-x-0' : '-translate-x-64'} ${variant === 'v2' ? 'border-r border-gray-200 dark:border-gray-700/60' : 'rounded-r-2xl shadow-xs'}`}
+        className={`lg:sidebar-expanded:!w-64 absolute top-0 left-0 z-40 flex h-[100dvh] w-64 shrink-0 flex-col overflow-hidden bg-gray-100 p-4 transition-all duration-200 ease-in-out lg:static lg:top-auto lg:left-auto lg:flex! lg:w-20 lg:translate-x-0 2xl:w-64! dark:bg-gray-800 ${sidebarOpen ? 'translate-x-0' : '-translate-x-64'} ${variant === 'v2' ? 'border-r border-gray-200 dark:border-gray-700/60' : 'shadow-xs'}`}
       >
         {/* Sidebar header */}
         <div className='mb-10 flex justify-between pr-3 sm:px-2'>
@@ -830,7 +829,6 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
               <p className='mt-2 font-semibold text-gray-400'>Pro 요금제 업그레이드 (출시 예정)</p>
             </div>
           </div>
-
         </div>
       </div>
     </div>

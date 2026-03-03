@@ -85,9 +85,11 @@ import FadditDrive from './pages/faddit/drive/Drive';
 import DeletedDrive from './pages/faddit/drive/DeletedDrive';
 import DriveLayout from './layouts/DriveLayout';
 import { bootstrapAuthSession } from './lib/api/authApi';
+import { useAuthStore } from './store/useAuthStore';
 
 function App() {
   const location = useLocation();
+  const setSessionBootstrapped = useAuthStore((state) => state.setSessionBootstrapped);
 
   useEffect(() => {
     document.querySelector('html').style.scrollBehavior = 'auto';
@@ -96,8 +98,14 @@ function App() {
   }, [location.pathname]); // triggered on route change
 
   useEffect(() => {
-    void bootstrapAuthSession();
-  }, []);
+    bootstrapAuthSession()
+      .catch(() => {
+        return;
+      })
+      .finally(() => {
+        setSessionBootstrapped(true);
+      });
+  }, [setSessionBootstrapped]);
 
   return (
     <>

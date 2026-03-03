@@ -13,7 +13,9 @@ export type AuthUser = {
 type AuthState = {
   user: AuthUser | null;
   isAuthenticated: boolean;
+  isSessionBootstrapped: boolean;
   setAuthenticated: (isAuthenticated: boolean) => void;
+  setSessionBootstrapped: (isBootstrapped: boolean) => void;
   setUser: (user: AuthUser | null) => void;
   clearAuth: () => void;
 };
@@ -67,6 +69,7 @@ const initialAuth = loadPersistedAuth();
 export const useAuthStore = createAppStore<AuthState>('auth-store', (set, get) => ({
   user: initialAuth.user,
   isAuthenticated: initialAuth.isAuthenticated,
+  isSessionBootstrapped: false,
   setAuthenticated: (isAuthenticated) => {
     const nextState = {
       user: get().user,
@@ -74,6 +77,9 @@ export const useAuthStore = createAppStore<AuthState>('auth-store', (set, get) =
     };
     persistAuth(nextState);
     set({ isAuthenticated }, false, 'auth-store/setAuthenticated');
+  },
+  setSessionBootstrapped: (isSessionBootstrapped) => {
+    set({ isSessionBootstrapped }, false, 'auth-store/setSessionBootstrapped');
   },
   setUser: (user) => {
     const nextState = {
