@@ -13,6 +13,31 @@ export type DriveViewFolder = {
   parentId: string | null;
 };
 
+type RecentDocsDebugFolder = {
+  id: string;
+  name: string;
+  action_type: 'folder_enter';
+};
+
+type RecentDocsDebugFile = {
+  id: string;
+  name: string;
+  action_type: 'file_view' | 'file_edit' | 'file_create' | null;
+  created_at: string | null;
+};
+
+type RecentDocsDebugState = {
+  fetchedAt: string;
+  folders: RecentDocsDebugFolder[];
+  files: RecentDocsDebugFile[];
+};
+
+type RecentTrackDebugEntry = {
+  trackedAt: string;
+  fileSystemId: string;
+  action_type: 'folder_enter' | 'file_view' | 'file_edit' | 'file_create';
+};
+
 type DriveStoreState = {
   materialsByFileSystemId: Record<string, MaterialItem[]>;
   setMaterialsForFile: (fileSystemId: string, materials: MaterialItem[]) => void;
@@ -36,6 +61,12 @@ type DriveStoreState = {
   driveLoading: boolean;
   setSearchLoading: (next: boolean) => void;
   setDriveLoading: (next: boolean) => void;
+
+  recentDocsDebug: RecentDocsDebugState | null;
+  setRecentDocsDebug: (payload: RecentDocsDebugState) => void;
+  clearRecentDocsDebug: () => void;
+  recentTrackDebug: RecentTrackDebugEntry[];
+  pushRecentTrackDebug: (payload: RecentTrackDebugEntry) => void;
 };
 
 export const useDriveStore = createAppStore<DriveStoreState>('drive-store', (set) => ({
@@ -105,5 +136,23 @@ export const useDriveStore = createAppStore<DriveStoreState>('drive-store', (set
   },
   setDriveLoading: (next) => {
     set({ driveLoading: next }, false, 'drive-store/setDriveLoading');
+  },
+
+  recentDocsDebug: null,
+  setRecentDocsDebug: (payload) => {
+    set({ recentDocsDebug: payload }, false, 'drive-store/setRecentDocsDebug');
+  },
+  clearRecentDocsDebug: () => {
+    set({ recentDocsDebug: null }, false, 'drive-store/clearRecentDocsDebug');
+  },
+  recentTrackDebug: [],
+  pushRecentTrackDebug: (payload) => {
+    set(
+      (prev) => ({
+        recentTrackDebug: [payload, ...prev.recentTrackDebug].slice(0, 100),
+      }),
+      false,
+      'drive-store/pushRecentTrackDebug',
+    );
   },
 }));

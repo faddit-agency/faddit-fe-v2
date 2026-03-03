@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useForm, SubmitHandler } from 'react-hook-form';
+import { Eye, EyeOff } from 'lucide-react';
 import Img from '../../../components/atoms/Img';
 import GoogleLogo from '../../../images/icons/google-logo.svg';
 import KakaoLogo from '../../../images/icons/kakao-logo.svg';
@@ -14,6 +15,7 @@ interface LoginFormInputs {
 }
 
 const Login: React.FC = () => {
+  const [showPassword, setShowPassword] = React.useState(false);
   const {
     register,
     handleSubmit,
@@ -98,13 +100,23 @@ const Login: React.FC = () => {
             <label className='mb-1 block text-sm font-medium' htmlFor='password'>
               비밀번호
             </label>
-            <input
-              id='password'
-              className={`form-input w-full ${errors.password ? 'border-red-500' : ''}`}
-              type='password'
-              autoComplete='on'
-              {...register('password', { required: '비밀번호를 입력해주세요.' })}
-            />
+            <div className='relative'>
+              <input
+                id='password'
+                className={`form-input w-full pr-10 ${errors.password ? 'border-red-500' : ''}`}
+                type={showPassword ? 'text' : 'password'}
+                autoComplete='on'
+                {...register('password', { required: '비밀번호를 입력해주세요.' })}
+              />
+              <button
+                type='button'
+                className='absolute top-1/2 right-3 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                onClick={() => setShowPassword((prev) => !prev)}
+                aria-label={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
+              >
+                {showPassword ? <EyeOff className='h-4 w-4' /> : <Eye className='h-4 w-4' />}
+              </button>
+            </div>
             {errors.password && (
               <span className='mt-1 text-xs text-red-500'>{errors.password.message}</span>
             )}

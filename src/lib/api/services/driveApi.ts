@@ -3,6 +3,7 @@ import { baseHttpClient } from '../client/httpClient';
 
 export type DriveNode = {
   fileSystemId: string;
+  worksheetId?: string;
   name: string;
   path: string;
   idPath: string;
@@ -10,6 +11,7 @@ export type DriveNode = {
   isStarred: boolean;
   isRoot: boolean;
   childrenCount: number;
+  createdAt?: string;
   updatedAt: string;
   parentId: string | null;
   size?: number;
@@ -17,7 +19,8 @@ export type DriveNode = {
   tag?: string;
   creatorName?: string;
   creatorProfileImg?: string;
-  recentActionType?: 'file_view' | 'file_edit';
+  recentCreatedAt?: string;
+  recentActionType?: 'file_view' | 'file_edit' | 'file_create';
   recentActorName?: string;
   deletedAt?: string;
   worksheetThumbnail?: string;
@@ -91,7 +94,7 @@ export type DriveSearchResponse = {
   data: DriveNode[];
 };
 
-export type DriveRecentActivityType = 'folder_enter' | 'file_view' | 'file_edit';
+export type DriveRecentActivityType = 'folder_enter' | 'file_view' | 'file_edit' | 'file_create';
 
 export type DriveRecentTrackPayload = {
   userId: string;

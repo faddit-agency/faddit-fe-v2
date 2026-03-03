@@ -13,6 +13,7 @@ import {
   updateDriveItems,
 } from '../../../lib/api/driveApi';
 import ChildClothImage from '../../../images/faddit/childcloth.png';
+import { formatKoreanDateTime } from '../../../lib/dateTime';
 
 type ViewMode = 'grid' | 'list';
 type ConfirmMode = 'destroy' | null;
@@ -340,7 +341,7 @@ const DeletedDrive: React.FC = () => {
         title: folder.name,
         subtitle: undefined,
         creatorName: folder.creatorName,
-        date: folder.updatedAt ? String(folder.updatedAt).slice(0, 10) : '-',
+        date: formatKoreanDateTime(folder.updatedAt),
         size: '—',
         node: folder,
       })),
@@ -350,7 +351,7 @@ const DeletedDrive: React.FC = () => {
         title: file.name,
         subtitle: file.mimetype ? `.${file.mimetype}` : 'file',
         creatorName: file.creatorName,
-        date: file.updatedAt ? String(file.updatedAt).slice(0, 10) : '-',
+        date: formatKoreanDateTime(file.updatedAt),
         size: formatBytes(file.size),
       })),
     ],
