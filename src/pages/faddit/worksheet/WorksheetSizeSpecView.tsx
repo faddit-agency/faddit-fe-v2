@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useImmer } from 'use-immer';
-import { Plus, Trash2, GripHorizontal, GripVertical } from 'lucide-react';
+import { Plus, Trash2, GripHorizontal, GripVertical, Upload } from 'lucide-react';
 import {
   DELETE_ACTION_BUTTON_CLASS,
   LEFT_ACTION_REVEAL_CLASS,
@@ -20,12 +20,36 @@ type WorksheetSizeSpecViewProps = {
   showColumnActions?: boolean;
   showRowDeleteButton?: boolean;
   showTotals?: boolean;
+  onDeleteRow?: (rowIndex: number) => void;
+  onMoveRow?: (fromIndex: number, toIndex: number) => void;
+  rowValuePatches?: Record<number, string[]>;
+  onConsumeRowValuePatch?: (rowIndex: number) => void;
+  leadingImageColumn?: {
+    header?: string;
+    items: Array<{
+      id: string;
+      name: string;
+      thumbnailUrl: string | null;
+    } | null>;
+    onDragOverCell?: (rowIndex: number, event: React.DragEvent<HTMLDivElement>) => void;
+    onDropCell?: (rowIndex: number, event: React.DragEvent<HTMLDivElement>) => void;
+    onUploadFile?: (rowIndex: number, file: File) => void | Promise<void>;
+    uploadingRowIndex?: number | null;
+    emptyLabel?: string;
+  };
+  autoColumnDefaultValues?: Record<number, string>;
+  onStateChange?: (nextState: SizeSpec) => void;
 };
 
 interface SizeSpec {
   headers: string[];
   rows: string[][];
 }
+
+const cloneSizeSpec = (spec: SizeSpec): SizeSpec => ({
+  headers: [...spec.headers],
+  rows: spec.rows.map((row) => [...row]),
+});
 
 type DragItem =
   | { type: 'row'; index: number }
@@ -51,7 +75,27 @@ const INITIAL_STATE: SizeSpec = {
   ],
 };
 
-const emptyRow = (colCount: number): string[] => Array(colCount).fill('');
+const createDefaultRow = (
+  colCount: number,
+  autoColumnDefaultValues?: Record<number, string>,
+): string[] => {
+  const row = Array(colCount).fill('');
+
+  if (!autoColumnDefaultValues) {
+    return row;
+  }
+
+  Object.entries(autoColumnDefaultValues).forEach(([indexRaw, value]) => {
+    const index = Number(indexRaw);
+    if (!Number.isInteger(index) || index < 0 || index >= colCount) {
+      return;
+    }
+
+    row[index] = value;
+  });
+
+  return row;
+};
 
 function reorderList<T>(items: T[], fromIndex: number, toIndex: number): T[] {
   if (fromIndex === toIndex) return items;
@@ -85,6 +129,7 @@ const ROW_HEADER_COMPACT_PADDING = 12;
 const ROW_HEADER_EXPANDED_PADDING = 32;
 const DATA_COL_COMPACT_WIDTH = 68;
 const DATA_COL_EXPANDED_WIDTH = 78;
+const PHOTO_COL_WIDTH = 88;
 const ACTION_COL_WIDTH = 32;
 const ROW_ACTION_COL_WIDTH = 40;
 const DATA_HEADER_COMPACT_PADDING = 14;
@@ -133,6 +178,13 @@ export default function WorksheetSizeSpecView({
   showColumnActions = true,
   showRowDeleteButton = true,
   showTotals = false,
+  onDeleteRow,
+  onMoveRow,
+  rowValuePatches,
+  onConsumeRowValuePatch,
+  leadingImageColumn,
+  autoColumnDefaultValues,
+  onStateChange,
 }: WorksheetSizeSpecViewProps) {
   const [spec, updateSpec] = useImmer<SizeSpec>({
     headers: [...initialState.headers],
@@ -144,12 +196,16 @@ export default function WorksheetSizeSpecView({
   const [dropFlash, setDropFlash] = useState<DropFlash>(null);
   const [rowHeaderHovered, setRowHeaderHovered] = useState(false);
   const [hoveredDataCol, setHoveredDataCol] = useState<number | null>(null);
+  const [pendingImageUploadRow, setPendingImageUploadRow] = useState<number | null>(null);
+  const leadingImageUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const initialStateSignature = useMemo(() => JSON.stringify(initialState), [initialState]);
 
   const rowHeaderExpanded = rowHeaderHovered || dragItem?.type === 'row';
   const rowHeaderPadding = rowHeaderExpanded
     ? ROW_HEADER_EXPANDED_PADDING
     : ROW_HEADER_COMPACT_PADDING;
   const dataHeaderStart = showRowHeader ? 1 : 0;
+  const hasLeadingImageColumn = Boolean(leadingImageColumn);
   const showRowActionRail = !showRowHeader;
   const showTrailingActionColumn = showAddColumnButton;
 
@@ -204,6 +260,73 @@ export default function WorksheetSizeSpecView({
   useEffect(() => {
     setCellDrafts({});
   }, [displayUnit]);
+
+  useEffect(() => {
+    updateSpec((draft) => {
+      draft.headers = [...initialState.headers];
+      draft.rows = initialState.rows.map((row) => [...row]);
+    });
+    setCellDrafts({});
+  }, [initialStateSignature, updateSpec]);
+
+  useEffect(() => {
+    if (!onStateChange) {
+      return;
+    }
+
+    onStateChange(cloneSizeSpec(spec));
+  }, [onStateChange, spec]);
+
+  useEffect(() => {
+    const imageCount = leadingImageColumn?.items.length ?? 0;
+    if (imageCount === 0) {
+      return;
+    }
+
+    updateSpec((draft) => {
+      while (draft.rows.length < imageCount) {
+        draft.rows.push(createDefaultRow(draft.headers.length, autoColumnDefaultValues));
+      }
+    });
+  }, [autoColumnDefaultValues, leadingImageColumn?.items.length, updateSpec]);
+
+  useEffect(() => {
+    if (!rowValuePatches) {
+      return;
+    }
+
+    const entries = Object.entries(rowValuePatches)
+      .map(([rowIndexRaw, values]) => ({ rowIndex: Number(rowIndexRaw), values }))
+      .filter(({ rowIndex, values }) => Number.isInteger(rowIndex) && rowIndex >= 0 && values.length > 0);
+
+    if (entries.length === 0) {
+      return;
+    }
+
+    const appliedRowIndexes: number[] = [];
+
+    updateSpec((draft) => {
+      entries.forEach(({ rowIndex, values }) => {
+        if (rowIndex >= draft.rows.length) {
+          return;
+        }
+
+        const nextRow = [...draft.rows[rowIndex]];
+        values.forEach((value, cellIndex) => {
+          if (cellIndex >= nextRow.length) {
+            return;
+          }
+          nextRow[cellIndex] = value;
+        });
+        draft.rows[rowIndex] = nextRow;
+        appliedRowIndexes.push(rowIndex);
+      });
+    });
+
+    appliedRowIndexes.forEach((rowIndex) => {
+      onConsumeRowValuePatch?.(rowIndex);
+    });
+  }, [onConsumeRowValuePatch, rowValuePatches, updateSpec]);
 
   const getColumnShift = useCallback(
     (colIndex: number) => {
@@ -313,9 +436,9 @@ export default function WorksheetSizeSpecView({
 
   const addRow = useCallback(() => {
     updateSpec((draft) => {
-      draft.rows.push(emptyRow(draft.headers.length));
+      draft.rows.push(createDefaultRow(draft.headers.length, autoColumnDefaultValues));
     });
-  }, [updateSpec]);
+  }, [autoColumnDefaultValues, updateSpec]);
 
   const addColumn = useCallback(() => {
     updateSpec((draft) => {
@@ -329,9 +452,10 @@ export default function WorksheetSizeSpecView({
       updateSpec((draft) => {
         draft.rows.splice(rowIndex, 1);
       });
+      onDeleteRow?.(rowIndex);
       setRowHeaderHovered(false);
     },
-    [updateSpec],
+    [onDeleteRow, updateSpec],
   );
 
   const deleteColumn = useCallback(
@@ -342,6 +466,35 @@ export default function WorksheetSizeSpecView({
       });
     },
     [updateSpec],
+  );
+
+  const triggerLeadingImageUpload = useCallback(
+    (rowIndex: number) => {
+      if (!leadingImageColumn?.onUploadFile) {
+        return;
+      }
+
+      setPendingImageUploadRow(rowIndex);
+      leadingImageUploadInputRef.current?.click();
+    },
+    [leadingImageColumn],
+  );
+
+  const handleLeadingImageFileChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const selectedFile = event.target.files?.[0];
+      if (!selectedFile || pendingImageUploadRow === null || !leadingImageColumn?.onUploadFile) {
+        event.target.value = '';
+        setPendingImageUploadRow(null);
+        return;
+      }
+
+      void Promise.resolve(leadingImageColumn.onUploadFile(pendingImageUploadRow, selectedFile)).finally(() => {
+        event.target.value = '';
+        setPendingImageUploadRow(null);
+      });
+    },
+    [leadingImageColumn, pendingImageUploadRow],
   );
 
   const handleDragStart = useCallback((e: React.DragEvent, type: 'row' | 'column', index: number) => {
@@ -388,14 +541,16 @@ export default function WorksheetSizeSpecView({
       if (!dragItem || dragItem.type !== 'row') return;
       const insertIndex = side === 'before' ? targetIndex : targetIndex + 1;
       const finalIndex = getFinalIndex(dragItem.index, insertIndex);
+      const fromIndex = dragItem.index;
       updateSpec((draft) => {
-        draft.rows = moveByInsertIndex(draft.rows, dragItem.index, insertIndex);
+        draft.rows = moveByInsertIndex(draft.rows, fromIndex, insertIndex);
       });
+      onMoveRow?.(fromIndex, finalIndex);
       setDropFlash({ type: 'row', index: finalIndex, stamp: Date.now() });
       setDragItem(null);
       setDragOver(null);
     },
-    [dragItem, updateSpec],
+    [dragItem, onMoveRow, updateSpec],
   );
 
   const setColumnDragOver = useCallback((index: number, side: 'before' | 'after') => {
@@ -414,6 +569,15 @@ export default function WorksheetSizeSpecView({
 
   return (
     <div className='flex h-full flex-col overflow-hidden'>
+      {leadingImageColumn?.onUploadFile ? (
+        <input
+          ref={leadingImageUploadInputRef}
+          type='file'
+          accept='image/*'
+          className='hidden'
+          onChange={handleLeadingImageFileChange}
+        />
+      ) : null}
       <div className='flex-1 overflow-auto p-4'>
         <div
           className={`relative overflow-hidden rounded-lg bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] ${
@@ -428,6 +592,7 @@ export default function WorksheetSizeSpecView({
             <colgroup>
               {showRowHeader && <col />}
               {showRowActionRail && <col style={{ width: `${ROW_ACTION_COL_WIDTH}px` }} />}
+              {hasLeadingImageColumn && <col style={{ width: `${PHOTO_COL_WIDTH}px` }} />}
               <col span={Math.max(0, spec.headers.length - dataHeaderStart)} />
               {showTotals && <col />}
               {showTrailingActionColumn && <col style={{ width: `${ACTION_COL_WIDTH}px` }} />}
@@ -448,6 +613,13 @@ export default function WorksheetSizeSpecView({
               )}
               {showRowActionRail && (
                 <th className='relative sticky top-0 z-20 border-y border-r border-slate-200 bg-gray-50 p-0' />
+              )}
+              {hasLeadingImageColumn && (
+                <th className='relative sticky top-0 z-20 border-y border-r border-slate-200 bg-gray-50 p-0'>
+                  <div className='flex h-[33px] items-center justify-center px-2 text-[11px] font-semibold text-slate-600'>
+                    {leadingImageColumn?.header ?? '사진'}
+                  </div>
+                </th>
               )}
               {spec.headers.slice(dataHeaderStart).map((header, visibleIndex) => {
                 const colIndex = visibleIndex + dataHeaderStart;
@@ -566,6 +738,9 @@ export default function WorksheetSizeSpecView({
               const isDragOver = dragOver?.type === 'row' && dragOver.index === rowIndex;
               const isDraggedRow = dragItem?.type === 'row' && dragItem.index === rowIndex;
               const rowShift = getRowShift(rowIndex);
+              const rowImageItem = hasLeadingImageColumn
+                ? (leadingImageColumn?.items[rowIndex] ?? null)
+                : null;
               return (
                 <tr
                   key={rowIndex}
@@ -692,6 +867,53 @@ export default function WorksheetSizeSpecView({
                     </td>
                   )}
 
+                  {hasLeadingImageColumn && (
+                    <td className='border border-slate-200 bg-white p-0'>
+                      <div
+                        className={`group/photo relative flex h-full min-h-[56px] items-center justify-center p-1 transition-colors ${
+                          leadingImageColumn?.onUploadFile ? 'cursor-pointer hover:bg-violet-50/30' : ''
+                        }`}
+                        onDragOver={(event) => {
+                          leadingImageColumn?.onDragOverCell?.(rowIndex, event);
+                        }}
+                        onDrop={(event) => {
+                          leadingImageColumn?.onDropCell?.(rowIndex, event);
+                        }}
+                        onClick={() => triggerLeadingImageUpload(rowIndex)}
+                      >
+                        {leadingImageColumn?.uploadingRowIndex === rowIndex ? (
+                          <div className='flex h-12 w-full flex-col items-center justify-center rounded-md border border-violet-200 bg-violet-50 text-violet-600'>
+                            <Upload size={12} className='mb-0.5 animate-pulse' />
+                            <span className='text-[10px] font-medium'>업로드 중...</span>
+                          </div>
+                        ) : rowImageItem?.thumbnailUrl ? (
+                          <div className='relative h-full w-full'>
+                            <img
+                              src={rowImageItem.thumbnailUrl}
+                              alt={rowImageItem.name}
+                              className='h-12 w-full rounded-md object-cover ring-1 ring-slate-200'
+                              loading='lazy'
+                            />
+                            {leadingImageColumn?.onUploadFile ? (
+                              <div className='pointer-events-none absolute inset-0 flex items-center justify-center rounded-md bg-black/0 opacity-0 transition-all duration-150 group-hover/photo:bg-black/35 group-hover/photo:opacity-100'>
+                                <span className='rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-medium text-gray-700'>
+                                  클릭해서 교체
+                                </span>
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <div className='flex h-12 w-full flex-col items-center justify-center rounded-md border border-dashed border-slate-300 bg-gradient-to-b from-white to-slate-50 text-[10px] text-slate-500 transition-colors group-hover/photo:border-violet-300 group-hover/photo:text-violet-600'>
+                            <span className='mb-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-100 transition-colors group-hover/photo:bg-violet-100'>
+                              <Upload size={10} />
+                            </span>
+                            <span className='font-medium'>{leadingImageColumn?.emptyLabel ?? '드래그/클릭 업로드'}</span>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  )}
+
                   {row.slice(dataHeaderStart).map((cell, visibleColIndex) => {
                     const colIndex = visibleColIndex + dataHeaderStart;
                     const isDraggedColumn = dragItem?.type === 'column' && dragItem.index === colIndex;
@@ -767,6 +989,8 @@ export default function WorksheetSizeSpecView({
                   showRowActionRail && <td className='border border-slate-200 bg-slate-100 p-0' />
                 )}
 
+                {hasLeadingImageColumn && <td className='border border-slate-200 bg-slate-100 p-0' />}
+
                 {columnTotals.map((sum, idx) => (
                   <td key={`total-col-${idx}`} className='border border-slate-200 bg-slate-50 p-0'>
                     <div className='flex h-[33px] items-center justify-center px-2 text-xs font-semibold text-slate-700'>
@@ -817,14 +1041,20 @@ export default function WorksheetSizeSpecView({
                       </button>
                     </td>
                   )}
+                  {hasLeadingImageColumn && (
+                    <td className='border border-slate-200 bg-white p-0' />
+                  )}
                   <td colSpan={Math.max(1, spec.headers.length)} className='border border-slate-200 bg-white p-0' />
                 </>
               )}
               {showRowHeader && (
-                <td
-                  colSpan={Math.max(1, spec.headers.length - 1)}
-                  className='border border-slate-200 bg-white p-0'
-                />
+                <>
+                  {hasLeadingImageColumn && <td className='border border-slate-200 bg-white p-0' />}
+                  <td
+                    colSpan={Math.max(1, spec.headers.length - 1)}
+                    className='border border-slate-200 bg-white p-0'
+                  />
+                </>
               )}
               {showTotals && <td className='border border-slate-200 bg-white p-0' />}
               {showTrailingActionColumn && <td className='w-8 border border-slate-200 bg-white p-0' />}

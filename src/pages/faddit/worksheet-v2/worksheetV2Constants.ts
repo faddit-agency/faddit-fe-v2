@@ -79,37 +79,31 @@ export const SIZE_UNIT_OPTIONS = [
 ];
 
 export const LABEL_SHEET_STATE = {
-  headers: ['품명', '컬러', '규격', '수량'],
-  rows: [
-    ['브랜드 라벨', 'Black', '직조 / 넥 중앙', '1EA'],
-    ['사이즈 라벨', 'White', '인쇄 / 브랜드 라벨 하단', '1EA'],
-    ['케어 라벨', 'White', '세탁 기호 / 좌측 옆선', '1EA'],
+  headers: [
+    '부착 위치',
+    '사용 수량',
+    '원단 혼용률 자동 삽입',
+    '제조국 자동 삽입',
+    '세탁 기호(내구성) 자동 생성',
+    '피부 자극 정도',
+    '기업 정보 자동 생성',
   ],
+  rows: [],
 };
 
 export const FABRIC_INFO_STATE = {
-  headers: ['원단명', '색상', '사이즈/단가', '혼용률', '요척', '코드'],
-  rows: [
-    ['코튼 트윌', 'Black', 'M / 8,500', '면 100%', '1.4yd', 'BK-01'],
-    ['헤비 쭈리', 'Melange', 'L / 7,300', '면 70 폴리 30', '1.2yd', 'MG-09'],
-  ],
+  headers: ['위치', '컬러', '패턴 총 면적', '마커 효율', '요척', '총 필요 원단량'],
+  rows: [],
 };
 
 export const RIB_FABRIC_INFO_STATE = {
-  headers: ['원단명', '색상', '사이즈/단가', '혼용률', '요척', '코드'],
-  rows: [
-    ['폴리 립', 'Navy', 'L / 6,200', '폴리 95 스판 5', '0.8yd', 'NV-04'],
-    ['코튼 립', 'White', 'M / 5,900', '면 98 스판 2', '0.7yd', 'WH-03'],
-  ],
+  headers: ['시보리 타입', '컬러', '패턴 총 면적', '마커 효율', '요척', '총 필요 원단량'],
+  rows: [],
 };
 
 export const TRIM_SHEET_STATE = {
-  headers: ['품명', '컬러', '규격', '수량'],
-  rows: [
-    ['지퍼', 'Black', 'YKK #3', '1EA'],
-    ['단추', 'Navy', '18L', '6EA'],
-    ['심지', 'White', 'Non-woven', '0.4M'],
-  ],
+  headers: ['부착 위치', '사용 수량(1벌)', '사용 길이', '컬러', '1벌당 자동 원가(개별)', '총 부자재 원가'],
+  rows: [],
 };
 
 export const COLOR_SIZE_QTY_STATE = {
