@@ -342,6 +342,37 @@ const formatBytes = (value?: number) => {
   return `${next.toFixed(next >= 10 ? 0 : 1)} ${units[index]}`;
 };
 
+const isImageFile = (extension?: string) => {
+  if (!extension) {
+    return false;
+  }
+
+  const value = extension.toLowerCase().trim();
+  if (value.startsWith('image/')) {
+    return true;
+  }
+  const normalized = value.replace(/^\./, '');
+  return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(normalized);
+};
+
+const formatDriveItemSubtitle = (extension?: string) => {
+  const raw = String(extension ?? '').trim();
+  const normalized = raw.replace(/^\./, '').toLowerCase();
+  if (!normalized) {
+    return 'file';
+  }
+  if (isImageFile(normalized)) {
+    return '이미지 파일';
+  }
+  if (normalized === '이미지 파일' || normalized === 'file') {
+    return normalized;
+  }
+  if (!/^[a-z0-9]+$/.test(normalized)) {
+    return raw.replace(/^\./, '');
+  }
+  return `.${normalized}`;
+};
+
 const toDriveItem = (node: DriveNode, imageSrc: string): DriveItem => ({
   id: node.fileSystemId,
   worksheetId: node.worksheetId,
@@ -349,7 +380,7 @@ const toDriveItem = (node: DriveNode, imageSrc: string): DriveItem => ({
   imageSrc,
   imageAlt: node.name,
   title: node.name,
-  subtitle: node.mimetype ? `.${node.mimetype}` : 'file',
+  subtitle: formatDriveItemSubtitle(node.mimetype),
   badge: node.tag ? String(node.tag) : '파일',
   isStarred: node.isStarred,
   owner: node.creatorName || undefined,
@@ -362,15 +393,6 @@ const toDriveItem = (node: DriveNode, imageSrc: string): DriveItem => ({
   sourcePath: node.path,
   stateStoreKey: 'DriveContext.items',
 });
-
-const isImageFile = (extension?: string) => {
-  if (!extension) {
-    return false;
-  }
-
-  const value = extension.toLowerCase();
-  return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(value);
-};
 
 export const DriveProvider = ({ children }: { children: ReactNode }) => {
   const userId = useAuthStore((state) => state.user?.userId);
