@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useImmer } from 'use-immer';
 import { Plus, Trash2, GripHorizontal, GripVertical, Upload } from 'lucide-react';
 import {
@@ -163,6 +164,82 @@ function fromDisplayValue(raw: string, shouldConvert: boolean, unit: SizeSpecDis
   const displayValue = Number(trimmed);
   if (unit === 'cm') return formatNumber(displayValue, 3);
   return formatNumber(displayValue * 2.54, 3);
+}
+
+function CellHoverTooltip({
+  title,
+  children,
+  className,
+}: {
+  title: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLDivElement | null>(null);
+  const [tooltipPos, setTooltipPos] = useState({ left: 0, top: 0 });
+
+  const updateTooltipPosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    setTooltipPos({
+      left: rect.left + rect.width / 2,
+      top: rect.top - 6,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+
+    updateTooltipPosition();
+    window.addEventListener('resize', updateTooltipPosition);
+    window.addEventListener('scroll', updateTooltipPosition, true);
+
+    return () => {
+      window.removeEventListener('resize', updateTooltipPosition);
+      window.removeEventListener('scroll', updateTooltipPosition, true);
+    };
+  }, [open, updateTooltipPosition]);
+
+  return (
+    <div
+      ref={triggerRef}
+      className={`block ${className ?? ''}`}
+      onMouseEnter={() => {
+        updateTooltipPosition();
+        setOpen(true);
+      }}
+      onMouseLeave={() => setOpen(false)}
+      onFocusCapture={() => {
+        updateTooltipPosition();
+        setOpen(true);
+      }}
+      onBlurCapture={() => setOpen(false)}
+    >
+      {children}
+      {createPortal(
+        <span
+          role='tooltip'
+          className='pointer-events-none fixed z-[500]'
+          style={{
+            left: tooltipPos.left,
+            top: tooltipPos.top,
+            transform: 'translate(-50%, -100%)',
+          }}
+        >
+          <span
+            className={`block rounded-md bg-gray-900 px-2 py-1 text-[11px] whitespace-nowrap text-white shadow-sm transition-all duration-150 ease-out ${
+              open ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0'
+            }`}
+          >
+            {title}
+          </span>
+        </span>,
+        document.body,
+      )}
+    </div>
+  );
 }
 
 export default function WorksheetSizeSpecView({
@@ -950,6 +1027,7 @@ export default function WorksheetSizeSpecView({
 
                     {row.slice(dataHeaderStart).map((cell, visibleColIndex) => {
                       const colIndex = visibleColIndex + dataHeaderStart;
+                      const columnTooltipTitle = spec.headers[colIndex]?.trim() || '사이즈';
                       const isDraggedColumn =
                         dragItem?.type === 'column' && dragItem.index === colIndex;
                       const isColumnDropTarget =
@@ -973,36 +1051,38 @@ export default function WorksheetSizeSpecView({
                                 }
                           }
                         >
-                          <input
-                            value={
-                              cellDrafts[cellKey(rowIndex, colIndex)] ??
-                              toDisplayValue(cell, shouldConvertColumn(colIndex), displayUnit)
-                            }
-                            onFocus={() => handleCellFocus(rowIndex, colIndex, cell)}
-                            onChange={(e) =>
-                              handleCellDraftChange(rowIndex, colIndex, e.target.value)
-                            }
-                            onBlur={() => handleCellCommit(rowIndex, colIndex)}
-                            className='w-full border-0 bg-transparent px-1.5 py-1.5 text-center text-xs text-slate-700 outline-none focus:bg-blue-50'
-                            style={{
-                              ...getMotionStyle(
-                                xShift,
-                                rowShift,
-                                isDraggedRow || isDraggedColumn,
-                                (isDragOver && !isDraggedRow) || isColumnDropTarget,
-                              ),
-                              boxShadow:
-                                (dropFlash?.type === 'row' && dropFlash.index === rowIndex) ||
-                                (dropFlash?.type === 'column' && dropFlash.index === colIndex)
-                                  ? 'inset 0 0 0 1px rgba(59,130,246,0.25), inset 0 0 20px rgba(59,130,246,0.1)'
-                                  : getMotionStyle(
-                                      xShift,
-                                      rowShift,
-                                      isDraggedRow || isDraggedColumn,
-                                      (isDragOver && !isDraggedRow) || isColumnDropTarget,
-                                    ).boxShadow,
-                            }}
-                          />
+                          <CellHoverTooltip title={columnTooltipTitle} className='h-full w-full'>
+                            <input
+                              value={
+                                cellDrafts[cellKey(rowIndex, colIndex)] ??
+                                toDisplayValue(cell, shouldConvertColumn(colIndex), displayUnit)
+                              }
+                              onFocus={() => handleCellFocus(rowIndex, colIndex, cell)}
+                              onChange={(e) =>
+                                handleCellDraftChange(rowIndex, colIndex, e.target.value)
+                              }
+                              onBlur={() => handleCellCommit(rowIndex, colIndex)}
+                              className='w-full border-0 bg-transparent px-1.5 py-1.5 text-center text-xs text-slate-700 outline-none focus:bg-blue-50'
+                              style={{
+                                ...getMotionStyle(
+                                  xShift,
+                                  rowShift,
+                                  isDraggedRow || isDraggedColumn,
+                                  (isDragOver && !isDraggedRow) || isColumnDropTarget,
+                                ),
+                                boxShadow:
+                                  (dropFlash?.type === 'row' && dropFlash.index === rowIndex) ||
+                                  (dropFlash?.type === 'column' && dropFlash.index === colIndex)
+                                    ? 'inset 0 0 0 1px rgba(59,130,246,0.25), inset 0 0 20px rgba(59,130,246,0.1)'
+                                    : getMotionStyle(
+                                        xShift,
+                                        rowShift,
+                                        isDraggedRow || isDraggedColumn,
+                                        (isDragOver && !isDraggedRow) || isColumnDropTarget,
+                                      ).boxShadow,
+                              }}
+                            />
+                          </CellHoverTooltip>
                         </td>
                       );
                     })}

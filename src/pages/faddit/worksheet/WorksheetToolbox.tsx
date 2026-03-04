@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Link } from 'react-router-dom';
 import {
   AlignCenterHorizontal,
   AlignCenterVertical,
@@ -43,10 +44,11 @@ import {
   CgPathTrim,
   CgPathUnite,
 } from 'react-icons/cg';
+import FadditLogoOnly from '../../../images/icons/faddit-logo-only.svg';
 import { useCanvas, type AlignType, type ToolType } from './CanvasProvider';
 import type { PathfinderOp } from './pathfinder';
 
-const CONTENT_PANEL_WIDTH = 224;
+const CONTENT_PANEL_WIDTH = 230;
 const GAP_X = 12;
 
 const TOOL_ITEMS = [
@@ -283,9 +285,17 @@ export default function WorksheetToolbox() {
   };
 
   return (
-    <div className='flex h-full shrink-0 overflow-hidden rounded-lg bg-white p-3 shadow-sm'>
+    <div className='flex h-full min-h-0 bg-white p-2'>
       <div className='flex min-h-0 min-w-0 flex-1'>
         <nav className='flex w-14 shrink-0 flex-col gap-y-2'>
+          <Link
+            to='/faddit/drive'
+            className='flex aspect-square cursor-pointer items-center justify-center rounded-md p-2 text-gray-600 transition-colors hover:bg-gray-200/60'
+            aria-label='패딧 홈으로 이동'
+          >
+            <img src={FadditLogoOnly} alt='Faddit' className='h-7 w-7' />
+          </Link>
+
           {TOOL_ITEMS.map(({ key, label, icon: Icon }) => (
             <SidePanelTooltip key={key} title={label} className='w-full'>
               <button
@@ -332,8 +342,8 @@ export default function WorksheetToolbox() {
           style={{ width: contentOpen ? CONTENT_PANEL_WIDTH + GAP_X : 0 }}
         >
           <div
-            className='flex min-h-0 min-w-56 flex-1 flex-col gap-y-2 pl-3 transition-opacity duration-150 ease-out'
-            style={{ opacity: contentOpen ? 1 : 0 }}
+            className='flex min-h-0 flex-1 flex-col gap-y-2 pl-3 transition-opacity duration-150 ease-out'
+            style={{ opacity: contentOpen ? 1 : 0, minWidth: CONTENT_PANEL_WIDTH }}
           >
             {activePanelKey === 'tools' ? (
               <div className='flex min-h-0 flex-1 flex-col gap-y-3 overflow-y-auto'>

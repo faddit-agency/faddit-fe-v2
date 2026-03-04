@@ -293,7 +293,7 @@ const Worksheet: React.FC = () => {
       data-worksheet-id={worksheetId || ''}
       onMouseDownCapture={handleRootMouseDownCapture}
     >
-      <aside className='shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-white'>
+      <aside className='shrink-0 overflow-hidden bg-white'>
         <WorksheetTemplateSidebar collapsible />
       </aside>
       <main className='flex min-w-0 flex-1 flex-col gap-y-6 p-4'>
