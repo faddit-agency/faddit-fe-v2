@@ -2084,7 +2084,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
           evented: true,
           perPixelTargetFind: true,
           objectCaching: false,
-          padding: 8,
+          padding: 0,
           strokeUniform: true,
           strokeLineCap: cornerRadius > 0 ? 'round' : 'butt',
           strokeLineJoin: cornerRadius > 0 ? 'round' : 'miter',
@@ -2235,7 +2235,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
           strokeLineJoin: cornerRadius > 0 ? 'round' : 'miter',
           perPixelTargetFind: true,
           objectCaching: false,
-          padding: 8,
+          padding: 0,
           strokeUniform: true,
         });
         (arrow as unknown as { data: unknown }).data = { ...makeData('arrow'), kind: 'arrow' };

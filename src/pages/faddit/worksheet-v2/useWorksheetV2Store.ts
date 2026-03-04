@@ -7,8 +7,18 @@ import type {
   CardVisibilityMap,
   TabLayoutsMap,
   SizeSpecDisplayUnit,
+  WorksheetElementItem,
+  WorksheetModuleSheetState,
 } from './worksheetV2Types';
-import { CARD_DEFINITIONS, GRID_CONFIG } from './worksheetV2Constants';
+import {
+  CARD_DEFINITIONS,
+  GRID_CONFIG,
+  FABRIC_INFO_STATE,
+  RIB_FABRIC_INFO_STATE,
+  LABEL_SHEET_STATE,
+  TRIM_SHEET_STATE,
+  COLOR_SIZE_QTY_STATE,
+} from './worksheetV2Constants';
 
 const WORKSHEET_TABS: MenuTab[] = ['diagram', 'basic', 'size', 'cost'];
 const GRID_FILL_ROWS = GRID_CONFIG.cols;
@@ -261,6 +271,23 @@ function buildInitialActiveCards(): Record<MenuTab, string | null> {
   return active;
 }
 
+function cloneSheetState(state: WorksheetModuleSheetState): WorksheetModuleSheetState {
+  return {
+    headers: [...state.headers],
+    rows: state.rows.map((row) => [...row]),
+  };
+}
+
+function buildInitialModuleSheetStates(): Record<string, WorksheetModuleSheetState> {
+  return {
+    'fabric-info': cloneSheetState(FABRIC_INFO_STATE),
+    'rib-fabric-info': cloneSheetState(RIB_FABRIC_INFO_STATE),
+    'label-sheet': cloneSheetState(LABEL_SHEET_STATE),
+    'trim-sheet': cloneSheetState(TRIM_SHEET_STATE),
+    'color-size-qty': cloneSheetState(COLOR_SIZE_QTY_STATE),
+  };
+}
+
 interface WorksheetV2State {
   activeTab: MenuTab;
   tabLayouts: TabLayoutsMap;
@@ -268,7 +295,10 @@ interface WorksheetV2State {
   activeCardIdByTab: Record<MenuTab, string | null>;
   customCards: Record<MenuTab, CardDefinition[]>;
   customCardContent: Record<string, string>;
+  moduleElements: Record<string, WorksheetElementItem[]>;
+  moduleSheetStates: Record<string, WorksheetModuleSheetState>;
   draggingCardId: string | null;
+  draggingElement: WorksheetElementItem | null;
   sizeSpecUnit: SizeSpecDisplayUnit;
   worksheetTitle: string;
   isLoadingWorksheet: boolean;
@@ -289,7 +319,14 @@ interface WorksheetV2State {
   updateCustomCardTitle: (tab: MenuTab, cardId: string, title: string) => void;
   deleteCustomCard: (tab: MenuTab, cardId: string) => void;
   updateCustomCardContent: (cardId: string, content: string) => void;
+  addElementToModule: (cardId: string, item: WorksheetElementItem) => void;
+  setElementAtModuleRow: (cardId: string, rowIndex: number, item: WorksheetElementItem) => void;
+  removeElementAtModuleRow: (cardId: string, rowIndex: number) => void;
+  moveElementModuleRow: (cardId: string, fromIndex: number, toIndex: number) => void;
+  removeElementFromModule: (cardId: string, itemId: string) => void;
+  setModuleSheetState: (cardId: string, state: WorksheetModuleSheetState) => void;
   setDraggingCardId: (cardId: string | null) => void;
+  setDraggingElement: (item: WorksheetElementItem | null) => void;
   setSizeSpecUnit: (unit: SizeSpecDisplayUnit) => void;
   setWorksheetTitle: (title: string) => void;
   setWorksheetLoading: (isLoading: boolean) => void;
@@ -306,7 +343,15 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
       activeCardIdByTab: buildInitialActiveCards(),
       customCards: { diagram: [], basic: [], size: [], cost: [] },
       customCardContent: {},
+      moduleElements: {
+        'fabric-info': [],
+        'rib-fabric-info': [],
+        'label-sheet': [],
+        'trim-sheet': [],
+      },
+      moduleSheetStates: buildInitialModuleSheetStates(),
       draggingCardId: null,
+      draggingElement: null,
       sizeSpecUnit: 'cm',
       worksheetTitle: '작업지시서 명',
       isLoadingWorksheet: false,
@@ -606,7 +651,118 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
           },
         })),
 
+      addElementToModule: (cardId, item) =>
+        set((state) => {
+          const current = state.moduleElements[cardId] ?? [];
+
+          return {
+            moduleElements: {
+              ...state.moduleElements,
+              [cardId]: [...current, item],
+            },
+          };
+        }),
+
+      setElementAtModuleRow: (cardId, rowIndex, item) =>
+        set((state) => {
+          const current = state.moduleElements[cardId] ?? [];
+          const next = [...current];
+          next[rowIndex] = item;
+
+          return {
+            moduleElements: {
+              ...state.moduleElements,
+              [cardId]: next,
+            },
+          };
+        }),
+
+      removeElementAtModuleRow: (cardId, rowIndex) =>
+        set((state) => {
+          const current = state.moduleElements[cardId] ?? [];
+          const next = [...current];
+          next.splice(rowIndex, 1);
+
+          return {
+            moduleElements: {
+              ...state.moduleElements,
+              [cardId]: next,
+            },
+          };
+        }),
+
+      moveElementModuleRow: (cardId, fromIndex, toIndex) =>
+        set((state) => {
+          if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+            return state;
+          }
+
+          const current = [...(state.moduleElements[cardId] ?? [])];
+          const requiredLength = Math.max(fromIndex, toIndex) + 1;
+          if (current.length < requiredLength) {
+            current.length = requiredLength;
+          }
+
+          const fromHasValue = Object.prototype.hasOwnProperty.call(current, fromIndex);
+          const fromValue = current[fromIndex];
+
+          if (fromIndex < toIndex) {
+            for (let index = fromIndex; index < toIndex; index += 1) {
+              current[index] = current[index + 1];
+            }
+          } else {
+            for (let index = fromIndex; index > toIndex; index -= 1) {
+              current[index] = current[index - 1];
+            }
+          }
+
+          if (fromHasValue) {
+            current[toIndex] = fromValue;
+          } else {
+            delete current[toIndex];
+          }
+
+          let lastDefinedIndex = current.length - 1;
+          while (lastDefinedIndex >= 0 && current[lastDefinedIndex] === undefined) {
+            lastDefinedIndex -= 1;
+          }
+          current.length = lastDefinedIndex + 1;
+
+          return {
+            moduleElements: {
+              ...state.moduleElements,
+              [cardId]: current,
+            },
+          };
+        }),
+
+      removeElementFromModule: (cardId, itemId) =>
+        set((state) => ({
+          moduleElements: {
+            ...state.moduleElements,
+            [cardId]: (state.moduleElements[cardId] ?? []).filter((item) => item.id !== itemId),
+          },
+        })),
+
+      setModuleSheetState: (cardId, nextState) =>
+        set((state) => {
+          const previous = state.moduleSheetStates[cardId];
+          const nextNormalized = cloneSheetState(nextState);
+          if (previous && JSON.stringify(previous) === JSON.stringify(nextNormalized)) {
+            return state;
+          }
+
+          return {
+            moduleSheetStates: {
+              ...state.moduleSheetStates,
+              [cardId]: nextNormalized,
+            },
+          };
+        }),
+
       setDraggingCardId: (cardId) => set({ draggingCardId: cardId }),
+
+      setDraggingElement: (item) => set({ draggingElement: item }),
 
       setSizeSpecUnit: (unit) => set({ sizeSpecUnit: unit }),
 
@@ -625,9 +781,19 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
             tabLayouts?: TabLayoutsMap;
             cardVisibility?: CardVisibilityMap;
             sizeSpecUnit?: SizeSpecDisplayUnit;
+            moduleElements?: Record<string, WorksheetElementItem[]>;
+            customCards?: Record<MenuTab, CardDefinition[]>;
+            customCardContent?: Record<string, string>;
+            moduleSheetStates?: Record<string, WorksheetModuleSheetState>;
           };
 
           set((state) => {
+            const nextCustomCards = parsed.customCards
+              ? {
+                  ...state.customCards,
+                  ...parsed.customCards,
+                }
+              : state.customCards;
             const nextCardVisibility = parsed.cardVisibility
               ? {
                   ...state.cardVisibility,
@@ -647,7 +813,7 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
                 tab,
                 nextTabLayouts[tab] ?? [],
                 nextCardVisibility[tab] ?? {},
-                state.customCards[tab],
+                nextCustomCards[tab],
               );
             }
 
@@ -655,6 +821,13 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
               activeTab: parsed.activeTab ?? state.activeTab,
               tabLayouts: normalizedLayouts,
               cardVisibility: nextCardVisibility,
+              customCards: nextCustomCards,
+              customCardContent: parsed.customCardContent
+                ? {
+                    ...state.customCardContent,
+                    ...parsed.customCardContent,
+                  }
+                : state.customCardContent,
               activeCardIdByTab: {
                 ...state.activeCardIdByTab,
                 diagram:
@@ -663,6 +836,23 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
                     : state.activeCardIdByTab.diagram,
               },
               sizeSpecUnit: parsed.sizeSpecUnit ?? state.sizeSpecUnit,
+              moduleElements: parsed.moduleElements
+                ? {
+                    ...state.moduleElements,
+                    ...parsed.moduleElements,
+                  }
+                : state.moduleElements,
+              moduleSheetStates: parsed.moduleSheetStates
+                ? {
+                    ...state.moduleSheetStates,
+                    ...Object.fromEntries(
+                      Object.entries(parsed.moduleSheetStates).map(([cardId, sheetState]) => [
+                        cardId,
+                        cloneSheetState(sheetState),
+                      ]),
+                    ),
+                  }
+                : state.moduleSheetStates,
             };
           });
         } catch {

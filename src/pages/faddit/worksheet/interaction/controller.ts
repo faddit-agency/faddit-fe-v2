@@ -30,7 +30,7 @@ export function createInteractionController(canvas: Canvas): InteractionControll
       transparentCorners: false,
       cornerSize: 10,
       borderScaleFactor: 1,
-      padding: 8,
+      padding: 0,
       hoverCursor: 'move',
       moveCursor: 'move',
     });
