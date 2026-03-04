@@ -42,3 +42,8 @@ export type WorksheetModuleSheetState = {
   headers: string[];
   rows: string[][];
 };
+
+export type WorksheetCostState = {
+  elementUnitPrices: Record<string, string>;
+  processingUnitCosts: Record<string, string>;
+};

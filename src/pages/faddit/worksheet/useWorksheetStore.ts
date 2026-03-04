@@ -8,8 +8,9 @@ import type {
   TabLayoutsMap,
   SizeSpecDisplayUnit,
   WorksheetElementItem,
+  WorksheetCostState,
   WorksheetModuleSheetState,
-} from './worksheetV2Types';
+} from './worksheetTypes';
 import {
   CARD_DEFINITIONS,
   GRID_CONFIG,
@@ -18,7 +19,7 @@ import {
   LABEL_SHEET_STATE,
   TRIM_SHEET_STATE,
   COLOR_SIZE_QTY_STATE,
-} from './worksheetV2Constants';
+} from './worksheetConstants';
 
 const WORKSHEET_TABS: MenuTab[] = ['diagram', 'basic', 'size', 'cost'];
 const GRID_FILL_ROWS = GRID_CONFIG.cols;
@@ -288,7 +289,7 @@ function buildInitialModuleSheetStates(): Record<string, WorksheetModuleSheetSta
   };
 }
 
-interface WorksheetV2State {
+interface WorksheetState {
   activeTab: MenuTab;
   tabLayouts: TabLayoutsMap;
   cardVisibility: CardVisibilityMap;
@@ -297,6 +298,7 @@ interface WorksheetV2State {
   customCardContent: Record<string, string>;
   moduleElements: Record<string, WorksheetElementItem[]>;
   moduleSheetStates: Record<string, WorksheetModuleSheetState>;
+  costState: WorksheetCostState;
   draggingCardId: string | null;
   draggingElement: WorksheetElementItem | null;
   sizeSpecUnit: SizeSpecDisplayUnit;
@@ -325,6 +327,8 @@ interface WorksheetV2State {
   moveElementModuleRow: (cardId: string, fromIndex: number, toIndex: number) => void;
   removeElementFromModule: (cardId: string, itemId: string) => void;
   setModuleSheetState: (cardId: string, state: WorksheetModuleSheetState) => void;
+  setCostElementUnitPrice: (elementId: string, value: string) => void;
+  setCostProcessingUnitCost: (itemKey: string, value: string) => void;
   setDraggingCardId: (cardId: string | null) => void;
   setDraggingElement: (item: WorksheetElementItem | null) => void;
   setSizeSpecUnit: (unit: SizeSpecDisplayUnit) => void;
@@ -334,7 +338,7 @@ interface WorksheetV2State {
   hydrateWorksheetUiInfo: (uiInfoRaw: string | null | undefined) => void;
 }
 
-export const useWorksheetV2Store = create<WorksheetV2State>()(
+export const useWorksheetStore = create<WorksheetState>()(
   devtools(
     (set) => ({
       activeTab: 'diagram',
@@ -350,6 +354,15 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
         'trim-sheet': [],
       },
       moduleSheetStates: buildInitialModuleSheetStates(),
+      costState: {
+        elementUnitPrices: {},
+        processingUnitCosts: {
+          cutting: '1800',
+          sewing: '8000',
+          washing: '2500',
+          qc_packaging: '1200',
+        },
+      },
       draggingCardId: null,
       draggingElement: null,
       sizeSpecUnit: 'cm',
@@ -760,6 +773,28 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
           };
         }),
 
+      setCostElementUnitPrice: (elementId, value) =>
+        set((state) => ({
+          costState: {
+            ...state.costState,
+            elementUnitPrices: {
+              ...state.costState.elementUnitPrices,
+              [elementId]: value,
+            },
+          },
+        })),
+
+      setCostProcessingUnitCost: (itemKey, value) =>
+        set((state) => ({
+          costState: {
+            ...state.costState,
+            processingUnitCosts: {
+              ...state.costState.processingUnitCosts,
+              [itemKey]: value,
+            },
+          },
+        })),
+
       setDraggingCardId: (cardId) => set({ draggingCardId: cardId }),
 
       setDraggingElement: (item) => set({ draggingElement: item }),
@@ -777,7 +812,6 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
 
         try {
           const parsed = JSON.parse(uiInfoRaw) as {
-            activeTab?: MenuTab;
             tabLayouts?: TabLayoutsMap;
             cardVisibility?: CardVisibilityMap;
             sizeSpecUnit?: SizeSpecDisplayUnit;
@@ -785,6 +819,7 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
             customCards?: Record<MenuTab, CardDefinition[]>;
             customCardContent?: Record<string, string>;
             moduleSheetStates?: Record<string, WorksheetModuleSheetState>;
+            costState?: WorksheetCostState;
           };
 
           set((state) => {
@@ -818,7 +853,6 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
             }
 
             return {
-              activeTab: parsed.activeTab ?? state.activeTab,
               tabLayouts: normalizedLayouts,
               cardVisibility: nextCardVisibility,
               customCards: nextCustomCards,
@@ -853,6 +887,18 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
                     ),
                   }
                 : state.moduleSheetStates,
+              costState: parsed.costState
+                ? {
+                    elementUnitPrices: {
+                      ...state.costState.elementUnitPrices,
+                      ...(parsed.costState.elementUnitPrices ?? {}),
+                    },
+                    processingUnitCosts: {
+                      ...state.costState.processingUnitCosts,
+                      ...(parsed.costState.processingUnitCosts ?? {}),
+                    },
+                  }
+                : state.costState,
             };
           });
         } catch {
@@ -860,6 +906,6 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
         }
       },
     }),
-    { name: 'worksheet-v2-store' },
+    { name: 'worksheet-store' },
   ),
 );

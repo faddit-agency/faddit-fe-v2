@@ -76,7 +76,7 @@ import FadditResetPassword from './pages/faddit/auth/ResetPassword';
 import FadditMain from './pages/faddit/Main';
 import FadditHome from './pages/faddit/Home';
 import Worksheet from './pages/faddit/worksheet/Worksheet';
-import WorksheetV2 from './pages/faddit/worksheet-v2/WorksheetV2';
+import WorksheetEditor from './pages/faddit/worksheet/WorksheetEditor';
 import AuthLayout from './layouts/AuthLayout';
 import MainLayout from './layouts/MainLayout';
 
@@ -184,11 +184,11 @@ function App() {
           <Route path='/faddit/reset-password' element={<FadditResetPassword />} />
           <Route path='/sign/reset-password' element={<FadditResetPassword />} />
         </Route>
-        <Route path='/faddit/worksheet' element={<WorksheetV2 />} />
-        <Route path='/faddit/worksheet/:worksheetId' element={<WorksheetV2 />} />
-        <Route path='/faddit/worksheet-v2' element={<WorksheetV2 />} />
-        <Route path='/faddit/worksheet-v2/:worksheetId' element={<WorksheetV2 />} />
-        <Route path='/faddit/worksheet/edit/:worksheetId?' element={<Worksheet />} />
+        <Route path='/faddit/worksheet' element={<Worksheet />} />
+        <Route path='/faddit/worksheet/:worksheetId' element={<Worksheet />} />
+        <Route path='/faddit/worksheet-v2' element={<Worksheet />} />
+        <Route path='/faddit/worksheet-v2/:worksheetId' element={<Worksheet />} />
+        <Route path='/faddit/worksheet/edit/:worksheetId?' element={<WorksheetEditor />} />
         <Route element={<MainLayout />}>
           <Route path='/faddit/home' element={<FadditHome />} />
           <Route path='/faddit/main' element={<FadditMain />} />
