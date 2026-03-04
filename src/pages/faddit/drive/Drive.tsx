@@ -4315,7 +4315,7 @@ const FadditDrive: React.FC = () => {
         onCreateFolder={handleCreateFolder}
         onCreateMaterial={handleCreateMaterial}
         onCreateWorksheet={handleCreateWorksheet}
-        hiddenTemplateKeys={['folder', 'worksheet']}
+        hiddenTemplateKeys={['folder', 'worksheet', 'schematic', 'pattern', 'print', 'etc']}
       />
     </div>
   );

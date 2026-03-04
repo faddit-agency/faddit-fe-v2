@@ -2792,7 +2792,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
           onDone={handlePathEditDone}
         />
       )}
-      <SketchBottomBar />
+      <SketchBottomBar onZoomReset={() => handleZoomChange(100)} />
     </div>
   );
 }

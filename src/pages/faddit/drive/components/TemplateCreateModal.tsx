@@ -41,7 +41,7 @@ export type CreateWorksheetFormValue = {
   description: string;
 };
 
-type TemplateKey =
+export type TemplateKey =
   | 'folder'
   | 'fabric'
   | 'rib_fabric'
@@ -52,6 +52,13 @@ type TemplateKey =
   | 'pattern'
   | 'print'
   | 'etc';
+
+export type CreateCustomTemplateFormValue = {
+  template: TemplateKey;
+  title: string;
+  description: string;
+  file?: File;
+};
 
 type TemplateItem = {
   key: TemplateKey;
@@ -68,7 +75,12 @@ type Props = {
   onCreateFolder: (folderName: string) => Promise<void> | void;
   onCreateMaterial: (value: CreateMaterialFormValue) => Promise<void> | void;
   onCreateWorksheet: (value: CreateWorksheetFormValue) => Promise<void> | void;
+  onCreateCustomTemplate?: (value: CreateCustomTemplateFormValue) => Promise<void> | void;
   hiddenTemplateKeys?: TemplateKey[];
+  fileRequiredTemplateKeys?: TemplateKey[];
+  fileAccept?: string;
+  submitError?: string | null;
+  submitLabel?: string;
 };
 
 const TEMPLATE_ITEMS: TemplateItem[] = [
@@ -318,6 +330,48 @@ const isMaterialTemplate = (key: TemplateKey | null): key is MaterialCategory =>
   return Boolean(TEMPLATE_TO_MATERIAL_CATEGORY[key]);
 };
 
+const getFileExtension = (fileName: string) => {
+  const lastDotIndex = fileName.lastIndexOf('.');
+  if (lastDotIndex < 0) {
+    return '';
+  }
+  return fileName.slice(lastDotIndex).toLowerCase();
+};
+
+const matchesAcceptRule = (file: File, rule: string) => {
+  const normalizedRule = rule.trim().toLowerCase();
+  if (!normalizedRule) {
+    return false;
+  }
+
+  const fileType = (file.type || '').toLowerCase();
+  const fileExtension = getFileExtension(file.name);
+
+  if (normalizedRule.startsWith('.')) {
+    return fileExtension === normalizedRule;
+  }
+
+  if (normalizedRule.endsWith('/*')) {
+    const mimePrefix = normalizedRule.slice(0, -1);
+    return fileType.startsWith(mimePrefix);
+  }
+
+  return fileType === normalizedRule;
+};
+
+const isFileAcceptedByPattern = (file: File, accept: string) => {
+  const rules = accept
+    .split(',')
+    .map((rule) => rule.trim())
+    .filter(Boolean);
+
+  if (rules.length === 0) {
+    return true;
+  }
+
+  return rules.some((rule) => matchesAcceptRule(file, rule));
+};
+
 const TemplateIcon = ({ type }: { type: TemplateKey }) => {
   const iconClass = 'h-5 w-5 text-gray-600 dark:text-gray-300';
   switch (type) {
@@ -414,7 +468,12 @@ const TemplateCreateModal = ({
   onCreateFolder,
   onCreateMaterial,
   onCreateWorksheet,
+  onCreateCustomTemplate,
   hiddenTemplateKeys = [],
+  fileRequiredTemplateKeys = [],
+  fileAccept = 'image/*,.pdf',
+  submitError = null,
+  submitLabel = '생성',
 }: Props) => {
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateKey | null>(null);
   const [mobileStep, setMobileStep] = useState<'select' | 'form'>('select');
@@ -429,6 +488,7 @@ const TemplateCreateModal = ({
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [draggingFile, setDraggingFile] = useState(false);
+  const [fileValidationError, setFileValidationError] = useState<string | null>(null);
   const [fieldDefs, setFieldDefs] = useState<MaterialFieldDef[]>([]);
   const [fieldValues, setFieldValues] = useState<Record<string, unknown>>({});
   const [loadingFieldDefs, setLoadingFieldDefs] = useState(false);
@@ -450,6 +510,7 @@ const TemplateCreateModal = ({
     setDescription('');
     setFile(null);
     setPreviewUrl(null);
+    setFileValidationError(null);
     setFieldDefs([]);
     setFieldValues({});
   }, [modalOpen]);
@@ -507,6 +568,13 @@ const TemplateCreateModal = ({
 
   const isMaterial = selectedTemplate ? isMaterialTemplate(selectedTemplate) : false;
   const isFolder = selectedTemplate === 'folder';
+  const requiresFileForCustomTemplate =
+    Boolean(selectedTemplate) &&
+    !isFolder &&
+    !isMaterial &&
+    selectedTemplate !== 'worksheet' &&
+    fileRequiredTemplateKeys.includes(selectedTemplate);
+  const shouldShowFileUpload = isMaterial || requiresFileForCustomTemplate;
   const visibleTemplateItems = useMemo(
     () => TEMPLATE_ITEMS.filter((item) => !hiddenTemplateKeys.includes(item.key)),
     [hiddenTemplateKeys],
@@ -518,6 +586,7 @@ const TemplateCreateModal = ({
     if (!selectedTemplate) return true;
     if (isFolder) return !folderName.trim() || isSubmitting;
     if (isMaterial) return !file || loadingFieldDefs || isSubmitting;
+    if (requiresFileForCustomTemplate) return !file || isSubmitting;
     return !title.trim() || isSubmitting;
   })();
 
@@ -536,6 +605,20 @@ const TemplateCreateModal = ({
   };
 
   const onDropFile = (nextFile: File | null) => {
+    if (!nextFile) {
+      setFileValidationError(null);
+      setFile(null);
+      setDraggingFile(false);
+      return;
+    }
+
+    if (!isFileAcceptedByPattern(nextFile, fileAccept)) {
+      setFileValidationError('지원하지 않는 파일 형식입니다. 허용된 형식의 파일을 선택해주세요.');
+      setDraggingFile(false);
+      return;
+    }
+
+    setFileValidationError(null);
     setFile(nextFile);
     setDraggingFile(false);
   };
@@ -545,59 +628,77 @@ const TemplateCreateModal = ({
     if (!selectedTemplate) {
       return;
     }
-
-    if (selectedTemplate === 'folder') {
-      await onCreateFolder(folderName.trim());
-      setModalOpen(false);
-      return;
-    }
-
-    if (isMaterialTemplate(selectedTemplate)) {
-      if (!file) {
+    try {
+      if (selectedTemplate === 'folder') {
+        await onCreateFolder(folderName.trim());
+        setModalOpen(false);
         return;
       }
-      const category = TEMPLATE_TO_MATERIAL_CATEGORY[selectedTemplate] as MaterialCategory;
-      const next: CreateMaterialFormValue = {
-        category,
-        attributes: {},
-        file,
-      };
 
-      const fieldDefByKey = new Map(fieldDefs.map((fieldDef) => [fieldDef.field_key, fieldDef]));
-
-      Object.entries(fieldValues).forEach(([fieldKey, value]) => {
-        const fieldDef = fieldDefByKey.get(fieldKey);
-        if (!fieldDef) {
+      if (isMaterialTemplate(selectedTemplate)) {
+        if (!file) {
           return;
         }
-        if (!hasMeaningfulValue(fieldDef, value)) {
+        const category = TEMPLATE_TO_MATERIAL_CATEGORY[selectedTemplate] as MaterialCategory;
+        const next: CreateMaterialFormValue = {
+          category,
+          attributes: {},
+          file,
+        };
+
+        const fieldDefByKey = new Map(fieldDefs.map((fieldDef) => [fieldDef.field_key, fieldDef]));
+
+        Object.entries(fieldValues).forEach(([fieldKey, value]) => {
+          const fieldDef = fieldDefByKey.get(fieldKey);
+          if (!fieldDef) {
+            return;
+          }
+          if (!hasMeaningfulValue(fieldDef, value)) {
+            return;
+          }
+
+          const topLevelKey = TOP_LEVEL_FIELD_MAP[fieldKey];
+          if (topLevelKey) {
+            next[topLevelKey] = String(value);
+            return;
+          }
+
+          next.attributes[fieldKey] = value;
+        });
+
+        await onCreateMaterial(next);
+        setModalOpen(false);
+        return;
+      }
+
+      if (selectedTemplate === 'worksheet') {
+        await onCreateWorksheet({
+          title: title.trim(),
+          description: description.trim(),
+        });
+        setModalOpen(false);
+        return;
+      }
+
+      if (onCreateCustomTemplate) {
+        if (requiresFileForCustomTemplate && !file) {
           return;
         }
 
-        const topLevelKey = TOP_LEVEL_FIELD_MAP[fieldKey];
-        if (topLevelKey) {
-          next[topLevelKey] = String(value);
-          return;
-        }
+        await onCreateCustomTemplate({
+          template: selectedTemplate,
+          title: title.trim(),
+          description: description.trim(),
+          file: file ?? undefined,
+        });
+        setModalOpen(false);
+        return;
+      }
 
-        next.attributes[fieldKey] = value;
-      });
-
-      await onCreateMaterial(next);
       setModalOpen(false);
-      return;
+    } catch (error) {
+      console.error('Failed to submit template create modal', error);
     }
-
-    if (selectedTemplate === 'worksheet') {
-      await onCreateWorksheet({
-        title: title.trim(),
-        description: description.trim(),
-      });
-      setModalOpen(false);
-      return;
-    }
-
-    setModalOpen(false);
   };
 
   const renderMaterialInput = (fieldDef: MaterialFieldDef) => {
@@ -1000,7 +1101,7 @@ const TemplateCreateModal = ({
                             />
                           </div>
                         </div>
-                      ) : isMaterial ? (
+                      ) : shouldShowFileUpload ? (
                         <div className='space-y-4'>
                           <div>
                             <label className='mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200'>
@@ -1013,7 +1114,7 @@ const TemplateCreateModal = ({
                                 if (event.key === 'Enter' || event.key === ' ') {
                                   event.preventDefault();
                                   const input = document.getElementById(
-                                    'faddit-material-drop-input',
+                                    'faddit-template-create-drop-input',
                                   ) as HTMLInputElement | null;
                                   input?.click();
                                 }
@@ -1040,7 +1141,7 @@ const TemplateCreateModal = ({
                               }}
                               onClick={() => {
                                 const input = document.getElementById(
-                                  'faddit-material-drop-input',
+                                  'faddit-template-create-drop-input',
                                 ) as HTMLInputElement | null;
                                 input?.click();
                               }}
@@ -1051,9 +1152,9 @@ const TemplateCreateModal = ({
                               }`}
                             >
                               <input
-                                id='faddit-material-drop-input'
+                                id='faddit-template-create-drop-input'
                                 type='file'
-                                accept='image/*,.pdf'
+                                accept={fileAccept}
                                 className='hidden'
                                 onChange={(event) => onDropFile(event.target.files?.[0] ?? null)}
                               />
@@ -1084,37 +1185,71 @@ const TemplateCreateModal = ({
                                     파일을 드래그하여 업로드
                                   </div>
                                   <div className='text-xs text-gray-500 dark:text-gray-400'>
-                                    또는 클릭해서 이미지/PDF 선택
+                                    또는 클릭해서 파일 선택
                                   </div>
                                 </div>
                               )}
                             </div>
+                            {fileValidationError ? (
+                              <p className='mt-2 text-xs text-rose-500 dark:text-rose-300'>
+                                {fileValidationError}
+                              </p>
+                            ) : null}
                           </div>
 
-                          {loadingFieldDefs ? (
-                            <div className='rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500 dark:border-gray-700/60 dark:text-gray-400'>
-                              필드 정보를 불러오는 중입니다...
-                            </div>
+                          {isMaterial ? (
+                            loadingFieldDefs ? (
+                              <div className='rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500 dark:border-gray-700/60 dark:text-gray-400'>
+                                필드 정보를 불러오는 중입니다...
+                              </div>
+                            ) : (
+                              groupedDefs.regular
+                                .filter((fieldDef) => shouldShowField(fieldDef, fieldValues))
+                                .map((fieldDef) => (
+                                  <div key={fieldDef.id}>
+                                    <label
+                                      htmlFor={`field-${fieldDef.field_key}`}
+                                      className='mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200'
+                                    >
+                                      {fieldDef.label}
+                                      {fieldDef.required ? ' *' : ''}
+                                      {getParentLabel(fieldDef) ? (
+                                        <span className='ml-2 text-xs text-gray-500 dark:text-gray-400'>
+                                          ({getParentLabel(fieldDef)} 하위)
+                                        </span>
+                                      ) : null}
+                                    </label>
+                                    {renderMaterialInput(fieldDef)}
+                                  </div>
+                                ))
+                            )
                           ) : (
-                            groupedDefs.regular
-                              .filter((fieldDef) => shouldShowField(fieldDef, fieldValues))
-                              .map((fieldDef) => (
-                                <div key={fieldDef.id}>
-                                  <label
-                                    htmlFor={`field-${fieldDef.field_key}`}
-                                    className='mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200'
-                                  >
-                                    {fieldDef.label}
-                                    {fieldDef.required ? ' *' : ''}
-                                    {getParentLabel(fieldDef) ? (
-                                      <span className='ml-2 text-xs text-gray-500 dark:text-gray-400'>
-                                        ({getParentLabel(fieldDef)} 하위)
-                                      </span>
-                                    ) : null}
-                                  </label>
-                                  {renderMaterialInput(fieldDef)}
-                                </div>
-                              ))
+                            <div className='space-y-3'>
+                              <div>
+                                <label className='mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200'>
+                                  제목
+                                </label>
+                                <input
+                                  type='text'
+                                  className='form-input w-full'
+                                  value={title}
+                                  onChange={(event) => setTitle(event.target.value)}
+                                  placeholder='제목 입력'
+                                />
+                              </div>
+                              <div>
+                                <label className='mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200'>
+                                  텍스트
+                                </label>
+                                <textarea
+                                  className='form-textarea w-full'
+                                  rows={5}
+                                  value={description}
+                                  onChange={(event) => setDescription(event.target.value)}
+                                  placeholder='내용 입력'
+                                />
+                              </div>
+                            </div>
                           )}
                         </div>
                       ) : (
@@ -1153,7 +1288,10 @@ const TemplateCreateModal = ({
           </div>
 
           <div className='flex-shrink-0 border-t border-gray-200 px-5 py-4 dark:border-gray-700/60'>
-            <div className='flex items-center justify-end gap-2'>
+            <div className='flex flex-wrap items-center justify-end gap-2'>
+              {submitError ? (
+                <p className='mr-auto text-xs text-rose-500 dark:text-rose-300'>{submitError}</p>
+              ) : null}
               {isCompact && mobileStep === 'form' && (
                 <button
                   type='button'
@@ -1176,7 +1314,7 @@ const TemplateCreateModal = ({
                 disabled={isCreateDisabled}
                 className='btn bg-gray-900 text-gray-100 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-100 dark:text-gray-800 dark:hover:bg-white'
               >
-                생성
+                {submitLabel}
               </button>
             </div>
           </div>

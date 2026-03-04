@@ -39,6 +39,7 @@ import {
   mapWorksheetUploadCategoryToDriveTag,
   normalizeWorksheetElementUploadFile,
   WORKSHEET_ELEMENT_UPLOAD_REFRESH_EVENT,
+  type WorksheetUploadCategory,
 } from './worksheetElementUploadUtils';
 import {
   createMaterial,
@@ -47,9 +48,12 @@ import {
   type MaterialFieldDef,
   type MaterialItem,
 } from '../../../lib/api/materialApi';
-import WorksheetElementUploadModal, {
-  type WorksheetElementUploadSubmitPayload,
-} from './WorksheetElementUploadModal';
+import TemplateCreateModal, {
+  type CreateCustomTemplateFormValue,
+  type CreateMaterialFormValue,
+  type CreateWorksheetFormValue,
+  type TemplateKey,
+} from '../drive/components/TemplateCreateModal';
 
 type ToolTab = 'template' | 'module' | 'element' | 'history' | 'comment';
 
@@ -99,6 +103,42 @@ type ElementWorkspaceFile = Omit<WorksheetElementItem, 'category'> & {
   type: DriveNode['type'];
   tag?: string;
   node: DriveNode;
+};
+
+type WorksheetElementUploadMaterialDetails = {
+  category: CreateMaterialFormValue['category'];
+  codeInternal?: string;
+  vendorName?: string;
+  itemName?: string;
+  originCountry?: string;
+  attributes: Record<string, unknown>;
+};
+
+type WorksheetElementUploadSubmitPayload = {
+  files: File[];
+  category: WorksheetUploadCategory;
+  materialDetails?: WorksheetElementUploadMaterialDetails;
+  title?: string;
+  description?: string;
+};
+
+const WORKSHEET_ELEMENT_MODAL_HIDDEN_TEMPLATE_KEYS: TemplateKey[] = [
+  'folder',
+  'worksheet',
+  'schematic',
+  'pattern',
+];
+
+const WORKSHEET_ELEMENT_MODAL_FILE_REQUIRED_TEMPLATE_KEYS: TemplateKey[] = ['print', 'etc'];
+
+const MATERIAL_CATEGORY_TO_WORKSHEET_UPLOAD_CATEGORY: Record<
+  CreateMaterialFormValue['category'],
+  WorksheetUploadCategory
+> = {
+  fabric: '원단',
+  rib_fabric: '시보리원단',
+  label: '라벨',
+  trim: '부자재',
 };
 
 const getElementCategoryBadgeClass = (category: ElementDisplayCategory) => {
@@ -704,13 +744,13 @@ export default function WorksheetTemplateSidebar({
   const handleElementUploadSubmit = useCallback(
     async ({ files, category, materialDetails, title, description }: WorksheetElementUploadSubmitPayload) => {
       if (files.length === 0) {
-        return;
+        return false;
       }
       if (!userId || !rootFolderId || !worksheetId) {
         const errorMessage = '작업지시서 업로드에 필요한 정보가 없습니다.';
         setElementUploadError(errorMessage);
         setElementUploadModalError(errorMessage);
-        return;
+        return false;
       }
 
       try {
@@ -791,10 +831,12 @@ export default function WorksheetTemplateSidebar({
           }),
         );
         setElementUploadModalOpen(false);
+        return true;
       } catch {
         const errorMessage = '요소 업로드에 실패했습니다. 잠시 후 다시 시도해주세요.';
         setElementUploadError(errorMessage);
         setElementUploadModalError(errorMessage);
+        return false;
       } finally {
         setElementUploadSubmitting(false);
       }
@@ -806,6 +848,64 @@ export default function WorksheetTemplateSidebar({
       userId,
       worksheetId,
     ],
+  );
+
+  const handleTemplateCreateMaterial = useCallback(
+    async (value: CreateMaterialFormValue) => {
+      const uploadCategory = MATERIAL_CATEGORY_TO_WORKSHEET_UPLOAD_CATEGORY[value.category];
+      const success = await handleElementUploadSubmit({
+        files: [value.file],
+        category: uploadCategory,
+        materialDetails: {
+          category: value.category,
+          codeInternal: value.codeInternal,
+          vendorName: value.vendorName,
+          itemName: value.itemName,
+          originCountry: value.originCountry,
+          attributes: value.attributes,
+        },
+      });
+
+      if (!success) {
+        throw new Error('worksheet element material upload failed');
+      }
+    },
+    [handleElementUploadSubmit],
+  );
+
+  const handleTemplateCreateCustom = useCallback(
+    async (value: CreateCustomTemplateFormValue) => {
+      if (value.template !== 'print' && value.template !== 'etc') {
+        return;
+      }
+
+      if (!value.file) {
+        throw new Error('worksheet element file is required');
+      }
+
+      const success = await handleElementUploadSubmit({
+        files: [value.file],
+        category: value.template === 'print' ? '인쇄' : '기타',
+        title: value.title,
+        description: value.description,
+      });
+
+      if (!success) {
+        throw new Error('worksheet element custom upload failed');
+      }
+    },
+    [handleElementUploadSubmit],
+  );
+
+  const handleTemplateCreateNoopFolder = useCallback(async (_folderName: string) => {
+    return;
+  }, []);
+
+  const handleTemplateCreateNoopWorksheet = useCallback(
+    async (_value: CreateWorksheetFormValue) => {
+      return;
+    },
+    [],
   );
 
   useEffect(() => {
@@ -1695,12 +1795,21 @@ export default function WorksheetTemplateSidebar({
         )}
         </div>
       </div>
-      <WorksheetElementUploadModal
+      <TemplateCreateModal
         modalOpen={elementUploadModalOpen}
         setModalOpen={setElementUploadModalOpen}
-        isSubmitting={elementUploadSubmitting}
+        isSubmittingFolder={false}
+        isSubmittingMaterial={elementUploadSubmitting}
+        isSubmittingWorksheet={false}
+        onCreateFolder={handleTemplateCreateNoopFolder}
+        onCreateMaterial={handleTemplateCreateMaterial}
+        onCreateWorksheet={handleTemplateCreateNoopWorksheet}
+        onCreateCustomTemplate={handleTemplateCreateCustom}
+        hiddenTemplateKeys={WORKSHEET_ELEMENT_MODAL_HIDDEN_TEMPLATE_KEYS}
+        fileRequiredTemplateKeys={WORKSHEET_ELEMENT_MODAL_FILE_REQUIRED_TEMPLATE_KEYS}
+        fileAccept='image/*'
         submitError={elementUploadModalError}
-        onSubmit={handleElementUploadSubmit}
+        submitLabel='업로드'
       />
       {elementDetailPanelPortal}
     </>

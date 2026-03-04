@@ -4,6 +4,7 @@ import {
   ImageUp,
   MousePointer2,
   Redo2,
+  RefreshCw,
   Undo2,
 } from 'lucide-react';
 import { useCanvas } from './CanvasProvider';
@@ -52,7 +53,11 @@ function ToolButton({ active, onClick, title, children, disabled }: ToolButtonPr
   );
 }
 
-export default function SketchBottomBar() {
+interface SketchBottomBarProps {
+  onZoomReset: () => void;
+}
+
+export default function SketchBottomBar({ onZoomReset }: SketchBottomBarProps) {
   const {
     activeTool,
     setActiveTool,
@@ -283,6 +288,12 @@ export default function SketchBottomBar() {
 
         <ToolButton active={showGrid} onClick={toggleGrid} title='그리드 토글'>
           <Grid3X3 size={16} strokeWidth={1.5} />
+        </ToolButton>
+
+        <div className='mx-1 h-5 w-px bg-gray-200' />
+
+        <ToolButton onClick={onZoomReset} title='줌 리셋 (100%)'>
+          <RefreshCw size={16} strokeWidth={1.5} />
         </ToolButton>
       </div>
     </div>
