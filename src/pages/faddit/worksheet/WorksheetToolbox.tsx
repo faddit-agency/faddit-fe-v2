@@ -197,7 +197,7 @@ function IconGridTooltipButton({
         onClick={onClick}
         title={title}
         aria-label={title}
-        className={`flex h-8 w-full cursor-pointer items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-700 ${className ?? ''}`}
+        className={`flex aspect-square w-full cursor-pointer items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-700 ${className ?? ''}`}
       >
         {children}
       </button>
@@ -287,14 +287,14 @@ export default function WorksheetToolbox() {
       <div className='flex min-h-0 min-w-0 flex-1'>
         <nav className='flex w-14 shrink-0 flex-col gap-y-2'>
           {TOOL_ITEMS.map(({ key, label, icon: Icon }) => (
-            <SidePanelTooltip key={key} title={label}>
+            <SidePanelTooltip key={key} title={label} className='w-full'>
               <button
                 type='button'
                 onPointerDown={(event) => handleFastPress(event, () => handleToolTabClick(key))}
                 onClick={() => runClickAction(() => handleToolTabClick(key))}
                 title={label}
                 aria-label={label}
-                className={`flex touch-manipulation aspect-square cursor-pointer flex-col items-center justify-center gap-0.5 rounded-md p-2 text-[10px] transition-colors ${
+                className={`flex w-full touch-manipulation aspect-square cursor-pointer flex-col items-center justify-center gap-0.5 rounded-md p-2 text-[10px] transition-colors ${
                   activePanelKey === key
                     ? 'bg-gray-100 text-gray-800'
                     : 'text-gray-600 hover:bg-gray-200/60'
@@ -391,7 +391,7 @@ export default function WorksheetToolbox() {
                         key={op}
                         onClick={() => applyPathfinder(op)}
                         title={title}
-                        className='h-9 text-gray-400 hover:text-gray-600'
+                        className='text-gray-400 hover:text-gray-600'
                       >
                         <PathfinderGlyph op={op} />
                       </IconGridTooltipButton>
