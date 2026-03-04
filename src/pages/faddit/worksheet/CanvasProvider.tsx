@@ -81,6 +81,12 @@ interface CanvasCtx {
   toggleLayerExpanded: (id: string) => void;
   moveLayerUp: (id: string) => void;
   moveLayerDown: (id: string) => void;
+  moveLayerToFront: (id: string) => void;
+  moveLayerToBack: (id: string) => void;
+  bringSelectionForward: () => void;
+  sendSelectionBackward: () => void;
+  bringSelectionToFront: () => void;
+  sendSelectionToBack: () => void;
   alignSelected: (type: AlignType) => void;
   uploadToCanvas: (file: File) => void;
   activeLayerId: string | null;
@@ -519,33 +525,88 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
     [findLayerById, refreshLayers],
   );
 
-  const moveLayerUp = useCallback(
-    (id: string) => {
+  const reorderObject = useCallback(
+    (target: FabricObject, direction: 'forward' | 'backward' | 'front' | 'back') => {
       const canvas = canvasRef.current;
-      if (!canvas) return;
-      const item = findLayerById(id);
-      if (!item) return;
-      canvas.bringObjectForward(item.obj);
+      if (!canvas) return false;
+
+      if (direction === 'forward') {
+        canvas.bringObjectForward(target);
+      } else if (direction === 'backward') {
+        canvas.sendObjectBackwards(target);
+      } else if (direction === 'front') {
+        canvas.bringObjectToFront(target);
+      } else {
+        canvas.sendObjectToBack(target);
+      }
+
       canvas.renderAll();
       refreshLayers();
       saveHistory();
+      return true;
     },
-    [findLayerById, refreshLayers, saveHistory],
+    [refreshLayers, saveHistory],
+  );
+
+  const moveLayerUp = useCallback(
+    (id: string) => {
+      const item = findLayerById(id);
+      if (!item) return;
+      reorderObject(item.obj, 'forward');
+    },
+    [findLayerById, reorderObject],
   );
 
   const moveLayerDown = useCallback(
     (id: string) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
       const item = findLayerById(id);
       if (!item) return;
-      canvas.sendObjectBackwards(item.obj);
-      canvas.renderAll();
-      refreshLayers();
-      saveHistory();
+      reorderObject(item.obj, 'backward');
     },
-    [findLayerById, refreshLayers, saveHistory],
+    [findLayerById, reorderObject],
   );
+
+  const moveLayerToFront = useCallback(
+    (id: string) => {
+      const item = findLayerById(id);
+      if (!item) return;
+      reorderObject(item.obj, 'front');
+    },
+    [findLayerById, reorderObject],
+  );
+
+  const moveLayerToBack = useCallback(
+    (id: string) => {
+      const item = findLayerById(id);
+      if (!item) return;
+      reorderObject(item.obj, 'back');
+    },
+    [findLayerById, reorderObject],
+  );
+
+  const bringSelectionForward = useCallback(() => {
+    const activeObject = canvasRef.current?.getActiveObject();
+    if (!activeObject) return;
+    reorderObject(activeObject, 'forward');
+  }, [reorderObject]);
+
+  const sendSelectionBackward = useCallback(() => {
+    const activeObject = canvasRef.current?.getActiveObject();
+    if (!activeObject) return;
+    reorderObject(activeObject, 'backward');
+  }, [reorderObject]);
+
+  const bringSelectionToFront = useCallback(() => {
+    const activeObject = canvasRef.current?.getActiveObject();
+    if (!activeObject) return;
+    reorderObject(activeObject, 'front');
+  }, [reorderObject]);
+
+  const sendSelectionToBack = useCallback(() => {
+    const activeObject = canvasRef.current?.getActiveObject();
+    if (!activeObject) return;
+    reorderObject(activeObject, 'back');
+  }, [reorderObject]);
 
   const alignSelected = useCallback(
     (type: AlignType) => {
@@ -989,6 +1050,12 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
         toggleLayerExpanded,
         moveLayerUp,
         moveLayerDown,
+        moveLayerToFront,
+        moveLayerToBack,
+        bringSelectionForward,
+        sendSelectionBackward,
+        bringSelectionToFront,
+        sendSelectionToBack,
         alignSelected,
         uploadToCanvas,
         activeLayerId,

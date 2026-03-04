@@ -89,6 +89,9 @@ const PATHFINDER_BUTTONS: { op: PathfinderOp; title: string }[] = [
   { op: 'minusBack', title: '이면 오브젝트 제외' },
 ];
 
+const LAYER_ORDER_ICON_SIZE = 18;
+const LAYER_ORDER_ICON_STROKE = 1.8;
+
 function PathfinderGlyph({ op }: { op: PathfinderOp }) {
   const iconClass = 'h-[20px] w-[20px] text-current';
 
@@ -103,6 +106,122 @@ function PathfinderGlyph({ op }: { op: PathfinderOp }) {
   if (op === 'minusFront') return <CgPathFront className={iconClass} />;
 
   return <CgPathUnite className={iconClass} />;
+}
+
+type LayerOrderGlyphProps = {
+  size?: number;
+  strokeWidth?: number;
+  className?: string;
+};
+
+function LayerBringToFrontGlyph({
+  size = LAYER_ORDER_ICON_SIZE,
+  strokeWidth = LAYER_ORDER_ICON_STROKE,
+  className,
+}: LayerOrderGlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox='0 0 24 24'
+      fill='none'
+      stroke='currentColor'
+      strokeWidth={strokeWidth}
+      strokeLinecap='round'
+      strokeLinejoin='round'
+      shapeRendering='geometricPrecision'
+      className={className}
+      aria-hidden='true'
+    >
+      <path d='M12 4 20 8 12 12 4 8Z' />
+      <path d='M4 13 12 17 20 13' />
+      <path d='M4 16 12 20 20 16' />
+      <path d='M12 2v9' />
+      <path d='m9.3 4.7 2.7-2.7 2.7 2.7' />
+    </svg>
+  );
+}
+
+function LayerBringForwardGlyph({
+  size = LAYER_ORDER_ICON_SIZE,
+  strokeWidth = LAYER_ORDER_ICON_STROKE,
+  className,
+}: LayerOrderGlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox='0 0 24 24'
+      fill='none'
+      stroke='currentColor'
+      strokeWidth={strokeWidth}
+      strokeLinecap='round'
+      strokeLinejoin='round'
+      shapeRendering='geometricPrecision'
+      className={className}
+      aria-hidden='true'
+    >
+      <path d='M12 5 20 9 12 13 4 9Z' />
+      <path d='M4 14 12 18 20 14' />
+      <path d='M12 3v8.5' />
+      <path d='m9.3 5.7 2.7-2.7 2.7 2.7' />
+    </svg>
+  );
+}
+
+function LayerSendBackwardGlyph({
+  size = LAYER_ORDER_ICON_SIZE,
+  strokeWidth = LAYER_ORDER_ICON_STROKE,
+  className,
+}: LayerOrderGlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox='0 0 24 24'
+      fill='none'
+      stroke='currentColor'
+      strokeWidth={strokeWidth}
+      strokeLinecap='round'
+      strokeLinejoin='round'
+      shapeRendering='geometricPrecision'
+      className={className}
+      aria-hidden='true'
+    >
+      <path d='M12 5 20 9 12 13 4 9Z' />
+      <path d='M4 14 12 18 20 14' />
+      <path d='M12 5.5v9' />
+      <path d='m9.3 11.9 2.7 2.7 2.7-2.7' />
+    </svg>
+  );
+}
+
+function LayerSendToBackGlyph({
+  size = LAYER_ORDER_ICON_SIZE,
+  strokeWidth = LAYER_ORDER_ICON_STROKE,
+  className,
+}: LayerOrderGlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox='0 0 24 24'
+      fill='none'
+      stroke='currentColor'
+      strokeWidth={strokeWidth}
+      strokeLinecap='round'
+      strokeLinejoin='round'
+      shapeRendering='geometricPrecision'
+      className={className}
+      aria-hidden='true'
+    >
+      <path d='M12 4 20 8 12 12 4 8Z' />
+      <path d='M4 11 12 15 20 11' />
+      <path d='M4 14 12 18 20 14' />
+      <path d='M12 5.5v10.5' />
+      <path d='m9.3 13.3 2.7 2.7 2.7-2.7' />
+    </svg>
+  );
 }
 
 function SidePanelTooltip({
@@ -235,6 +354,10 @@ export default function WorksheetToolbox() {
     toggleLayerVisibility,
     toggleLayerLock,
     toggleLayerExpanded,
+    moveLayerUp,
+    moveLayerDown,
+    moveLayerToFront,
+    moveLayerToBack,
     activeTool,
     setActiveTool,
     activeLayerId,
@@ -283,6 +406,11 @@ export default function WorksheetToolbox() {
     setActivePanelKey(tab);
     setContentOpen(true);
   };
+
+  const activeLayerIndex = layers.findIndex((layer) => layer.id === activeLayerId);
+  const hasActiveLayer = activeLayerIndex >= 0;
+  const canBringForward = hasActiveLayer && activeLayerIndex > 0;
+  const canSendBackward = hasActiveLayer && activeLayerIndex < layers.length - 1;
 
   return (
     <div className='flex h-full min-h-0 bg-white p-2'>
@@ -401,7 +529,6 @@ export default function WorksheetToolbox() {
                         key={op}
                         onClick={() => applyPathfinder(op)}
                         title={title}
-                        className='text-gray-400 hover:text-gray-600'
                       >
                         <PathfinderGlyph op={op} />
                       </IconGridTooltipButton>
@@ -419,7 +546,7 @@ export default function WorksheetToolbox() {
                         type='button'
                         onClick={groupSelected}
                         title='그룹화 (Cmd/Ctrl+G)'
-                        className='cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800'
+                        className='cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700'
                       >
                         <Layers size={13} strokeWidth={1.5} />
                       </button>
@@ -429,7 +556,7 @@ export default function WorksheetToolbox() {
                         type='button'
                         onClick={ungroupSelected}
                         title='그룹 해제 (Cmd/Ctrl+Alt+G)'
-                        className='cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800'
+                        className='cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700'
                       >
                         <Ungroup size={13} strokeWidth={1.5} />
                       </button>
@@ -439,11 +566,69 @@ export default function WorksheetToolbox() {
                         type='button'
                         onClick={deleteSelected}
                         title='삭제 (Delete)'
-                        className='cursor-pointer rounded p-0.5 text-gray-500 hover:bg-red-50 hover:text-red-500'
+                        className='cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700'
                       >
                         <Trash2 size={13} strokeWidth={1.5} />
                       </button>
                     </SidePanelTooltip>
+                  </div>
+                  <div className='mb-2 grid shrink-0 gap-1'>
+                    <button
+                      type='button'
+                      onClick={() => {
+                        if (activeLayerId) moveLayerToFront(activeLayerId);
+                      }}
+                      disabled={!canBringForward}
+                      className='flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-xs text-gray-700 transition-colors [&_svg]:text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300 disabled:[&_svg]:text-gray-300 disabled:hover:bg-transparent'
+                    >
+                      <span className='inline-flex items-center gap-2'>
+                        <LayerBringToFrontGlyph />
+                        맨 앞으로 가져오기
+                      </span>
+                      <span className='text-[11px] text-gray-400'>⌘/Ctrl+Option/Alt+]</span>
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => {
+                        if (activeLayerId) moveLayerUp(activeLayerId);
+                      }}
+                      disabled={!canBringForward}
+                      className='flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-xs text-gray-700 transition-colors [&_svg]:text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300 disabled:[&_svg]:text-gray-300 disabled:hover:bg-transparent'
+                    >
+                      <span className='inline-flex items-center gap-2'>
+                        <LayerBringForwardGlyph />
+                        앞으로 가져오기
+                      </span>
+                      <span className='text-[11px] text-gray-400'>⌘/Ctrl+]</span>
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => {
+                        if (activeLayerId) moveLayerDown(activeLayerId);
+                      }}
+                      disabled={!canSendBackward}
+                      className='flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-xs text-gray-700 transition-colors [&_svg]:text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300 disabled:[&_svg]:text-gray-300 disabled:hover:bg-transparent'
+                    >
+                      <span className='inline-flex items-center gap-2'>
+                        <LayerSendBackwardGlyph />
+                        뒤로 보내기
+                      </span>
+                      <span className='text-[11px] text-gray-400'>⌘/Ctrl+[</span>
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => {
+                        if (activeLayerId) moveLayerToBack(activeLayerId);
+                      }}
+                      disabled={!canSendBackward}
+                      className='flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-xs text-gray-700 transition-colors [&_svg]:text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300 disabled:[&_svg]:text-gray-300 disabled:hover:bg-transparent'
+                    >
+                      <span className='inline-flex items-center gap-2'>
+                        <LayerSendToBackGlyph />
+                        맨 뒤로 보내기
+                      </span>
+                      <span className='text-[11px] text-gray-400'>⌘/Ctrl+Option/Alt+[</span>
+                    </button>
                   </div>
                   <div className='flex min-h-0 flex-1 flex-col gap-y-0.5 overflow-y-auto'>
                     {layers.length === 0 && (
@@ -471,7 +656,7 @@ export default function WorksheetToolbox() {
                                 toggleLayerExpanded(layer.id);
                               }}
                               title={layer.isExpanded ? '그룹 접기' : '그룹 펼치기'}
-                              className='shrink-0 cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800'
+                              className='shrink-0 cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700'
                             >
                               {layer.isExpanded ? (
                                 <ChevronDown size={12} strokeWidth={1.5} />
@@ -492,7 +677,7 @@ export default function WorksheetToolbox() {
                               toggleLayerVisibility(layer.id);
                             }}
                             title={layer.visible ? '숨기기' : '표시'}
-                            className='shrink-0 cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800'
+                            className='shrink-0 cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700'
                           >
                             {layer.visible ? (
                               <Eye size={13} strokeWidth={1.5} />
@@ -551,7 +736,7 @@ export default function WorksheetToolbox() {
                               beginLayerRename(layer.id, layer.name);
                             }}
                             title={editingLayerId === layer.id ? '수정 완료' : '이름 수정'}
-                            className='shrink-0 cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800'
+                            className='shrink-0 cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700'
                           >
                             {editingLayerId === layer.id ? (
                               <Check size={13} strokeWidth={1.7} />
@@ -569,7 +754,7 @@ export default function WorksheetToolbox() {
                               toggleLayerLock(layer.id);
                             }}
                             title={layer.locked ? '잠금 해제' : '잠금'}
-                            className='shrink-0 cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800'
+                            className='shrink-0 cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700'
                           >
                             {layer.locked ? (
                               <Lock size={13} strokeWidth={1.5} />

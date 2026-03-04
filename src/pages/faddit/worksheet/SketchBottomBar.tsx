@@ -1,28 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ArrowRight,
-  ArrowDown,
-  ArrowUp,
-  Circle,
-  Copy,
   Grid3X3,
-  Group,
   ImageUp,
-  Minus,
   MousePointer2,
-  Paintbrush,
-  PenTool,
   Redo2,
-  RefreshCw,
-  Square,
-  Triangle,
-  Type,
   Undo2,
-  Ungroup,
-  ZoomIn,
-  ZoomOut,
 } from 'lucide-react';
-import { useCanvas, type ToolType } from './CanvasProvider';
+import { useCanvas } from './CanvasProvider';
 import SketchColorPicker from './SketchColorPicker';
 
 const FONT_FAMILIES = [
@@ -34,16 +18,6 @@ const FONT_FAMILIES = [
   'Impact',
   '나눔고딕',
   '맑은 고딕',
-];
-
-type ShapeTool = Extract<ToolType, 'rect' | 'ellipse' | 'triangle' | 'line' | 'arrow'>;
-
-const SHAPE_OPTIONS: { tool: ShapeTool; label: string; icon: React.ReactNode }[] = [
-  { tool: 'rect', label: 'Rectangle', icon: <Square size={14} strokeWidth={1.5} /> },
-  { tool: 'line', label: 'Line', icon: <Minus size={14} strokeWidth={1.5} /> },
-  { tool: 'arrow', label: 'Arrow', icon: <ArrowRight size={14} strokeWidth={1.5} /> },
-  { tool: 'ellipse', label: 'Ellipse', icon: <Circle size={14} strokeWidth={1.5} /> },
-  { tool: 'triangle', label: 'Triangle', icon: <Triangle size={14} strokeWidth={1.5} /> },
 ];
 
 interface ToolButtonProps {
@@ -78,12 +52,7 @@ function ToolButton({ active, onClick, title, children, disabled }: ToolButtonPr
   );
 }
 
-interface SketchBottomBarProps {
-  zoom: number;
-  onZoomChange: (z: number) => void;
-}
-
-export default function SketchBottomBar({ zoom, onZoomChange }: SketchBottomBarProps) {
+export default function SketchBottomBar() {
   const {
     activeTool,
     setActiveTool,
@@ -109,27 +78,16 @@ export default function SketchBottomBar({ zoom, onZoomChange }: SketchBottomBarP
     undo,
     redo,
     uploadToCanvas,
-    activeLayerId,
-    moveLayerUp,
-    moveLayerDown,
-    groupSelected,
-    ungroupSelected,
-    duplicateSelected,
   } = useCanvas();
 
-  const [shapePopupOpen, setShapePopupOpen] = useState(false);
   const [colorPopupOpen, setColorPopupOpen] = useState(false);
   const [colorTab, setColorTab] = useState<'fill' | 'stroke'>('fill');
 
-  const shapePopupRef = useRef<HTMLDivElement>(null);
   const colorPopupRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (shapePopupRef.current && !shapePopupRef.current.contains(e.target as Node)) {
-        setShapePopupOpen(false);
-      }
       if (colorPopupRef.current && !colorPopupRef.current.contains(e.target as Node)) {
         setColorPopupOpen(false);
       }
@@ -138,12 +96,9 @@ export default function SketchBottomBar({ zoom, onZoomChange }: SketchBottomBarP
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const isShapeTool = ['rect', 'ellipse', 'triangle', 'line', 'arrow'].includes(activeTool);
   const isShapeSelection = ['rect', 'ellipse', 'triangle', 'line', 'path'].includes(
     selectedType ?? '',
   );
-
-  const currentShapeOption = SHAPE_OPTIONS.find((o) => o.tool === activeTool) ?? SHAPE_OPTIONS[0];
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -256,112 +211,8 @@ export default function SketchBottomBar({ zoom, onZoomChange }: SketchBottomBarP
         <ToolButton onClick={redo} disabled={!canRedo} title='다시 실행 (Cmd/Ctrl+Y)'>
           <Redo2 size={16} strokeWidth={1.5} />
         </ToolButton>
-        <ToolButton onClick={duplicateSelected} title='복제'>
-          <Copy size={16} strokeWidth={1.5} />
-        </ToolButton>
 
         <div className='mx-1 h-5 w-px bg-gray-200' />
-
-        <ToolButton onClick={groupSelected} title='그룹화 (Cmd/Ctrl+G)'>
-          <Group size={16} strokeWidth={1.5} />
-        </ToolButton>
-        <ToolButton onClick={ungroupSelected} title='그룹 해제 (Cmd/Ctrl+Alt+G)'>
-          <Ungroup size={16} strokeWidth={1.5} />
-        </ToolButton>
-        <ToolButton
-          onClick={() => {
-            if (activeLayerId) moveLayerUp(activeLayerId);
-          }}
-          title='앞으로'
-          disabled={!activeLayerId}
-        >
-          <ArrowUp size={16} strokeWidth={1.5} />
-        </ToolButton>
-        <ToolButton
-          onClick={() => {
-            if (activeLayerId) moveLayerDown(activeLayerId);
-          }}
-          title='뒤로'
-          disabled={!activeLayerId}
-        >
-          <ArrowDown size={16} strokeWidth={1.5} />
-        </ToolButton>
-
-        <div className='mx-1 h-5 w-px bg-gray-200' />
-
-        <ToolButton
-          active={activeTool === 'draw'}
-          onClick={() => setActiveTool('draw')}
-          title='브러쉬 (B)'
-        >
-          <Paintbrush size={16} strokeWidth={1.5} />
-        </ToolButton>
-
-        <ToolButton
-          active={activeTool === 'pen'}
-          onClick={() => setActiveTool('pen')}
-          title='펜 (P)'
-        >
-          <PenTool size={16} strokeWidth={1.5} />
-        </ToolButton>
-
-        <ToolButton
-          active={activeTool === 'text'}
-          onClick={() => setActiveTool('text')}
-          title='텍스트 (T)'
-        >
-          <Type size={16} strokeWidth={1.5} />
-        </ToolButton>
-
-        <div ref={shapePopupRef} className='relative'>
-          <ToolButton
-            active={isShapeTool}
-            onClick={() => setShapePopupOpen((v) => !v)}
-            title='도형'
-          >
-            {isShapeTool ? currentShapeOption.icon : <Square size={16} strokeWidth={1.5} />}
-          </ToolButton>
-
-          {shapePopupOpen && (
-            <div className='absolute bottom-full left-1/2 mb-2 w-52 -translate-x-1/2 rounded-xl bg-white p-3 ring-1 shadow-lg ring-gray-200'>
-              <div className='mb-3 flex flex-col gap-1'>
-                <div className='flex items-center justify-between'>
-                  <span className='text-[11px] font-medium text-gray-500'>선 굵기</span>
-                  <span className='font-mono text-[11px] text-gray-700'>{strokeWidth}px</span>
-                </div>
-                <input
-                  type='range'
-                  min={1}
-                  max={50}
-                  value={strokeWidth}
-                  onChange={(e) => setStrokeWidth(Number(e.target.value))}
-                  className='h-1.5 w-full cursor-pointer accent-gray-800'
-                />
-              </div>
-
-              <div className='flex flex-col gap-0.5'>
-                {SHAPE_OPTIONS.map(({ tool, label, icon }) => (
-                  <button
-                    key={tool}
-                    type='button'
-                    onClick={() => {
-                      setActiveTool(tool);
-                      setShapePopupOpen(false);
-                    }}
-                    className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${
-                      activeTool === tool
-                        ? 'bg-gray-100 text-gray-900'
-                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-800'
-                    }`}
-                  >
-                    {icon}
-                    <span>{label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
 
         <div ref={colorPopupRef} className='relative'>
           <button
@@ -432,29 +283,6 @@ export default function SketchBottomBar({ zoom, onZoomChange }: SketchBottomBarP
 
         <ToolButton active={showGrid} onClick={toggleGrid} title='그리드 토글'>
           <Grid3X3 size={16} strokeWidth={1.5} />
-        </ToolButton>
-
-        <div className='mx-1 h-5 w-px bg-gray-200' />
-
-        <ToolButton onClick={() => onZoomChange(Math.min(zoom + 10, 300))} title='확대'>
-          <ZoomIn size={16} strokeWidth={1.5} />
-        </ToolButton>
-        <button
-          type='button'
-          className='min-w-[3rem] rounded-md px-1 py-1 text-center font-mono text-xs text-gray-700 hover:bg-gray-100'
-          onClick={() => onZoomChange(100)}
-          title='줌 리셋'
-        >
-          {zoom}%
-        </button>
-        <ToolButton onClick={() => onZoomChange(Math.max(zoom - 10, 10))} title='축소'>
-          <ZoomOut size={16} strokeWidth={1.5} />
-        </ToolButton>
-
-        <div className='mx-1 h-5 w-px bg-gray-200' />
-
-        <ToolButton onClick={() => onZoomChange(100)} title='뷰 리셋'>
-          <RefreshCw size={16} strokeWidth={1.5} />
         </ToolButton>
       </div>
     </div>

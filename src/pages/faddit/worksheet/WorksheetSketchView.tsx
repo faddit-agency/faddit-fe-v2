@@ -511,6 +511,10 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     pasteClipboard,
     groupSelected,
     ungroupSelected,
+    bringSelectionForward,
+    sendSelectionBackward,
+    bringSelectionToFront,
+    sendSelectionToBack,
   } = useCanvas();
 
   const [localZoom, setLocalZoom] = useState(zoom);
@@ -1095,6 +1099,18 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       } else if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey && e.code === 'KeyG') {
         e.preventDefault();
         ungroupSelected();
+      } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.code === 'BracketRight') {
+        e.preventDefault();
+        bringSelectionForward();
+      } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.code === 'BracketLeft') {
+        e.preventDefault();
+        sendSelectionBackward();
+      } else if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey && e.code === 'BracketRight') {
+        e.preventDefault();
+        bringSelectionToFront();
+      } else if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey && e.code === 'BracketLeft') {
+        e.preventDefault();
+        sendSelectionToBack();
       } else if (!e.ctrlKey && !e.metaKey && !e.altKey) {
         if (e.code === 'ArrowLeft') {
           e.preventDefault();
@@ -1147,6 +1163,10 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     pasteClipboard,
     groupSelected,
     ungroupSelected,
+    bringSelectionForward,
+    sendSelectionBackward,
+    bringSelectionToFront,
+    sendSelectionToBack,
     pathEditingPath,
     setActiveTool,
     setPathEditingPath,
@@ -2772,7 +2792,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
           onDone={handlePathEditDone}
         />
       )}
-      <SketchBottomBar zoom={localZoom} onZoomChange={handleZoomChange} />
+      <SketchBottomBar />
     </div>
   );
 }
