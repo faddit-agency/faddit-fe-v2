@@ -101,6 +101,7 @@ const WorksheetV2: React.FC = () => {
         sizeSpecUnit: state.sizeSpecUnit,
         moduleElements: state.moduleElements,
         moduleSheetStates: state.moduleSheetStates,
+        costState: state.costState,
         customCards: state.customCards,
         customCardContent: state.customCardContent,
         [EDITOR_KEY]: document,

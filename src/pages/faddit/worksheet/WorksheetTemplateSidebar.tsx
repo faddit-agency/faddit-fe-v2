@@ -35,14 +35,21 @@ import { CARD_DEFINITIONS } from '../worksheet-v2/worksheetV2Constants';
 import type { WorksheetElementCategory, WorksheetElementItem } from '../worksheet-v2/worksheetV2Types';
 import {
   getWorksheetElementFolderName,
+  isWorksheetElementCategory,
+  mapWorksheetUploadCategoryToDriveTag,
+  normalizeWorksheetElementUploadFile,
   WORKSHEET_ELEMENT_UPLOAD_REFRESH_EVENT,
 } from './worksheetElementUploadUtils';
 import {
+  createMaterial,
   getMaterialFieldDefs,
   getMaterialsByFileSystem,
   type MaterialFieldDef,
   type MaterialItem,
 } from '../../../lib/api/materialApi';
+import WorksheetElementUploadModal, {
+  type WorksheetElementUploadSubmitPayload,
+} from './WorksheetElementUploadModal';
 
 type ToolTab = 'template' | 'module' | 'element' | 'history' | 'comment';
 
@@ -72,19 +79,29 @@ const CATEGORY_ROW2 = ['반팔', '긴팔', '긴바지', '원피스', '반바지'
 const MOCK_TEMPLATES = [0, 1, 2, 3, 4, 5];
 const MOCK_RECOMMENDED = [0, 1, 2, 3];
 const ELEMENT_PLACEHOLDER_ITEMS = Array.from({ length: 4 });
-const ELEMENT_WORKSPACE_CATEGORIES = ['전체', '원단', '시보리원단', '라벨', '부자재'] as const;
+const ELEMENT_WORKSPACE_CATEGORIES = [
+  '전체',
+  '원단',
+  '시보리원단',
+  '라벨',
+  '부자재',
+  '인쇄',
+  '기타',
+] as const;
 const ELEMENT_WORKSPACE_PREVIEW_COUNT = 4;
 const ELEMENT_UPLOAD_PREVIEW_COUNT = 4;
 
 type ElementWorkspaceCategory = (typeof ELEMENT_WORKSPACE_CATEGORIES)[number];
+type ElementDisplayCategory = Exclude<ElementWorkspaceCategory, '전체'>;
 
-type ElementWorkspaceFile = WorksheetElementItem & {
+type ElementWorkspaceFile = Omit<WorksheetElementItem, 'category'> & {
+  category: ElementDisplayCategory;
   type: DriveNode['type'];
   tag?: string;
   node: DriveNode;
 };
 
-const getElementCategoryBadgeClass = (category: ElementWorkspaceCategory) => {
+const getElementCategoryBadgeClass = (category: ElementDisplayCategory) => {
   if (category === '원단') {
     return 'bg-sky-500/90 text-white';
   }
@@ -97,18 +114,21 @@ const getElementCategoryBadgeClass = (category: ElementWorkspaceCategory) => {
   if (category === '부자재') {
     return 'bg-amber-500/90 text-white';
   }
+  if (category === '인쇄') {
+    return 'bg-rose-500/90 text-white';
+  }
 
-  return 'bg-violet-500/90 text-white';
+  return 'bg-gray-800/90 text-white';
 };
 
-const MATERIAL_CATEGORY_TO_WORKSHEET_CATEGORY: Record<MaterialItem['category'], WorksheetElementCategory> = {
+const MATERIAL_CATEGORY_TO_WORKSHEET_CATEGORY: Record<MaterialItem['category'], ElementDisplayCategory> = {
   fabric: '원단',
   rib_fabric: '시보리원단',
   label: '라벨',
   trim: '부자재',
 };
 
-const getElementWorkspaceCategory = (node: DriveNode): WorksheetElementCategory => {
+const getElementWorkspaceCategory = (node: DriveNode): ElementDisplayCategory => {
   const tag = (node.tag || '').toLowerCase();
   const name = (node.name || '').toLowerCase();
 
@@ -121,7 +141,13 @@ const getElementWorkspaceCategory = (node: DriveNode): WorksheetElementCategory 
   if (tag === 'label') {
     return '라벨';
   }
-  if (tag === 'trim' || tag === 'etc') {
+  if (tag === 'print') {
+    return '인쇄';
+  }
+  if (tag === 'trim') {
+    return '부자재';
+  }
+  if (tag === 'etc') {
     return '부자재';
   }
 
@@ -131,7 +157,7 @@ const getElementWorkspaceCategory = (node: DriveNode): WorksheetElementCategory 
 const resolveElementWorkspaceCategory = async (
   node: DriveNode,
   userId: string | null,
-): Promise<WorksheetElementCategory> => {
+): Promise<ElementDisplayCategory> => {
   const baseCategory = getElementWorkspaceCategory(node);
   const tag = (node.tag || '').toLowerCase();
 
@@ -139,7 +165,7 @@ const resolveElementWorkspaceCategory = async (
     return baseCategory;
   }
 
-  const shouldResolveByMaterial = tag === 'fabric' || tag === '' || baseCategory === '원단';
+  const shouldResolveByMaterial = tag === 'fabric' || tag === 'etc' || tag === '' || baseCategory === '원단';
   if (!shouldResolveByMaterial) {
     return baseCategory;
   }
@@ -150,9 +176,23 @@ const resolveElementWorkspaceCategory = async (
       return baseCategory;
     }
 
+    if (tag === 'etc') {
+      const taggedUploadCategory = materials
+        .map((material) => material.attributes?.upload_category)
+        .find((value) => value === '기타' || value === '부자재');
+      if (taggedUploadCategory === '기타') {
+        return '기타';
+      }
+      if (taggedUploadCategory === '부자재') {
+        return '부자재';
+      }
+    }
+
     const preferredMaterial =
-      materials.find((material) => material.category === 'rib_fabric') ??
-      materials.find((material) => material.category === 'fabric') ??
+      (tag === 'etc'
+        ? materials.find((material) => material.category === 'trim')
+        : materials.find((material) => material.category === 'rib_fabric') ??
+          materials.find((material) => material.category === 'fabric')) ??
       materials[0];
 
     return MATERIAL_CATEGORY_TO_WORKSHEET_CATEGORY[preferredMaterial.category] ?? baseCategory;
@@ -208,8 +248,10 @@ export default function WorksheetTemplateSidebar({
   const [elementWorkspaceLoading, setElementWorkspaceLoading] = useState(false);
   const [elementWorkspaceError, setElementWorkspaceError] = useState<string | null>(null);
   const [uploadedElementFiles, setUploadedElementFiles] = useState<ElementWorkspaceFile[]>([]);
-  const [elementUploadLoading, setElementUploadLoading] = useState(false);
   const [elementUploadError, setElementUploadError] = useState<string | null>(null);
+  const [elementUploadModalOpen, setElementUploadModalOpen] = useState(false);
+  const [elementUploadSubmitting, setElementUploadSubmitting] = useState(false);
+  const [elementUploadModalError, setElementUploadModalError] = useState<string | null>(null);
   const [worksheetElementFolderId, setWorksheetElementFolderId] = useState<string | null>(null);
   const [selectedElementMaterials, setSelectedElementMaterials] = useState<MaterialItem[]>([]);
   const [selectedElementMaterialsLoading, setSelectedElementMaterialsLoading] = useState(false);
@@ -228,7 +270,6 @@ export default function WorksheetTemplateSidebar({
 
   const elementCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const elementDetailPanelRef = useRef<HTMLDivElement | null>(null);
-  const elementUploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const worksheetActiveTab = useWorksheetV2Store((s) => s.activeTab);
   const cardVisibility = useWorksheetV2Store((s) => s.cardVisibility);
@@ -357,7 +398,7 @@ export default function WorksheetTemplateSidebar({
     return [
       { label: '파일명', value: selectedElementDetailFile.name },
       { label: '출처', value: sourceLabel },
-      { label: '카테고리', value: sourceLabel === '업로드 항목' ? '이미지' : selectedElementDetailFile.category },
+      { label: '카테고리', value: selectedElementDetailFile.category },
       {
         label: '품명',
         value: stringifyDetailValue(selectedPrimaryMaterial?.item_name ?? selectedElementDetailFile.name),
@@ -455,10 +496,13 @@ export default function WorksheetTemplateSidebar({
         onDragStart={
           draggable
             ? (event) => {
+                const payloadCategory: WorksheetElementCategory = isWorksheetElementCategory(file.category)
+                  ? file.category
+                  : '부자재';
                 const payload: WorksheetElementItem = {
                   id: file.id,
                   name: file.name,
-                  category: file.category,
+                  category: payloadCategory,
                   thumbnailUrl: file.thumbnailUrl,
                   source: file.source,
                   path: file.path,
@@ -503,18 +547,18 @@ export default function WorksheetTemplateSidebar({
             <Shapes size={20} className='text-gray-400' />
           </div>
         )}
-        {isUploadedCard ? (
-          <span className='pointer-events-none absolute top-1.5 left-1.5 inline-flex items-center gap-1 rounded-full bg-black/65 px-2 py-0.5 text-[10px] font-semibold text-white'>
-            <Upload size={10} />
-            업로드
-          </span>
-        ) : (
+        <div className='pointer-events-none absolute top-1.5 left-1.5 inline-flex items-center gap-1'>
           <span
-            className={`pointer-events-none absolute top-1.5 left-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${getElementCategoryBadgeClass(file.category)}`}
+            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${getElementCategoryBadgeClass(file.category)}`}
           >
             {file.category}
           </span>
-        )}
+          {isUploadedCard ? (
+            <span className='inline-flex h-4 w-4 items-center justify-center rounded-full bg-black/65 text-white'>
+              <Upload size={9} />
+            </span>
+          ) : null}
+        </div>
         {onAction ? (
           <button
             type='button'
@@ -547,6 +591,8 @@ export default function WorksheetTemplateSidebar({
       setSelectedElementDetailId(null);
       setIsElementDetailExpanded(false);
       setElementDetailPosition(null);
+      setElementUploadModalOpen(false);
+      setElementUploadModalError(null);
       setDraggingElement(null);
     }
     if (collapsible) {
@@ -655,34 +701,86 @@ export default function WorksheetTemplateSidebar({
     return createdFolder.fileSystemId;
   }, [rootFolderId, worksheetElementFolderId, worksheetId]);
 
-  const handleElementUploadFiles = useCallback(
-    async (files: FileList | null) => {
-      if (!files || files.length === 0) {
+  const handleElementUploadSubmit = useCallback(
+    async ({ files, category, materialDetails, title, description }: WorksheetElementUploadSubmitPayload) => {
+      if (files.length === 0) {
         return;
       }
       if (!userId || !rootFolderId || !worksheetId) {
-        setElementUploadError('작업지시서 업로드에 필요한 정보가 없습니다.');
+        const errorMessage = '작업지시서 업로드에 필요한 정보가 없습니다.';
+        setElementUploadError(errorMessage);
+        setElementUploadModalError(errorMessage);
         return;
       }
 
       try {
-        setElementUploadLoading(true);
+        setElementUploadSubmitting(true);
         setElementUploadError(null);
+        setElementUploadModalError(null);
 
         const targetFolderId = await getOrCreateWorksheetElementFolderId();
         if (!targetFolderId) {
           throw new Error('target folder not found');
         }
 
-        const uploadTag = 'etc' as const;
-        const uploadFiles = Array.from(files);
-
-        await createDriveFile({
+        const uploadTag = mapWorksheetUploadCategoryToDriveTag(category);
+        const uploadFiles = files.map((file) => normalizeWorksheetElementUploadFile(file, category));
+        const uploadResult = await createDriveFile({
           parentId: targetFolderId,
           userId,
           files: uploadFiles,
           tags: uploadFiles.map(() => uploadTag),
         });
+
+        const createdFiles = uploadResult.result
+          .filter((entry) => entry.success && entry.result?.fileSystemId)
+          .map((entry) => entry.result)
+          .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+
+        if (createdFiles.length === 0) {
+          throw new Error('uploaded file not found');
+        }
+
+        if (materialDetails) {
+          const attributes =
+            Object.keys(materialDetails.attributes).length > 0 ? materialDetails.attributes : undefined;
+
+          await Promise.all(
+            createdFiles.map((createdFile) =>
+              createMaterial({
+                userId,
+                category: materialDetails.category,
+                codeInternal: materialDetails.codeInternal,
+                vendorName: materialDetails.vendorName,
+                itemName: materialDetails.itemName,
+                originCountry: materialDetails.originCountry,
+                fileSystemId: createdFile.fileSystemId,
+                attributes,
+              }),
+            ),
+          );
+        } else if (category === '기타') {
+          const etcAttributes: Record<string, unknown> = {
+            upload_category: '기타',
+          };
+          const trimmedDescription = (description ?? '').trim();
+          const trimmedTitle = (title ?? '').trim();
+          if (trimmedDescription) {
+            etcAttributes.memo = trimmedDescription;
+          }
+
+          await Promise.all(
+            createdFiles.map((createdFile) =>
+              createMaterial({
+                userId,
+                category: 'trim',
+                itemName: trimmedTitle || undefined,
+                fileSystemId: createdFile.fileSystemId,
+                attributes: etcAttributes,
+              }),
+            ),
+          );
+        }
 
         await loadUploadedElementFiles(targetFolderId);
         window.dispatchEvent(
@@ -692,16 +790,22 @@ export default function WorksheetTemplateSidebar({
             },
           }),
         );
+        setElementUploadModalOpen(false);
       } catch {
-        setElementUploadError('요소 업로드에 실패했습니다. 잠시 후 다시 시도해주세요.');
+        const errorMessage = '요소 업로드에 실패했습니다. 잠시 후 다시 시도해주세요.';
+        setElementUploadError(errorMessage);
+        setElementUploadModalError(errorMessage);
       } finally {
-        setElementUploadLoading(false);
-        if (elementUploadInputRef.current) {
-          elementUploadInputRef.current.value = '';
-        }
+        setElementUploadSubmitting(false);
       }
     },
-    [getOrCreateWorksheetElementFolderId, loadUploadedElementFiles, rootFolderId, userId, worksheetId],
+    [
+      getOrCreateWorksheetElementFolderId,
+      loadUploadedElementFiles,
+      rootFolderId,
+      userId,
+      worksheetId,
+    ],
   );
 
   useEffect(() => {
@@ -815,6 +919,7 @@ export default function WorksheetTemplateSidebar({
     setIsElementDetailExpanded(false);
     setElementDetailPosition(null);
     setElementUploadError(null);
+    setElementUploadModalError(null);
   }, [
     activeTab,
     elementWorkspaceView,
@@ -1214,24 +1319,18 @@ export default function WorksheetTemplateSidebar({
                     className='h-full min-w-0 flex-1 border-0 bg-transparent text-xs text-gray-700 outline-none placeholder:text-gray-400'
                   />
                 </label>
-                <input
-                  ref={elementUploadInputRef}
-                  type='file'
-                  accept='image/*'
-                  multiple
-                  className='hidden'
-                  onChange={(event) => {
-                    void handleElementUploadFiles(event.target.files);
-                  }}
-                />
                 <button
                   type='button'
-                  onClick={() => elementUploadInputRef.current?.click()}
-                  disabled={elementUploadLoading}
+                  onClick={() => {
+                    setElementUploadModalError(null);
+                    setElementUploadError(null);
+                    setElementUploadModalOpen(true);
+                  }}
+                  disabled={elementUploadSubmitting}
                   className='flex h-9 w-full items-center justify-center gap-1 rounded-lg bg-violet-600 text-xs font-semibold text-white transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60'
                 >
                   <Upload size={14} />
-                  {elementUploadLoading ? '업로드 중...' : '업로드'}
+                  {elementUploadSubmitting ? '업로드 중...' : '업로드'}
                 </button>
                 {elementUploadError ? <p className='text-[11px] text-rose-500'>{elementUploadError}</p> : null}
               </div>
@@ -1596,6 +1695,13 @@ export default function WorksheetTemplateSidebar({
         )}
         </div>
       </div>
+      <WorksheetElementUploadModal
+        modalOpen={elementUploadModalOpen}
+        setModalOpen={setElementUploadModalOpen}
+        isSubmitting={elementUploadSubmitting}
+        submitError={elementUploadModalError}
+        onSubmit={handleElementUploadSubmit}
+      />
       {elementDetailPanelPortal}
     </>
   );

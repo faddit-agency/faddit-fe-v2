@@ -8,6 +8,7 @@ import type {
   TabLayoutsMap,
   SizeSpecDisplayUnit,
   WorksheetElementItem,
+  WorksheetCostState,
   WorksheetModuleSheetState,
 } from './worksheetV2Types';
 import {
@@ -297,6 +298,7 @@ interface WorksheetV2State {
   customCardContent: Record<string, string>;
   moduleElements: Record<string, WorksheetElementItem[]>;
   moduleSheetStates: Record<string, WorksheetModuleSheetState>;
+  costState: WorksheetCostState;
   draggingCardId: string | null;
   draggingElement: WorksheetElementItem | null;
   sizeSpecUnit: SizeSpecDisplayUnit;
@@ -325,6 +327,8 @@ interface WorksheetV2State {
   moveElementModuleRow: (cardId: string, fromIndex: number, toIndex: number) => void;
   removeElementFromModule: (cardId: string, itemId: string) => void;
   setModuleSheetState: (cardId: string, state: WorksheetModuleSheetState) => void;
+  setCostElementUnitPrice: (elementId: string, value: string) => void;
+  setCostProcessingUnitCost: (itemKey: string, value: string) => void;
   setDraggingCardId: (cardId: string | null) => void;
   setDraggingElement: (item: WorksheetElementItem | null) => void;
   setSizeSpecUnit: (unit: SizeSpecDisplayUnit) => void;
@@ -350,6 +354,15 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
         'trim-sheet': [],
       },
       moduleSheetStates: buildInitialModuleSheetStates(),
+      costState: {
+        elementUnitPrices: {},
+        processingUnitCosts: {
+          cutting: '1800',
+          sewing: '8000',
+          washing: '2500',
+          qc_packaging: '1200',
+        },
+      },
       draggingCardId: null,
       draggingElement: null,
       sizeSpecUnit: 'cm',
@@ -760,6 +773,28 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
           };
         }),
 
+      setCostElementUnitPrice: (elementId, value) =>
+        set((state) => ({
+          costState: {
+            ...state.costState,
+            elementUnitPrices: {
+              ...state.costState.elementUnitPrices,
+              [elementId]: value,
+            },
+          },
+        })),
+
+      setCostProcessingUnitCost: (itemKey, value) =>
+        set((state) => ({
+          costState: {
+            ...state.costState,
+            processingUnitCosts: {
+              ...state.costState.processingUnitCosts,
+              [itemKey]: value,
+            },
+          },
+        })),
+
       setDraggingCardId: (cardId) => set({ draggingCardId: cardId }),
 
       setDraggingElement: (item) => set({ draggingElement: item }),
@@ -785,6 +820,7 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
             customCards?: Record<MenuTab, CardDefinition[]>;
             customCardContent?: Record<string, string>;
             moduleSheetStates?: Record<string, WorksheetModuleSheetState>;
+            costState?: WorksheetCostState;
           };
 
           set((state) => {
@@ -853,6 +889,18 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
                     ),
                   }
                 : state.moduleSheetStates,
+              costState: parsed.costState
+                ? {
+                    elementUnitPrices: {
+                      ...state.costState.elementUnitPrices,
+                      ...(parsed.costState.elementUnitPrices ?? {}),
+                    },
+                    processingUnitCosts: {
+                      ...state.costState.processingUnitCosts,
+                      ...(parsed.costState.processingUnitCosts ?? {}),
+                    },
+                  }
+                : state.costState,
             };
           });
         } catch {

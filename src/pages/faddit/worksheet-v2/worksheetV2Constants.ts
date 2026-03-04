@@ -70,7 +70,15 @@ export const CARD_DEFINITIONS: Record<MenuTab, CardDefinition[]> = {
       isDefault: true,
     },
   ],
-  cost: [],
+  cost: [
+    {
+      id: 'cost-calc',
+      title: '원가계산서',
+      tab: 'cost',
+      defaultLayout: { x: 0, y: 0, w: 12, h: 16, minW: 8, minH: 10 },
+      isDefault: true,
+    },
+  ],
 };
 
 export const SIZE_UNIT_OPTIONS = [
@@ -102,7 +110,14 @@ export const RIB_FABRIC_INFO_STATE = {
 };
 
 export const TRIM_SHEET_STATE = {
-  headers: ['부착 위치', '사용 수량(1벌)', '사용 길이', '컬러', '1벌당 자동 원가(개별)', '총 부자재 원가'],
+  headers: [
+    '부착 위치',
+    '사용 수량(1벌)',
+    '사용 길이',
+    '컬러',
+    '1벌당 자동 원가(개별)',
+    '총 부자재 원가',
+  ],
   rows: [],
 };
 

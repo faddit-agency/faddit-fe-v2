@@ -8,6 +8,7 @@ import 'react-grid-layout/css/styles.css';
 import { useWorksheetV2Store } from './useWorksheetV2Store';
 import { CARD_DEFINITIONS, GRID_CONFIG } from './worksheetV2Constants';
 import WorksheetV2GridCard from './WorksheetV2GridCard';
+import WorksheetCostView from './WorksheetCostView';
 import WorksheetSizeSpecView from '../worksheet/WorksheetSizeSpecView';
 import WorksheetNoticeEditor from '../worksheet/WorksheetNoticeEditor';
 import DropdownButton from '../../../components/atoms/DropdownButton';
@@ -321,7 +322,10 @@ function DiagramPlaceholder({
         </button>
       </div>
 
-      <div ref={stripScrollRef} className='worksheet-v2-no-drag shrink-0 overflow-x-auto overflow-y-hidden px-4 pb-3'>
+      <div
+        ref={stripScrollRef}
+        className='worksheet-v2-no-drag shrink-0 overflow-x-auto overflow-y-hidden px-4 pb-3'
+      >
         <div className='flex w-max min-w-full items-center justify-start gap-3 py-1 pr-1 pl-0.5 lg:justify-center'>
           {sheets.map((sheet, index) => {
             const isSelected = sheet.id === selectedSheet?.id;
@@ -361,33 +365,9 @@ function DiagramPlaceholder({
   );
 }
 
-function CostCalcPlaceholder() {
-  return (
-    <div className='flex h-full flex-col items-center justify-center gap-3 bg-[#f6f6f7] p-4'>
-      <div className='w-full max-w-lg overflow-hidden rounded-lg border border-gray-200 bg-white'>
-        <table className='w-full text-sm'>
-          <thead>
-            <tr className='border-b border-gray-200 bg-gray-50'>
-              <th className='px-3 py-2 text-left font-medium text-gray-600'>항목</th>
-              <th className='px-3 py-2 text-right font-medium text-gray-600'>금액</th>
-            </tr>
-          </thead>
-          <tbody>
-            {['원단비', '부자재비', '가공비', '이윤', '합계'].map((item) => (
-              <tr key={item} className='border-b border-gray-100 last:border-0'>
-                <td className='px-3 py-2 text-gray-700'>{item}</td>
-                <td className='px-3 py-2 text-right text-gray-400'>-</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <p className='text-xs text-gray-400'>원가계산서 기능 준비 중</p>
-    </div>
-  );
-}
-
-function readDraggedWorksheetElement(event: React.DragEvent<HTMLElement>): WorksheetElementItem | null {
+function readDraggedWorksheetElement(
+  event: React.DragEvent<HTMLElement>,
+): WorksheetElementItem | null {
   const rawCustom = event.dataTransfer.getData(WORKSHEET_ELEMENT_DRAG_TYPE);
   const rawPlain = event.dataTransfer.getData('text/plain');
   const raw =
@@ -416,7 +396,8 @@ function readDraggedWorksheetElement(event: React.DragEvent<HTMLElement>): Works
       id: parsed.id,
       name: parsed.name,
       category: parsed.category as WorksheetElementCategory,
-      thumbnailUrl: typeof parsed.thumbnailUrl === 'string' && parsed.thumbnailUrl ? parsed.thumbnailUrl : null,
+      thumbnailUrl:
+        typeof parsed.thumbnailUrl === 'string' && parsed.thumbnailUrl ? parsed.thumbnailUrl : null,
       source:
         parsed.source === 'workspace' || parsed.source === 'upload' ? parsed.source : undefined,
       path: typeof parsed.path === 'string' ? parsed.path : null,
@@ -638,7 +619,7 @@ function CardBodyRenderer({
         />
       );
     case 'cost-calc':
-      return <CostCalcPlaceholder />;
+      return <WorksheetCostView />;
     default:
       if (!card.isDefault && cardId.startsWith('custom-')) {
         return (
@@ -818,7 +799,9 @@ export default function WorksheetV2GridContent({
           tags: [tag],
         });
 
-        const createdEntry = uploadResult.result.find((entry) => entry.success && entry.result?.fileSystemId);
+        const createdEntry = uploadResult.result.find(
+          (entry) => entry.success && entry.result?.fileSystemId,
+        );
         const fileSystemId = createdEntry?.result?.fileSystemId;
         if (!fileSystemId) {
           return;
@@ -854,24 +837,21 @@ export default function WorksheetV2GridContent({
         });
       }
     },
-    [
-      getOrCreateWorksheetElementFolderId,
-      rootFolderId,
-      setElementAtModuleRow,
-      userId,
-      worksheetId,
-    ],
+    [getOrCreateWorksheetElementFolderId, rootFolderId, setElementAtModuleRow, userId, worksheetId],
   );
 
-  const queueModuleRowValuePatch = useCallback((cardId: string, rowIndex: number, rowValues: string[]) => {
-    setModuleRowValuePatches((prev) => ({
-      ...prev,
-      [cardId]: {
-        ...(prev[cardId] ?? {}),
-        [rowIndex]: rowValues,
-      },
-    }));
-  }, []);
+  const queueModuleRowValuePatch = useCallback(
+    (cardId: string, rowIndex: number, rowValues: string[]) => {
+      setModuleRowValuePatches((prev) => ({
+        ...prev,
+        [cardId]: {
+          ...(prev[cardId] ?? {}),
+          [rowIndex]: rowValues,
+        },
+      }));
+    },
+    [],
+  );
 
   const consumeModuleRowValuePatch = useCallback((cardId: string, rowIndex: number) => {
     setModuleRowValuePatches((prev) => {
@@ -1074,7 +1054,10 @@ export default function WorksheetV2GridContent({
               return draggedElement.category === acceptedCategory;
             };
 
-            const handleRowImageDragOver = (rowIndex: number, event: React.DragEvent<HTMLDivElement>) => {
+            const handleRowImageDragOver = (
+              rowIndex: number,
+              event: React.DragEvent<HTMLDivElement>,
+            ) => {
               if (!canDropElement || !acceptedCategory) {
                 return;
               }
@@ -1093,7 +1076,10 @@ export default function WorksheetV2GridContent({
               event.dataTransfer.dropEffect = 'copy';
             };
 
-            const handleRowImageDrop = (rowIndex: number, event: React.DragEvent<HTMLDivElement>) => {
+            const handleRowImageDrop = (
+              rowIndex: number,
+              event: React.DragEvent<HTMLDivElement>,
+            ) => {
               if (!canDropElement || !acceptedCategory) {
                 return;
               }
@@ -1111,7 +1097,11 @@ export default function WorksheetV2GridContent({
               event.preventDefault();
 
               if (draggedElement.source === 'workspace') {
-                queueModuleRowValuePatch(card.id, rowIndex, buildWorkspaceElementRowValues(card.id, draggedElement));
+                queueModuleRowValuePatch(
+                  card.id,
+                  rowIndex,
+                  buildWorkspaceElementRowValues(card.id, draggedElement),
+                );
               }
 
               setElementAtModuleRow(card.id, rowIndex, draggedElement);
@@ -1134,7 +1124,10 @@ export default function WorksheetV2GridContent({
               moveElementModuleRow(card.id, fromIndex, toIndex);
             };
 
-            const handleModuleSheetStateChange = (cardId: string, state: WorksheetModuleSheetState) => {
+            const handleModuleSheetStateChange = (
+              cardId: string,
+              state: WorksheetModuleSheetState,
+            ) => {
               setModuleSheetState(cardId, state);
             };
 
@@ -1241,7 +1234,9 @@ export default function WorksheetV2GridContent({
                     onSheetStateChange={handleModuleSheetStateChange}
                     uploadingRowIndex={uploadingRowIndexForCard}
                     rowValuePatches={rowValuePatchesForCard}
-                    onConsumeRowValuePatch={(rowIndex) => consumeModuleRowValuePatch(card.id, rowIndex)}
+                    onConsumeRowValuePatch={(rowIndex) =>
+                      consumeModuleRowValuePatch(card.id, rowIndex)
+                    }
                   />
                   {moduleDropTargetId === card.id ? (
                     <div className='pointer-events-none absolute inset-2 rounded-md border-2 border-dashed border-violet-400 bg-violet-100/30' />

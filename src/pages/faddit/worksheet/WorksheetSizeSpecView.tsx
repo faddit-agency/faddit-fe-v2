@@ -51,10 +51,7 @@ const cloneSizeSpec = (spec: SizeSpec): SizeSpec => ({
   rows: spec.rows.map((row) => [...row]),
 });
 
-type DragItem =
-  | { type: 'row'; index: number }
-  | { type: 'column'; index: number }
-  | null;
+type DragItem = { type: 'row'; index: number } | { type: 'column'; index: number } | null;
 
 type DragOver =
   | { type: 'row'; index: number; side: 'before' | 'after' }
@@ -297,7 +294,9 @@ export default function WorksheetSizeSpecView({
 
     const entries = Object.entries(rowValuePatches)
       .map(([rowIndexRaw, values]) => ({ rowIndex: Number(rowIndexRaw), values }))
-      .filter(({ rowIndex, values }) => Number.isInteger(rowIndex) && rowIndex >= 0 && values.length > 0);
+      .filter(
+        ({ rowIndex, values }) => Number.isInteger(rowIndex) && rowIndex >= 0 && values.length > 0,
+      );
 
     if (entries.length === 0) {
       return;
@@ -374,7 +373,9 @@ export default function WorksheetSizeSpecView({
     (xShift: number, yShift: number, isDragged: boolean, isTarget: boolean) => ({
       transform: `translate(${xShift}px, ${yShift}px) scale(${isDragged ? 0.985 : 1})`,
       opacity: isDragged ? 0.6 : 1,
-      boxShadow: isTarget ? '0 0 0 1px rgba(59,130,246,0.25), 0 8px 20px rgba(59,130,246,0.14)' : 'none',
+      boxShadow: isTarget
+        ? '0 0 0 1px rgba(59,130,246,0.25), 0 8px 20px rgba(59,130,246,0.14)'
+        : 'none',
       transition: REORDER_TRANSITION,
     }),
     [],
@@ -389,7 +390,10 @@ export default function WorksheetSizeSpecView({
     [updateSpec],
   );
 
-  const cellKey = useCallback((rowIndex: number, colIndex: number) => `${rowIndex}:${colIndex}`, []);
+  const cellKey = useCallback(
+    (rowIndex: number, colIndex: number) => `${rowIndex}:${colIndex}`,
+    [],
+  );
 
   const handleCellDraftChange = useCallback(
     (rowIndex: number, colIndex: number, value: string) => {
@@ -489,7 +493,9 @@ export default function WorksheetSizeSpecView({
         return;
       }
 
-      void Promise.resolve(leadingImageColumn.onUploadFile(pendingImageUploadRow, selectedFile)).finally(() => {
+      void Promise.resolve(
+        leadingImageColumn.onUploadFile(pendingImageUploadRow, selectedFile),
+      ).finally(() => {
         event.target.value = '';
         setPendingImageUploadRow(null);
       });
@@ -497,23 +503,26 @@ export default function WorksheetSizeSpecView({
     [leadingImageColumn, pendingImageUploadRow],
   );
 
-  const handleDragStart = useCallback((e: React.DragEvent, type: 'row' | 'column', index: number) => {
-    e.stopPropagation();
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', `${type}:${index}`);
-    const dragPreview = document.createElement('div');
-    dragPreview.className =
-      'rounded-md border border-blue-200 bg-white/95 px-2 py-1 text-xs font-medium text-blue-700 shadow-md';
-    dragPreview.textContent = type === 'column' ? '열 이동' : '행 이동';
-    dragPreview.style.position = 'fixed';
-    dragPreview.style.top = '-1000px';
-    document.body.appendChild(dragPreview);
-    e.dataTransfer.setDragImage(dragPreview, 18, 12);
-    window.requestAnimationFrame(() => {
-      document.body.removeChild(dragPreview);
-    });
-    setDragItem({ type, index });
-  }, []);
+  const handleDragStart = useCallback(
+    (e: React.DragEvent, type: 'row' | 'column', index: number) => {
+      e.stopPropagation();
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', `${type}:${index}`);
+      const dragPreview = document.createElement('div');
+      dragPreview.className =
+        'rounded-md border border-blue-200 bg-white/95 px-2 py-1 text-xs font-medium text-blue-700 shadow-md';
+      dragPreview.textContent = type === 'column' ? '열 이동' : '행 이동';
+      dragPreview.style.position = 'fixed';
+      dragPreview.style.top = '-1000px';
+      document.body.appendChild(dragPreview);
+      e.dataTransfer.setDragImage(dragPreview, 18, 12);
+      window.requestAnimationFrame(() => {
+        document.body.removeChild(dragPreview);
+      });
+      setDragItem({ type, index });
+    },
+    [],
+  );
 
   const handleDragEnd = useCallback(() => {
     setDragItem(null);
@@ -599,467 +608,514 @@ export default function WorksheetSizeSpecView({
             </colgroup>
             <thead>
               <tr>
-              {showRowHeader && (
-                <th
-                  className='relative sticky top-0 left-0 z-30 border-y border-r border-l border-slate-200 bg-gray-50 p-0'
-                  style={{
-                    width: `${rowHeaderExpanded ? ROW_HEADER_EXPANDED_WIDTH : ROW_HEADER_COMPACT_WIDTH}px`,
-                    minWidth: `${ROW_HEADER_COMPACT_WIDTH}px`,
-                    transition: 'width 240ms ease',
-                  }}
-                >
-                  <div className='h-[33px] bg-gray-50' />
-                </th>
-              )}
-              {showRowActionRail && (
-                <th className='relative sticky top-0 z-20 border-y border-r border-slate-200 bg-gray-50 p-0' />
-              )}
-              {hasLeadingImageColumn && (
-                <th className='relative sticky top-0 z-20 border-y border-r border-slate-200 bg-gray-50 p-0'>
-                  <div className='flex h-[33px] items-center justify-center px-2 text-[11px] font-semibold text-slate-600'>
-                    {leadingImageColumn?.header ?? '사진'}
-                  </div>
-                </th>
-              )}
-              {spec.headers.slice(dataHeaderStart).map((header, visibleIndex) => {
-                const colIndex = visibleIndex + dataHeaderStart;
-                const isDragOver = dragOver?.type === 'column' && dragOver.index === colIndex;
-                const isDragged = dragItem?.type === 'column' && dragItem.index === colIndex;
-                const xShift = getColumnShift(colIndex);
-                return (
+                {showRowHeader && (
                   <th
-                    key={colIndex}
-                    className='relative sticky top-0 z-20 border-y border-r border-slate-200 bg-gray-50 p-0'
-                    style={
-                      fillWidth
-                        ? undefined
-                        : {
-                            width: `${getDataColWidth(colIndex)}px`,
-                            minWidth: `${getDataColWidth(colIndex)}px`,
-                            maxWidth: `${getDataColWidth(colIndex)}px`,
-                            transition: 'width 240ms ease, min-width 240ms ease, max-width 240ms ease',
-                          }
-                    }
-                    onMouseEnter={() => setHoveredDataCol(colIndex)}
-                    onMouseLeave={() =>
-                      setHoveredDataCol((prev) => (prev === colIndex ? null : prev))
-                    }
-                    onDragOver={(e) => {
-                      if (dragItem?.type !== 'column') return;
-                      e.preventDefault();
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const side = e.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
-                      setColumnDragOver(colIndex, side);
-                    }}
-                    onDrop={(e) => {
-                      if (dragItem?.type !== 'column') return;
-                      e.preventDefault();
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const side = e.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
-                      handleColumnDrop(colIndex, side);
+                    className='relative sticky top-0 left-0 z-30 border-y border-r border-l border-slate-200 bg-gray-50 p-0'
+                    style={{
+                      width: `${rowHeaderExpanded ? ROW_HEADER_EXPANDED_WIDTH : ROW_HEADER_COMPACT_WIDTH}px`,
+                      minWidth: `${ROW_HEADER_COMPACT_WIDTH}px`,
+                      transition: 'width 240ms ease',
                     }}
                   >
-                    <div className='group relative'>
-                      {isDragOver && !isDragged && (
-                        <div
-                          className='pointer-events-none absolute top-0 bottom-0 z-20 w-0.5 rounded-full bg-blue-500 shadow-[0_0_0_1px_rgba(59,130,246,0.15),0_0_10px_rgba(59,130,246,0.35)]'
-                          style={{ left: dragOver?.type === 'column' && dragOver.side === 'after' ? '100%' : 0 }}
-                        />
-                      )}
-                      <input
-                        value={header}
-                        onChange={(e) => handleHeaderChange(colIndex, e.target.value)}
-                        placeholder='사이즈'
-                        className={`relative z-0 w-full border-0 py-1.5 text-center text-xs font-semibold text-slate-600 outline-none focus:bg-blue-50 ${isDragOver ? 'bg-blue-50/50' : 'bg-transparent'}`}
-                        style={{
-                          ...getMotionStyle(xShift, 0, isDragged, isDragOver && !isDragged),
-                          paddingLeft: `${hoveredDataCol === colIndex ? DATA_HEADER_EXPANDED_PADDING : DATA_HEADER_COMPACT_PADDING}px`,
-                          paddingRight: `${hoveredDataCol === colIndex ? DATA_HEADER_EXPANDED_PADDING : DATA_HEADER_COMPACT_PADDING}px`,
-                          transition:
-                            'padding-left 220ms ease, padding-right 220ms ease, transform 220ms cubic-bezier(0.2, 0.9, 0.25, 1), box-shadow 180ms ease, opacity 180ms ease',
-                          boxShadow:
-                            dropFlash?.type === 'column' && dropFlash.index === colIndex
-                              ? 'inset 0 0 0 1px rgba(59,130,246,0.45), inset 0 0 24px rgba(59,130,246,0.14)'
-                              : getMotionStyle(xShift, 0, isDragged, isDragOver && !isDragged).boxShadow,
-                        }}
-                      />
-                      {showColumnActions && (
-                        <>
-                          <button
-                            type='button'
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, 'column', colIndex)}
-                            onDragEnd={handleDragEnd}
-                            className={`${LEFT_ACTION_REVEAL_CLASS} cursor-grab active:cursor-grabbing ${MOVE_ACTION_BUTTON_CLASS}`}
-                            title='열 이동'
-                          >
-                            <GripHorizontal size={12} strokeWidth={2.2} />
-                          </button>
-                          <button
-                            type='button'
-                            onClick={() => deleteColumn(colIndex)}
-                            className={`${RIGHT_ACTION_REVEAL_CLASS} cursor-pointer ${DELETE_ACTION_BUTTON_CLASS}`}
-                            title='열 삭제'
-                          >
-                            <Trash2 size={11} strokeWidth={2.1} />
-                          </button>
-                        </>
-                      )}
+                    <div className='h-[33px] bg-gray-50' />
+                  </th>
+                )}
+                {showRowActionRail && (
+                  <th className='relative sticky top-0 z-20 border-y border-r border-slate-200 bg-gray-50 p-0' />
+                )}
+                {hasLeadingImageColumn && (
+                  <th className='relative sticky top-0 z-20 border-y border-r border-slate-200 bg-gray-50 p-0'>
+                    <div className='flex h-[33px] items-center justify-center px-2 text-[11px] font-semibold text-slate-600'>
+                      {leadingImageColumn?.header ?? '사진'}
                     </div>
                   </th>
-                );
-              })}
-              {showTotals && (
-                <th className='relative sticky top-0 z-20 border-y border-r border-slate-300 bg-slate-200 p-0'>
-                  <div className='flex h-[33px] items-center justify-center px-2 text-[11px] font-semibold text-slate-700'>
-                    Total
-                  </div>
-                </th>
-              )}
-              {showAddColumnButton && (
-                <th className='relative sticky top-0 z-20 w-8 border-y border-r border-slate-200 bg-gray-50 p-0'>
-                  <button
-                    type='button'
-                    onClick={addColumn}
-                    title='열 추가'
-                    className='flex h-[33px] w-full cursor-pointer items-center justify-center bg-gray-50 p-1 text-slate-400 transition-colors hover:text-slate-600'
-                  >
-                    <Plus size={12} />
-                  </button>
-                </th>
-              )}
-              {!showAddColumnButton && showTrailingActionColumn && (
-                <th className='relative sticky top-0 z-20 w-8 border-y border-r border-slate-200 bg-gray-50 p-0' />
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {spec.rows.map((row, rowIndex) => {
-              const isDragOver = dragOver?.type === 'row' && dragOver.index === rowIndex;
-              const isDraggedRow = dragItem?.type === 'row' && dragItem.index === rowIndex;
-              const rowShift = getRowShift(rowIndex);
-              const rowImageItem = hasLeadingImageColumn
-                ? (leadingImageColumn?.items[rowIndex] ?? null)
-                : null;
-              return (
-                <tr
-                  key={rowIndex}
-                  className='group/row'
-                  onDragOver={(e) => {
-                    if (showRowHeader || dragItem?.type !== 'row') return;
-                    e.preventDefault();
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const side = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-                    setRowDragOver(rowIndex, side);
-                  }}
-                  onDrop={(e) => {
-                    if (showRowHeader || dragItem?.type !== 'row') return;
-                    e.preventDefault();
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const side = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-                    handleRowDrop(rowIndex, side);
-                  }}
-                >
-                  {showRowHeader && (
-                    <td
-                      className='sticky left-0 z-10 border border-slate-200 bg-white p-0'
-                      style={{
-                        width: `${rowHeaderExpanded ? ROW_HEADER_EXPANDED_WIDTH : ROW_HEADER_COMPACT_WIDTH}px`,
-                        minWidth: `${ROW_HEADER_COMPACT_WIDTH}px`,
-                        transition: 'width 240ms ease',
-                      }}
+                )}
+                {spec.headers.slice(dataHeaderStart).map((header, visibleIndex) => {
+                  const colIndex = visibleIndex + dataHeaderStart;
+                  const isDragOver = dragOver?.type === 'column' && dragOver.index === colIndex;
+                  const isDragged = dragItem?.type === 'column' && dragItem.index === colIndex;
+                  const xShift = getColumnShift(colIndex);
+                  return (
+                    <th
+                      key={colIndex}
+                      className='relative sticky top-0 z-20 border-y border-r border-slate-200 bg-gray-50 p-0'
+                      style={
+                        fillWidth
+                          ? undefined
+                          : {
+                              width: `${getDataColWidth(colIndex)}px`,
+                              minWidth: `${getDataColWidth(colIndex)}px`,
+                              maxWidth: `${getDataColWidth(colIndex)}px`,
+                              transition:
+                                'width 240ms ease, min-width 240ms ease, max-width 240ms ease',
+                            }
+                      }
+                      onMouseEnter={() => setHoveredDataCol(colIndex)}
+                      onMouseLeave={() =>
+                        setHoveredDataCol((prev) => (prev === colIndex ? null : prev))
+                      }
                       onDragOver={(e) => {
-                        if (dragItem?.type !== 'row') return;
+                        if (dragItem?.type !== 'column') return;
                         e.preventDefault();
                         const rect = e.currentTarget.getBoundingClientRect();
-                        const side = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-                        setRowDragOver(rowIndex, side);
+                        const side = e.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+                        setColumnDragOver(colIndex, side);
                       }}
                       onDrop={(e) => {
-                        if (dragItem?.type !== 'row') return;
+                        if (dragItem?.type !== 'column') return;
                         e.preventDefault();
                         const rect = e.currentTarget.getBoundingClientRect();
-                        const side = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-                        handleRowDrop(rowIndex, side);
+                        const side = e.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+                        handleColumnDrop(colIndex, side);
                       }}
                     >
-                      <div
-                        className='group relative'
-                        onMouseEnter={() => setRowHeaderHovered(true)}
-                        onMouseLeave={() => setRowHeaderHovered(false)}
-                      >
-                        {isDragOver && !isDraggedRow && (
+                      <div className='group relative'>
+                        {isDragOver && !isDragged && (
                           <div
-                            className='pointer-events-none absolute right-0 left-0 z-20 h-0.5 rounded-full bg-blue-500 shadow-[0_0_0_1px_rgba(59,130,246,0.15),0_0_10px_rgba(59,130,246,0.35)]'
-                            style={{ top: dragOver?.type === 'row' && dragOver.side === 'after' ? '100%' : 0 }}
+                            className='pointer-events-none absolute top-0 bottom-0 z-20 w-0.5 rounded-full bg-blue-500 shadow-[0_0_0_1px_rgba(59,130,246,0.15),0_0_10px_rgba(59,130,246,0.35)]'
+                            style={{
+                              left:
+                                dragOver?.type === 'column' && dragOver.side === 'after'
+                                  ? '100%'
+                                  : 0,
+                            }}
                           />
                         )}
                         <input
-                          value={
-                            cellDrafts[cellKey(rowIndex, 0)] ??
-                            toDisplayValue(row[0], shouldConvertColumn(0), displayUnit)
-                          }
-                          onFocus={() => handleCellFocus(rowIndex, 0, row[0])}
-                          onChange={(e) => handleCellDraftChange(rowIndex, 0, e.target.value)}
-                          onBlur={() => handleCellCommit(rowIndex, 0)}
-                          className={`relative z-0 w-full border-0 py-1.5 text-left text-xs font-medium text-slate-600 outline-none focus:bg-blue-50 ${isDragOver ? 'bg-blue-50/50' : 'bg-gray-50'}`}
+                          value={header}
+                          onChange={(e) => handleHeaderChange(colIndex, e.target.value)}
+                          placeholder='사이즈'
+                          className={`relative z-0 w-full border-0 py-1.5 text-center text-xs font-semibold text-slate-600 outline-none focus:bg-blue-50 ${isDragOver ? 'bg-blue-50/50' : 'bg-transparent'}`}
                           style={{
-                            ...getMotionStyle(0, rowShift, isDraggedRow, isDragOver && !isDraggedRow),
-                            paddingLeft: `${rowHeaderPadding}px`,
-                            paddingRight: `${rowHeaderPadding}px`,
+                            ...getMotionStyle(xShift, 0, isDragged, isDragOver && !isDragged),
+                            paddingLeft: `${hoveredDataCol === colIndex ? DATA_HEADER_EXPANDED_PADDING : DATA_HEADER_COMPACT_PADDING}px`,
+                            paddingRight: `${hoveredDataCol === colIndex ? DATA_HEADER_EXPANDED_PADDING : DATA_HEADER_COMPACT_PADDING}px`,
                             transition:
-                              'padding-left 240ms ease, padding-right 240ms ease, background-color 200ms ease, transform 220ms cubic-bezier(0.2, 0.9, 0.25, 1), box-shadow 180ms ease, opacity 180ms ease',
+                              'padding-left 220ms ease, padding-right 220ms ease, transform 220ms cubic-bezier(0.2, 0.9, 0.25, 1), box-shadow 180ms ease, opacity 180ms ease',
                             boxShadow:
-                              dropFlash?.type === 'row' && dropFlash.index === rowIndex
+                              dropFlash?.type === 'column' && dropFlash.index === colIndex
                                 ? 'inset 0 0 0 1px rgba(59,130,246,0.45), inset 0 0 24px rgba(59,130,246,0.14)'
-                                : getMotionStyle(0, rowShift, isDraggedRow, isDragOver && !isDraggedRow)
+                                : getMotionStyle(xShift, 0, isDragged, isDragOver && !isDragged)
                                     .boxShadow,
                           }}
                         />
-                        <button
-                          type='button'
-                          draggable
-                          onDragStart={(e) => handleDragStart(e, 'row', rowIndex)}
-                          onDragEnd={handleDragEnd}
-                          className={`${LEFT_ACTION_REVEAL_CLASS} cursor-grab active:cursor-grabbing ${MOVE_ACTION_BUTTON_CLASS}`}
-                          title='행 이동'
-                        >
-                          <GripVertical size={12} strokeWidth={2.2} />
-                        </button>
-                        {showRowDeleteButton && (
-                          <button
-                            type='button'
-                            onClick={() => deleteRow(rowIndex)}
-                            className={`${RIGHT_ACTION_REVEAL_CLASS} cursor-pointer ${DELETE_ACTION_BUTTON_CLASS}`}
-                            title='행 삭제'
-                          >
-                            <Trash2 size={11} strokeWidth={2.1} />
-                          </button>
+                        {showColumnActions && (
+                          <>
+                            <button
+                              type='button'
+                              draggable
+                              onDragStart={(e) => handleDragStart(e, 'column', colIndex)}
+                              onDragEnd={handleDragEnd}
+                              className={`${LEFT_ACTION_REVEAL_CLASS} cursor-grab active:cursor-grabbing ${MOVE_ACTION_BUTTON_CLASS}`}
+                              title='열 이동'
+                            >
+                              <GripHorizontal size={12} strokeWidth={2.2} />
+                            </button>
+                            <button
+                              type='button'
+                              onClick={() => deleteColumn(colIndex)}
+                              className={`${RIGHT_ACTION_REVEAL_CLASS} cursor-pointer ${DELETE_ACTION_BUTTON_CLASS}`}
+                              title='열 삭제'
+                            >
+                              <Trash2 size={11} strokeWidth={2.1} />
+                            </button>
+                          </>
                         )}
                       </div>
-                    </td>
-                  )}
-
-                  {showRowActionRail && (
-                    <td className='border border-slate-200 bg-white p-0'>
-                      <div className='flex h-full items-center justify-center gap-1'>
-                        <button
-                          type='button'
-                          draggable
-                          onDragStart={(e) => handleDragStart(e, 'row', rowIndex)}
-                          onDragEnd={handleDragEnd}
-                          className='flex h-5 w-5 cursor-grab items-center justify-center rounded-md border border-slate-200 bg-white/95 text-slate-400 opacity-0 transition-all duration-200 ease-out group-hover/row:opacity-100 hover:border-slate-300 hover:text-slate-700 active:cursor-grabbing'
-                          title='행 이동'
-                        >
-                          <GripVertical size={13} strokeWidth={2.2} />
-                        </button>
-                        {showRowDeleteButton && (
-                          <button
-                            type='button'
-                            onClick={() => deleteRow(rowIndex)}
-                            className='flex h-5 w-5 cursor-pointer items-center justify-center rounded-md border border-red-200 bg-white/95 text-red-400 opacity-0 transition-all duration-200 ease-out group-hover/row:opacity-100 hover:border-red-300 hover:bg-red-50 hover:text-red-500'
-                            title='행 삭제'
-                          >
-                            <Trash2 size={13} strokeWidth={2.1} />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  )}
-
-                  {hasLeadingImageColumn && (
-                    <td className='border border-slate-200 bg-white p-0'>
-                      <div
-                        className={`group/photo relative flex h-full min-h-[56px] items-center justify-center p-1 transition-colors ${
-                          leadingImageColumn?.onUploadFile ? 'cursor-pointer hover:bg-violet-50/30' : ''
-                        }`}
-                        onDragOver={(event) => {
-                          leadingImageColumn?.onDragOverCell?.(rowIndex, event);
-                        }}
-                        onDrop={(event) => {
-                          leadingImageColumn?.onDropCell?.(rowIndex, event);
-                        }}
-                        onClick={() => triggerLeadingImageUpload(rowIndex)}
-                      >
-                        {leadingImageColumn?.uploadingRowIndex === rowIndex ? (
-                          <div className='flex h-12 w-full flex-col items-center justify-center rounded-md border border-violet-200 bg-violet-50 text-violet-600'>
-                            <Upload size={12} className='mb-0.5 animate-pulse' />
-                            <span className='text-[10px] font-medium'>업로드 중...</span>
-                          </div>
-                        ) : rowImageItem?.thumbnailUrl ? (
-                          <div className='relative h-full w-full'>
-                            <img
-                              src={rowImageItem.thumbnailUrl}
-                              alt={rowImageItem.name}
-                              className='h-12 w-full rounded-md object-cover ring-1 ring-slate-200'
-                              loading='lazy'
-                            />
-                            {leadingImageColumn?.onUploadFile ? (
-                              <div className='pointer-events-none absolute inset-0 flex items-center justify-center rounded-md bg-black/0 opacity-0 transition-all duration-150 group-hover/photo:bg-black/35 group-hover/photo:opacity-100'>
-                                <span className='rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-medium text-gray-700'>
-                                  클릭해서 교체
-                                </span>
-                              </div>
-                            ) : null}
-                          </div>
-                        ) : (
-                          <div className='flex h-12 w-full flex-col items-center justify-center rounded-md border border-dashed border-slate-300 bg-gradient-to-b from-white to-slate-50 text-[10px] text-slate-500 transition-colors group-hover/photo:border-violet-300 group-hover/photo:text-violet-600'>
-                            <span className='mb-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-100 transition-colors group-hover/photo:bg-violet-100'>
-                              <Upload size={10} />
-                            </span>
-                            <span className='font-medium'>{leadingImageColumn?.emptyLabel ?? '드래그/클릭 업로드'}</span>
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                  )}
-
-                  {row.slice(dataHeaderStart).map((cell, visibleColIndex) => {
-                    const colIndex = visibleColIndex + dataHeaderStart;
-                    const isDraggedColumn = dragItem?.type === 'column' && dragItem.index === colIndex;
-                    const isColumnDropTarget =
-                      dragOver?.type === 'column' && dragOver.index === colIndex && !isDraggedColumn;
-                    const xShift = getColumnShift(colIndex);
-                    return (
-                      <td
-                        key={colIndex}
-                        className='border border-slate-200 p-0'
-                        style={
-                          fillWidth
-                            ? undefined
-                            : {
-                                width: `${getDataColWidth(colIndex)}px`,
-                                minWidth: `${getDataColWidth(colIndex)}px`,
-                                maxWidth: `${getDataColWidth(colIndex)}px`,
-                                transition: 'width 240ms ease, min-width 240ms ease, max-width 240ms ease',
-                              }
-                        }
-                      >
-                        <input
-                          value={
-                            cellDrafts[cellKey(rowIndex, colIndex)] ??
-                            toDisplayValue(cell, shouldConvertColumn(colIndex), displayUnit)
-                          }
-                          onFocus={() => handleCellFocus(rowIndex, colIndex, cell)}
-                          onChange={(e) => handleCellDraftChange(rowIndex, colIndex, e.target.value)}
-                          onBlur={() => handleCellCommit(rowIndex, colIndex)}
-                          className='w-full border-0 bg-transparent px-1.5 py-1.5 text-center text-xs text-slate-700 outline-none focus:bg-blue-50'
-                          style={{
-                            ...getMotionStyle(
-                              xShift,
-                              rowShift,
-                              isDraggedRow || isDraggedColumn,
-                              (isDragOver && !isDraggedRow) || isColumnDropTarget,
-                            ),
-                            boxShadow:
-                              (dropFlash?.type === 'row' && dropFlash.index === rowIndex) ||
-                              (dropFlash?.type === 'column' && dropFlash.index === colIndex)
-                                ? 'inset 0 0 0 1px rgba(59,130,246,0.25), inset 0 0 20px rgba(59,130,246,0.1)'
-                                : getMotionStyle(
-                                    xShift,
-                                    rowShift,
-                                    isDraggedRow || isDraggedColumn,
-                                    (isDragOver && !isDraggedRow) || isColumnDropTarget,
-                                  ).boxShadow,
-                          }}
-                        />
-                      </td>
-                    );
-                  })}
-                  {showTotals && (
-                    <td className='border border-slate-300 bg-slate-100 p-0'>
-                      <div className='flex h-full w-full items-center justify-center px-2 py-1.5 text-xs font-semibold text-slate-700'>
-                        {formatNumber(rowTotals[rowIndex] ?? 0, 0)}
-                      </div>
-                    </td>
-                  )}
-                  {showTrailingActionColumn && <td className='w-8 border border-slate-200 bg-white p-0' />}
-                </tr>
-              );
-            })}
-            {showTotals && (
-              <tr>
-                {showRowHeader ? (
-                  <td className='sticky left-0 z-10 border border-slate-200 bg-slate-100 p-0'>
-                    <div className='flex h-[33px] items-center px-3 text-xs font-semibold text-slate-700'>
+                    </th>
+                  );
+                })}
+                {showTotals && (
+                  <th className='relative sticky top-0 z-20 border-y border-r border-slate-300 bg-slate-200 p-0'>
+                    <div className='flex h-[33px] items-center justify-center px-2 text-[11px] font-semibold text-slate-700'>
                       Total
                     </div>
-                  </td>
-                ) : (
-                  showRowActionRail && <td className='border border-slate-200 bg-slate-100 p-0' />
+                  </th>
                 )}
+                {showAddColumnButton && (
+                  <th className='relative sticky top-0 z-20 w-8 border-y border-r border-slate-200 bg-gray-50 p-0'>
+                    <button
+                      type='button'
+                      onClick={addColumn}
+                      title='열 추가'
+                      className='flex h-[33px] w-full cursor-pointer items-center justify-center bg-gray-50 p-1 text-slate-400 transition-colors hover:text-slate-600'
+                    >
+                      <Plus size={12} />
+                    </button>
+                  </th>
+                )}
+                {!showAddColumnButton && showTrailingActionColumn && (
+                  <th className='relative sticky top-0 z-20 w-8 border-y border-r border-slate-200 bg-gray-50 p-0' />
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {spec.rows.map((row, rowIndex) => {
+                const isDragOver = dragOver?.type === 'row' && dragOver.index === rowIndex;
+                const isDraggedRow = dragItem?.type === 'row' && dragItem.index === rowIndex;
+                const rowShift = getRowShift(rowIndex);
+                const rowImageItem = hasLeadingImageColumn
+                  ? (leadingImageColumn?.items[rowIndex] ?? null)
+                  : null;
+                return (
+                  <tr
+                    key={rowIndex}
+                    className='group/row'
+                    onDragOver={(e) => {
+                      if (showRowHeader || dragItem?.type !== 'row') return;
+                      e.preventDefault();
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const side = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+                      setRowDragOver(rowIndex, side);
+                    }}
+                    onDrop={(e) => {
+                      if (showRowHeader || dragItem?.type !== 'row') return;
+                      e.preventDefault();
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const side = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+                      handleRowDrop(rowIndex, side);
+                    }}
+                  >
+                    {showRowHeader && (
+                      <td
+                        className='sticky left-0 z-10 border border-slate-200 bg-white p-0'
+                        style={{
+                          width: `${rowHeaderExpanded ? ROW_HEADER_EXPANDED_WIDTH : ROW_HEADER_COMPACT_WIDTH}px`,
+                          minWidth: `${ROW_HEADER_COMPACT_WIDTH}px`,
+                          transition: 'width 240ms ease',
+                        }}
+                        onDragOver={(e) => {
+                          if (dragItem?.type !== 'row') return;
+                          e.preventDefault();
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const side = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+                          setRowDragOver(rowIndex, side);
+                        }}
+                        onDrop={(e) => {
+                          if (dragItem?.type !== 'row') return;
+                          e.preventDefault();
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const side = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+                          handleRowDrop(rowIndex, side);
+                        }}
+                      >
+                        <div
+                          className='group relative'
+                          onMouseEnter={() => setRowHeaderHovered(true)}
+                          onMouseLeave={() => setRowHeaderHovered(false)}
+                        >
+                          {isDragOver && !isDraggedRow && (
+                            <div
+                              className='pointer-events-none absolute right-0 left-0 z-20 h-0.5 rounded-full bg-blue-500 shadow-[0_0_0_1px_rgba(59,130,246,0.15),0_0_10px_rgba(59,130,246,0.35)]'
+                              style={{
+                                top:
+                                  dragOver?.type === 'row' && dragOver.side === 'after'
+                                    ? '100%'
+                                    : 0,
+                              }}
+                            />
+                          )}
+                          <input
+                            value={
+                              cellDrafts[cellKey(rowIndex, 0)] ??
+                              toDisplayValue(row[0], shouldConvertColumn(0), displayUnit)
+                            }
+                            onFocus={() => handleCellFocus(rowIndex, 0, row[0])}
+                            onChange={(e) => handleCellDraftChange(rowIndex, 0, e.target.value)}
+                            onBlur={() => handleCellCommit(rowIndex, 0)}
+                            className={`relative z-0 w-full border-0 py-1.5 text-left text-xs font-medium text-slate-600 outline-none focus:bg-blue-50 ${isDragOver ? 'bg-blue-50/50' : 'bg-gray-50'}`}
+                            style={{
+                              ...getMotionStyle(
+                                0,
+                                rowShift,
+                                isDraggedRow,
+                                isDragOver && !isDraggedRow,
+                              ),
+                              paddingLeft: `${rowHeaderPadding}px`,
+                              paddingRight: `${rowHeaderPadding}px`,
+                              transition:
+                                'padding-left 240ms ease, padding-right 240ms ease, background-color 200ms ease, transform 220ms cubic-bezier(0.2, 0.9, 0.25, 1), box-shadow 180ms ease, opacity 180ms ease',
+                              boxShadow:
+                                dropFlash?.type === 'row' && dropFlash.index === rowIndex
+                                  ? 'inset 0 0 0 1px rgba(59,130,246,0.45), inset 0 0 24px rgba(59,130,246,0.14)'
+                                  : getMotionStyle(
+                                      0,
+                                      rowShift,
+                                      isDraggedRow,
+                                      isDragOver && !isDraggedRow,
+                                    ).boxShadow,
+                            }}
+                          />
+                          <button
+                            type='button'
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, 'row', rowIndex)}
+                            onDragEnd={handleDragEnd}
+                            className={`${LEFT_ACTION_REVEAL_CLASS} cursor-grab active:cursor-grabbing ${MOVE_ACTION_BUTTON_CLASS}`}
+                            title='행 이동'
+                          >
+                            <GripVertical size={12} strokeWidth={2.2} />
+                          </button>
+                          {showRowDeleteButton && (
+                            <button
+                              type='button'
+                              onClick={() => deleteRow(rowIndex)}
+                              className={`${RIGHT_ACTION_REVEAL_CLASS} cursor-pointer ${DELETE_ACTION_BUTTON_CLASS}`}
+                              title='행 삭제'
+                            >
+                              <Trash2 size={11} strokeWidth={2.1} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    )}
 
-                {hasLeadingImageColumn && <td className='border border-slate-200 bg-slate-100 p-0' />}
+                    {showRowActionRail && (
+                      <td className='border border-slate-200 bg-white p-0'>
+                        <div className='flex h-full items-center justify-center gap-1'>
+                          <button
+                            type='button'
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, 'row', rowIndex)}
+                            onDragEnd={handleDragEnd}
+                            className='flex h-5 w-5 cursor-grab items-center justify-center rounded-md border border-slate-200 bg-white/95 text-slate-400 opacity-0 transition-all duration-200 ease-out group-hover/row:opacity-100 hover:border-slate-300 hover:text-slate-700 active:cursor-grabbing'
+                            title='행 이동'
+                          >
+                            <GripVertical size={13} strokeWidth={2.2} />
+                          </button>
+                          {showRowDeleteButton && (
+                            <button
+                              type='button'
+                              onClick={() => deleteRow(rowIndex)}
+                              className='flex h-5 w-5 cursor-pointer items-center justify-center rounded-md border border-red-200 bg-white/95 text-red-400 opacity-0 transition-all duration-200 ease-out group-hover/row:opacity-100 hover:border-red-300 hover:bg-red-50 hover:text-red-500'
+                              title='행 삭제'
+                            >
+                              <Trash2 size={13} strokeWidth={2.1} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    )}
 
-                {columnTotals.map((sum, idx) => (
-                  <td key={`total-col-${idx}`} className='border border-slate-200 bg-slate-50 p-0'>
-                    <div className='flex h-[33px] items-center justify-center px-2 text-xs font-semibold text-slate-700'>
-                      {formatNumber(sum, 0)}
+                    {hasLeadingImageColumn && (
+                      <td className='border border-slate-200 bg-white p-0'>
+                        <div
+                          className={`group/photo relative flex h-full min-h-[56px] items-center justify-center p-1 transition-colors ${
+                            leadingImageColumn?.onUploadFile
+                              ? 'cursor-pointer hover:bg-violet-50/30'
+                              : ''
+                          }`}
+                          onDragOver={(event) => {
+                            leadingImageColumn?.onDragOverCell?.(rowIndex, event);
+                          }}
+                          onDrop={(event) => {
+                            leadingImageColumn?.onDropCell?.(rowIndex, event);
+                          }}
+                          onClick={() => triggerLeadingImageUpload(rowIndex)}
+                        >
+                          {leadingImageColumn?.uploadingRowIndex === rowIndex ? (
+                            <div className='flex h-12 w-full flex-col items-center justify-center rounded-md border border-violet-200 bg-violet-50 text-violet-600'>
+                              <Upload size={12} className='mb-0.5 animate-pulse' />
+                              <span className='text-[10px] font-medium'>업로드 중...</span>
+                            </div>
+                          ) : rowImageItem?.thumbnailUrl ? (
+                            <div className='relative h-full w-full'>
+                              <img
+                                src={rowImageItem.thumbnailUrl}
+                                alt={rowImageItem.name}
+                                className='h-12 w-full rounded-md object-cover ring-1 ring-slate-200'
+                                loading='lazy'
+                              />
+                              {leadingImageColumn?.onUploadFile ? (
+                                <div className='pointer-events-none absolute inset-0 flex items-center justify-center rounded-md bg-black/0 opacity-0 transition-all duration-150 group-hover/photo:bg-black/35 group-hover/photo:opacity-100'>
+                                  <span className='rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-medium text-gray-700'>
+                                    클릭해서 교체
+                                  </span>
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <div className='flex h-12 w-full flex-col items-center justify-center rounded-md border border-dashed border-slate-300 bg-gradient-to-b from-white to-slate-50 text-[10px] text-slate-500 transition-colors group-hover/photo:border-violet-300 group-hover/photo:text-violet-600'>
+                              <span className='mb-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-100 transition-colors group-hover/photo:bg-violet-100'>
+                                <Upload size={10} />
+                              </span>
+                              <span className='font-medium'>
+                                {leadingImageColumn?.emptyLabel ?? '드래그/클릭 업로드'}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    )}
+
+                    {row.slice(dataHeaderStart).map((cell, visibleColIndex) => {
+                      const colIndex = visibleColIndex + dataHeaderStart;
+                      const isDraggedColumn =
+                        dragItem?.type === 'column' && dragItem.index === colIndex;
+                      const isColumnDropTarget =
+                        dragOver?.type === 'column' &&
+                        dragOver.index === colIndex &&
+                        !isDraggedColumn;
+                      const xShift = getColumnShift(colIndex);
+                      return (
+                        <td
+                          key={colIndex}
+                          className='border border-slate-200 p-0'
+                          style={
+                            fillWidth
+                              ? undefined
+                              : {
+                                  width: `${getDataColWidth(colIndex)}px`,
+                                  minWidth: `${getDataColWidth(colIndex)}px`,
+                                  maxWidth: `${getDataColWidth(colIndex)}px`,
+                                  transition:
+                                    'width 240ms ease, min-width 240ms ease, max-width 240ms ease',
+                                }
+                          }
+                        >
+                          <input
+                            value={
+                              cellDrafts[cellKey(rowIndex, colIndex)] ??
+                              toDisplayValue(cell, shouldConvertColumn(colIndex), displayUnit)
+                            }
+                            onFocus={() => handleCellFocus(rowIndex, colIndex, cell)}
+                            onChange={(e) =>
+                              handleCellDraftChange(rowIndex, colIndex, e.target.value)
+                            }
+                            onBlur={() => handleCellCommit(rowIndex, colIndex)}
+                            className='w-full border-0 bg-transparent px-1.5 py-1.5 text-center text-xs text-slate-700 outline-none focus:bg-blue-50'
+                            style={{
+                              ...getMotionStyle(
+                                xShift,
+                                rowShift,
+                                isDraggedRow || isDraggedColumn,
+                                (isDragOver && !isDraggedRow) || isColumnDropTarget,
+                              ),
+                              boxShadow:
+                                (dropFlash?.type === 'row' && dropFlash.index === rowIndex) ||
+                                (dropFlash?.type === 'column' && dropFlash.index === colIndex)
+                                  ? 'inset 0 0 0 1px rgba(59,130,246,0.25), inset 0 0 20px rgba(59,130,246,0.1)'
+                                  : getMotionStyle(
+                                      xShift,
+                                      rowShift,
+                                      isDraggedRow || isDraggedColumn,
+                                      (isDragOver && !isDraggedRow) || isColumnDropTarget,
+                                    ).boxShadow,
+                            }}
+                          />
+                        </td>
+                      );
+                    })}
+                    {showTotals && (
+                      <td className='border border-slate-300 bg-slate-100 p-0'>
+                        <div className='flex h-full w-full items-center justify-center px-2 py-1.5 text-xs font-semibold text-slate-700'>
+                          {formatNumber(rowTotals[rowIndex] ?? 0, 0)}
+                        </div>
+                      </td>
+                    )}
+                    {showTrailingActionColumn && (
+                      <td className='w-8 border border-slate-200 bg-white p-0' />
+                    )}
+                  </tr>
+                );
+              })}
+              {showTotals && (
+                <tr>
+                  {showRowHeader ? (
+                    <td className='sticky left-0 z-10 border border-slate-200 bg-slate-100 p-0'>
+                      <div className='flex h-[33px] items-center px-3 text-xs font-semibold text-slate-700'>
+                        Total
+                      </div>
+                    </td>
+                  ) : (
+                    showRowActionRail && <td className='border border-slate-200 bg-slate-100 p-0' />
+                  )}
+
+                  {hasLeadingImageColumn && (
+                    <td className='border border-slate-200 bg-slate-100 p-0' />
+                  )}
+
+                  {columnTotals.map((sum, idx) => (
+                    <td
+                      key={`total-col-${idx}`}
+                      className='border border-slate-200 bg-slate-50 p-0'
+                    >
+                      <div className='flex h-[33px] items-center justify-center px-2 text-xs font-semibold text-slate-700'>
+                        {formatNumber(sum, 0)}
+                      </div>
+                    </td>
+                  ))}
+
+                  <td className='border border-slate-300 bg-slate-200 p-0'>
+                    <div className='flex h-[33px] items-center justify-center px-2 text-xs font-semibold text-slate-800'>
+                      {formatNumber(grandTotal, 0)}
                     </div>
                   </td>
-                ))}
 
-                <td className='border border-slate-300 bg-slate-200 p-0'>
-                  <div className='flex h-[33px] items-center justify-center px-2 text-xs font-semibold text-slate-800'>
-                    {formatNumber(grandTotal, 0)}
-                  </div>
-                </td>
-
-                {showTrailingActionColumn && <td className='w-8 border border-slate-200 bg-white p-0' />}
-              </tr>
-            )}
-            <tr style={{ height: '33px' }}>
-              {showRowHeader ? (
-                <td
-                  className='sticky left-0 z-10 border border-slate-200 bg-gray-50 p-0'
-                  style={{
-                    width: `${rowHeaderExpanded ? ROW_HEADER_EXPANDED_WIDTH : ROW_HEADER_COMPACT_WIDTH}px`,
-                    minWidth: `${ROW_HEADER_COMPACT_WIDTH}px`,
-                    transition: 'width 240ms ease',
-                  }}
-                >
-                  <button
-                    type='button'
-                    onClick={addRow}
-                    title='행 추가'
-                    className='flex h-full w-full cursor-pointer items-center justify-center bg-gray-50 p-1 text-slate-400 transition-colors hover:text-slate-600'
-                  >
-                    <Plus size={12} />
-                  </button>
-                </td>
-              ) : (
-                <>
-                  {showRowActionRail && (
-                    <td className='border border-slate-200 bg-gray-50 p-0'>
-                      <button
-                        type='button'
-                        onClick={addRow}
-                        title='행 추가'
-                        className='flex h-full w-full cursor-pointer items-center justify-center text-slate-400 transition-colors hover:text-slate-600'
-                      >
-                        <Plus size={12} />
-                      </button>
-                    </td>
+                  {showTrailingActionColumn && (
+                    <td className='w-8 border border-slate-200 bg-white p-0' />
                   )}
-                  {hasLeadingImageColumn && (
-                    <td className='border border-slate-200 bg-white p-0' />
-                  )}
-                  <td colSpan={Math.max(1, spec.headers.length)} className='border border-slate-200 bg-white p-0' />
-                </>
+                </tr>
               )}
-              {showRowHeader && (
-                <>
-                  {hasLeadingImageColumn && <td className='border border-slate-200 bg-white p-0' />}
+              <tr style={{ height: '33px' }}>
+                {showRowHeader ? (
                   <td
-                    colSpan={Math.max(1, spec.headers.length - 1)}
-                    className='border border-slate-200 bg-white p-0'
-                  />
-                </>
-              )}
-              {showTotals && <td className='border border-slate-200 bg-white p-0' />}
-              {showTrailingActionColumn && <td className='w-8 border border-slate-200 bg-white p-0' />}
-            </tr>
-          </tbody>
+                    className='sticky left-0 z-10 border border-slate-200 bg-gray-50 p-0'
+                    style={{
+                      width: `${rowHeaderExpanded ? ROW_HEADER_EXPANDED_WIDTH : ROW_HEADER_COMPACT_WIDTH}px`,
+                      minWidth: `${ROW_HEADER_COMPACT_WIDTH}px`,
+                      transition: 'width 240ms ease',
+                    }}
+                  >
+                    <button
+                      type='button'
+                      onClick={addRow}
+                      title='행 추가'
+                      className='flex h-full w-full cursor-pointer items-center justify-center bg-gray-50 p-1 text-slate-400 transition-colors hover:text-slate-600'
+                    >
+                      <Plus size={12} />
+                    </button>
+                  </td>
+                ) : (
+                  <>
+                    {showRowActionRail && (
+                      <td className='border border-slate-200 bg-gray-50 p-0'>
+                        <button
+                          type='button'
+                          onClick={addRow}
+                          title='행 추가'
+                          className='flex h-full w-full cursor-pointer items-center justify-center text-slate-400 transition-colors hover:text-slate-600'
+                        >
+                          <Plus size={12} />
+                        </button>
+                      </td>
+                    )}
+                    {hasLeadingImageColumn && (
+                      <td className='border border-slate-200 bg-white p-0' />
+                    )}
+                    <td
+                      colSpan={Math.max(1, spec.headers.length)}
+                      className='border border-slate-200 bg-white p-0'
+                    />
+                  </>
+                )}
+                {showRowHeader && (
+                  <>
+                    {hasLeadingImageColumn && (
+                      <td className='border border-slate-200 bg-white p-0' />
+                    )}
+                    <td
+                      colSpan={Math.max(1, spec.headers.length - 1)}
+                      className='border border-slate-200 bg-white p-0'
+                    />
+                  </>
+                )}
+                {showTotals && <td className='border border-slate-200 bg-white p-0' />}
+                {showTrailingActionColumn && (
+                  <td className='w-8 border border-slate-200 bg-white p-0' />
+                )}
+              </tr>
+            </tbody>
           </table>
         </div>
       </div>
