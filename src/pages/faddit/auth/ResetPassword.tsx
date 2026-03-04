@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { SubmitHandler, useForm } from 'react-hook-form';
+import { Eye, EyeOff } from 'lucide-react';
 import {
   requestResetPassword,
   updatePassword,
@@ -25,6 +26,8 @@ const FadditResetPassword: React.FC = () => {
   const [updateSuccess, setUpdateSuccess] = useState(false);
   const [tokenVerifying, setTokenVerifying] = useState(false);
   const [tokenValid, setTokenValid] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
 
   const userId = searchParams.get('userId') || searchParams.get('user_id') || '';
   const passwordResetToken =
@@ -177,18 +180,28 @@ const FadditResetPassword: React.FC = () => {
                 <label className='mb-1 block text-sm font-medium' htmlFor='password'>
                   새 비밀번호
                 </label>
-                <input
-                  id='password'
-                  className={`form-input w-full ${updateErrors.password ? 'border-red-500' : ''}`}
-                  type='password'
-                  {...registerUpdate('password', {
-                    required: '비밀번호를 입력해주세요.',
-                    minLength: {
-                      value: 8,
-                      message: '비밀번호는 최소 8자 이상이어야 합니다.',
-                    },
-                  })}
-                />
+                <div className='relative'>
+                  <input
+                    id='password'
+                    className={`form-input w-full pr-10 ${updateErrors.password ? 'border-red-500' : ''}`}
+                    type={showPassword ? 'text' : 'password'}
+                    {...registerUpdate('password', {
+                      required: '비밀번호를 입력해주세요.',
+                      minLength: {
+                        value: 8,
+                        message: '비밀번호는 최소 8자 이상이어야 합니다.',
+                      },
+                    })}
+                  />
+                  <button
+                    type='button'
+                    className='absolute top-1/2 right-3 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    aria-label={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
+                  >
+                    {showPassword ? <EyeOff className='h-4 w-4' /> : <Eye className='h-4 w-4' />}
+                  </button>
+                </div>
                 {updateErrors.password && (
                   <span className='mt-1 text-xs text-red-500'>{updateErrors.password.message}</span>
                 )}
@@ -198,16 +211,26 @@ const FadditResetPassword: React.FC = () => {
                 <label className='mb-1 block text-sm font-medium' htmlFor='passwordConfirm'>
                   새 비밀번호 확인
                 </label>
-                <input
-                  id='passwordConfirm'
-                  className={`form-input w-full ${updateErrors.passwordConfirm ? 'border-red-500' : ''}`}
-                  type='password'
-                  {...registerUpdate('passwordConfirm', {
-                    required: '비밀번호 확인을 입력해주세요.',
-                    validate: (value) =>
-                      value === watch('password') || '비밀번호가 일치하지 않습니다.',
-                  })}
-                />
+                <div className='relative'>
+                  <input
+                    id='passwordConfirm'
+                    className={`form-input w-full pr-10 ${updateErrors.passwordConfirm ? 'border-red-500' : ''}`}
+                    type={showPasswordConfirm ? 'text' : 'password'}
+                    {...registerUpdate('passwordConfirm', {
+                      required: '비밀번호 확인을 입력해주세요.',
+                      validate: (value) =>
+                        value === watch('password') || '비밀번호가 일치하지 않습니다.',
+                    })}
+                  />
+                  <button
+                    type='button'
+                    className='absolute top-1/2 right-3 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                    onClick={() => setShowPasswordConfirm((prev) => !prev)}
+                    aria-label={showPasswordConfirm ? '비밀번호 숨기기' : '비밀번호 보기'}
+                  >
+                    {showPasswordConfirm ? <EyeOff className='h-4 w-4' /> : <Eye className='h-4 w-4' />}
+                  </button>
+                </div>
                 {updateErrors.passwordConfirm && (
                   <span className='mt-1 text-xs text-red-500'>
                     {updateErrors.passwordConfirm.message}

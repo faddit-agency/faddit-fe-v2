@@ -235,7 +235,7 @@ export const bootstrapAuthSession = async () => {
 
     return true;
   } catch (error) {
-    useAuthStore.getState().setAuthenticated(false);
+    clearAuthSession();
     return false;
   }
 };

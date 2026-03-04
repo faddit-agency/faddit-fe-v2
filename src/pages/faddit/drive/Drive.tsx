@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import * as PopoverPrimitive from '@radix-ui/react-popover';
@@ -16,6 +16,7 @@ import TemplateCreateModal, {
 } from './components/TemplateCreateModal';
 import CreateFolderModal from './components/CreateFolderModal';
 import CreateWorksheetModal from './components/CreateWorksheetModal';
+import UnsavedExitConfirmModal from './components/UnsavedExitConfirmModal';
 import {
   createMaterial,
   getMaterialFieldDefs,
@@ -37,6 +38,7 @@ import {
 } from '../../../lib/api/driveApi';
 import { createWorksheet } from '../../../lib/api/worksheetApi';
 import ChildClothImage from '../../../images/faddit/childcloth.png';
+import { formatKoreanDateTime } from '../../../lib/dateTime';
 
 type ViewMode = 'grid' | 'list';
 
@@ -98,8 +100,30 @@ const isImageFile = (extension?: string) => {
     return false;
   }
 
-  const value = extension.toLowerCase();
-  return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(value);
+  const value = extension.toLowerCase().trim();
+  if (value.startsWith('image/')) {
+    return true;
+  }
+  const normalized = value.replace(/^\./, '');
+  return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(normalized);
+};
+
+const formatDriveItemSubtitle = (extension?: string) => {
+  const raw = String(extension ?? '').trim();
+  const normalized = raw.replace(/^\./, '').toLowerCase();
+  if (!normalized) {
+    return 'file';
+  }
+  if (isImageFile(normalized)) {
+    return '이미지 파일';
+  }
+  if (normalized === '이미지 파일' || normalized === 'file') {
+    return normalized;
+  }
+  if (!/^[a-z0-9]+$/.test(normalized)) {
+    return raw.replace(/^\./, '');
+  }
+  return `.${normalized}`;
 };
 
 const toEditableAttributeValue = (value: unknown) => value;
@@ -203,6 +227,60 @@ const getDefaultEditFieldValue = (fieldDef: MaterialFieldDef): unknown => {
   return '';
 };
 
+const hasMeaningfulEditValue = (fieldDef: MaterialFieldDef, value: unknown) => {
+  if (value === '' || value === null || value === undefined) {
+    return false;
+  }
+
+  if (fieldDef.input_type === 'option_with_other') {
+    if (typeof value === 'string') return value.trim() !== '';
+    if (typeof value === 'object' && value !== null) {
+      const selected = String((value as { selected?: unknown }).selected ?? '').trim();
+      const customText = String((value as { customText?: unknown }).customText ?? '').trim();
+      if (!selected) return false;
+      if (selected !== '기타') return true;
+      return customText !== '';
+    }
+    return false;
+  }
+
+  if (fieldDef.input_type === 'number') {
+    return toNumberOrUndefined(value) !== undefined;
+  }
+
+  if (fieldDef.input_type === 'number_with_option') {
+    if (typeof value === 'object' && value !== null) {
+      const numberValue = (value as { value?: unknown }).value;
+      return toNumberOrUndefined(numberValue) !== undefined;
+    }
+    return false;
+  }
+
+  if (fieldDef.input_type === 'number_pair') {
+    if (typeof value === 'object' && value !== null) {
+      const first = (value as { first?: unknown }).first;
+      const second = (value as { second?: unknown }).second;
+      const pairKind = getNumberPairKind(fieldDef);
+      if (pairKind === 'price_quantity') {
+        return toNumberOrUndefined(first) !== undefined && String(second ?? '').trim() !== '';
+      }
+      return toNumberOrUndefined(first) !== undefined && toNumberOrUndefined(second) !== undefined;
+    }
+    return false;
+  }
+
+  if (fieldDef.input_type === 'dimension') {
+    if (typeof value !== 'object' || value === null) {
+      return false;
+    }
+    const width = toNumberOrUndefined((value as { width?: unknown }).width);
+    const height = toNumberOrUndefined((value as { height?: unknown }).height);
+    return width !== undefined || height !== undefined;
+  }
+
+  return String(value).trim() !== '';
+};
+
 const MATERIAL_TOP_FIELDS = new Set([
   'code_internal',
   'vendor_name',
@@ -215,11 +293,57 @@ const formatNumberWithCommas = (value?: number) => {
   return value.toLocaleString('en-US');
 };
 
-const parseFormattedNumber = (raw: string) => {
-  const normalized = raw.replace(/,/g, '').trim();
-  if (!normalized) return undefined;
-  const parsed = Number(normalized);
-  return Number.isNaN(parsed) ? undefined : parsed;
+const formatNumericChunksInText = (text: string) =>
+  text.replace(/-?\d[\d,]*(?:\.\d+)?/g, (chunk) => {
+    const cleaned = chunk.replace(/,/g, '');
+    if (!/^-?\d+(?:\.\d+)?$/.test(cleaned)) {
+      return chunk;
+    }
+
+    const sign = cleaned.startsWith('-') ? '-' : '';
+    const unsigned = sign ? cleaned.slice(1) : cleaned;
+    const [intPart, decimalPart] = unsigned.split('.');
+
+    if (intPart.length <= 3) {
+      return chunk;
+    }
+    if (intPart.length > 1 && intPart.startsWith('0')) {
+      return chunk;
+    }
+
+    const formattedInt = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return `${sign}${formattedInt}${decimalPart ? `.${decimalPart}` : ''}`;
+  });
+
+const formatUnitForDisplay = (unit: string) =>
+  unit.replace(/\^(\d+)/g, (_, exponent: string) => {
+    const superscriptDigits: Record<string, string> = {
+      '0': '⁰',
+      '1': '¹',
+      '2': '²',
+      '3': '³',
+      '4': '⁴',
+      '5': '⁵',
+      '6': '⁶',
+      '7': '⁷',
+      '8': '⁸',
+      '9': '⁹',
+    };
+
+    return exponent
+      .split('')
+      .map((digit) => superscriptDigits[digit] ?? digit)
+      .join('');
+  });
+
+const getNumericInputValue = (value: unknown) => {
+  if (typeof value === 'number') {
+    return formatNumberWithCommas(value);
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  return '';
 };
 
 const formatDualLengthText = (value: unknown) => {
@@ -249,6 +373,28 @@ const formatDualLengthText = (value: unknown) => {
   const cmText = cm !== undefined ? `${formatNumberWithCommas(cm)} cm` : '-';
   const inchText = inch !== undefined ? `${formatNumberWithCommas(inch)} inch` : '-';
   return `${cmText} / ${inchText}`;
+};
+
+const toDisplayText = (value: unknown): string => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return formatNumericChunksInText(value.trim());
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
+};
+
+const getObjectMemberText = (obj: Record<string, unknown>, keys: string[]): string => {
+  for (const key of keys) {
+    const candidate = obj[key];
+    const text = toDisplayText(candidate);
+    if (text) return text;
+
+    if (candidate && typeof candidate === 'object') {
+      const nested = candidate as Record<string, unknown>;
+      const nestedText = getObjectMemberText(nested, ['value', 'label', 'name', 'text']);
+      if (nestedText) return nestedText;
+    }
+  }
+  return '';
 };
 
 const formatKrw = (value: number) => `₩${formatNumberWithCommas(value)}`;
@@ -707,10 +853,12 @@ const FadditDrive: React.FC = () => {
     restoreItems,
     moveItems,
     setItemsStarred,
+    renameSidebarItem,
     getItemParentId,
     workspaces,
     favorites,
     loadFolderChildren,
+    hydrateDrive,
     loadFolderView,
     currentFolderPath,
     currentFolderIdPath,
@@ -726,6 +874,7 @@ const FadditDrive: React.FC = () => {
   const setAuthUser = useAuthStore((state) => state.setUser);
   const rootFolderFromAuth = useAuthStore((state) => state.user?.rootFolder);
   const userId = useAuthStore((state) => state.user?.userId);
+  const isSessionBootstrapped = useAuthStore((state) => state.isSessionBootstrapped);
   const currentUserName = useAuthStore((state) => state.user?.name);
   const currentUserProfileImg = useAuthStore((state) => state.user?.profileImg);
   const materialsByFileSystemId = useDriveStore((state) => state.materialsByFileSystemId);
@@ -735,6 +884,8 @@ const FadditDrive: React.FC = () => {
   const driveLoading = useDriveStore((state) => state.driveLoading);
   const setSearchLoading = useDriveStore((state) => state.setSearchLoading);
   const setDriveLoading = useDriveStore((state) => state.setDriveLoading);
+  const setRecentDocsDebug = useDriveStore((state) => state.setRecentDocsDebug);
+  const pushRecentTrackDebug = useDriveStore((state) => state.pushRecentTrackDebug);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [isCreatingMaterial, setIsCreatingMaterial] = useState(false);
@@ -777,6 +928,8 @@ const FadditDrive: React.FC = () => {
   const [expandedMoveFolders, setExpandedMoveFolders] = useState<Record<string, boolean>>({});
   const [favoriteToastOpen, setFavoriteToastOpen] = useState(false);
   const [favoriteMessage, setFavoriteMessage] = useState('즐겨찾기가 완료되었습니다');
+  const [unsavedExitModalOpen, setUnsavedExitModalOpen] = useState(false);
+  const [hasUnsavedDetailChanges, setHasUnsavedDetailChanges] = useState(false);
   const gridSelectionRef = useRef<HTMLDivElement | null>(null);
   const gridContentRef = useRef<HTMLDivElement | null>(null);
   const editImageInputRef = useRef<HTMLInputElement | null>(null);
@@ -785,6 +938,7 @@ const FadditDrive: React.FC = () => {
   const resultFilterRef = useRef<HTMLDivElement | null>(null);
   const resultSearchInputRef = useRef<HTMLInputElement | null>(null);
   const suppressBlankClearRef = useRef(false);
+  const pendingUnsavedExitActionRef = useRef<(() => void) | null>(null);
   const [marqueeRect, setMarqueeRect] = useState<MarqueeRect | null>(null);
   const { setNodeRef: setRootDropRef } = useDroppable({
     id: 'drive-root-container',
@@ -809,6 +963,44 @@ const FadditDrive: React.FC = () => {
   );
   const isSearchMode = searchModeParam === 'search' || Boolean(searchKeyword);
   const isRecentMode = !isSearchMode && !folderId;
+
+  const markRecentDocsDebug = useCallback(
+    (recentData: { folders: DriveNode[]; files: DriveNode[] }) => {
+      setRecentDocsDebug({
+        fetchedAt: new Date().toISOString(),
+        folders: recentData.folders
+          .filter((node) => node.type === 'folder' && !node.isRoot)
+          .map((node) => ({
+            id: node.fileSystemId,
+            name: node.name,
+            action_type: 'folder_enter' as const,
+          })),
+        files: recentData.files
+          .filter((node) => node.type !== 'folder')
+          .map((node) => ({
+            id: node.fileSystemId,
+            name: node.name,
+            action_type: node.recentActionType ?? null,
+            created_at: node.recentCreatedAt ?? node.createdAt ?? null,
+          })),
+      });
+    },
+    [setRecentDocsDebug],
+  );
+
+  const markRecentTrackDebug = useCallback(
+    (
+      fileSystemId: string,
+      actionType: 'folder_enter' | 'file_view' | 'file_edit' | 'file_create',
+    ) => {
+      pushRecentTrackDebug({
+        trackedAt: new Date().toISOString(),
+        fileSystemId,
+        action_type: actionType,
+      });
+    },
+    [pushRecentTrackDebug],
+  );
 
   const categoryLabelMap: Record<string, string> = {
     fabric: '원단',
@@ -872,6 +1064,21 @@ const FadditDrive: React.FC = () => {
     gauge_no: '호수',
     post_processing: '후가공',
     color: '컬러',
+    material_position: '원단 위치',
+    pattern_total_area: '패턴 총 면적',
+    marker_efficiency: '마커효율',
+    yocheok: '요척',
+    total_required_fabric: '총 필요 원단량',
+    rib_type: '시보리타입',
+    attach_position: '부착 위치',
+    usage_quantity: '사용 수량',
+    fabric_blend_ratio: '원단 혼용률',
+    manufacture_country: '제조국',
+    company_info: '기업 정보',
+    usage_quantity_per_garment: '사용 수량(1벌)',
+    usage_length: '사용 길이',
+    cost_per_garment: '1벌당 자동 원가(개별)',
+    total_trim_cost: '총 부자재 원가',
   };
 
   const getAttributeLabel = (key: string) => {
@@ -909,13 +1116,16 @@ const FadditDrive: React.FC = () => {
       if (typeof value === 'number' && isPriceField) {
         return formatKrw(value);
       }
+      if (typeof value === 'number') {
+        return formatNumberWithCommas(value);
+      }
       if (typeof value === 'string' && isPriceField) {
         const numeric = toNumberOrUndefined(value);
         if (numeric !== undefined) {
           return formatKrw(numeric);
         }
       }
-      return String(value);
+      return toDisplayText(value);
     }
     if (Array.isArray(value)) {
       return value.map((item) => formatAttributeValue(item, fieldKey)).join(', ');
@@ -923,9 +1133,9 @@ const FadditDrive: React.FC = () => {
     if (typeof value === 'object') {
       const objectValue = value as Record<string, unknown>;
 
-      if ('selected' in objectValue) {
-        const selected = String(objectValue.selected ?? '').trim();
-        const customText = String(objectValue.customText ?? '').trim();
+      if ('selected' in objectValue || 'option' in objectValue) {
+        const selected = getObjectMemberText(objectValue, ['selected', 'option']);
+        const customText = getObjectMemberText(objectValue, ['customText', 'custom_text']);
         if (selected === '기타') {
           return customText || '기타';
         }
@@ -940,8 +1150,8 @@ const FadditDrive: React.FC = () => {
             ? isPriceField
               ? formatKrw(rawValue)
               : formatNumberWithCommas(rawValue)
-            : String(rawValue ?? '').trim();
-        const unitText = String(rawUnit ?? '').trim();
+            : toDisplayText(rawValue);
+        const unitText = formatUnitForDisplay(toDisplayText(rawUnit));
         if (valueText && unitText) {
           return `${valueText}/${unitText}`;
         }
@@ -958,11 +1168,11 @@ const FadditDrive: React.FC = () => {
             ? isPriceField
               ? formatKrw(firstRaw)
               : formatNumberWithCommas(firstRaw)
-            : String(firstRaw ?? '').trim();
+            : toDisplayText(firstRaw);
         const secondText =
           typeof secondRaw === 'number'
             ? formatNumberWithCommas(secondRaw)
-            : String(secondRaw ?? '').trim();
+            : toDisplayText(secondRaw);
         if (firstText && secondText) {
           return `${firstText}/${secondText}`;
         }
@@ -1036,9 +1246,9 @@ const FadditDrive: React.FC = () => {
     ? '최근 문서함'
     : isRootFolderView
       ? '내 워크스페이스'
-    : isSearchMode
-      ? '검색결과'
-      : breadcrumbDisplayParts[breadcrumbDisplayParts.length - 1] || '내 워크스페이스';
+      : isSearchMode
+        ? '검색결과'
+        : breadcrumbDisplayParts[breadcrumbDisplayParts.length - 1] || '내 워크스페이스';
 
   const showDriveBreadcrumb = !isSearchMode && !isRecentMode && !isRootFolderView;
 
@@ -1089,8 +1299,18 @@ const FadditDrive: React.FC = () => {
   }, [isSearchMode, searchKeyword]);
 
   const navigateToFolder = (nextFolderId: string) => {
-    window.getSelection()?.removeAllRanges();
-    navigate(`/faddit/drive/${nextFolderId}`);
+    const moveToFolder = () => {
+      window.getSelection()?.removeAllRanges();
+      navigate(`/faddit/drive/${nextFolderId}`);
+    };
+
+    if (detailPanelEditMode && hasUnsavedDetailChanges) {
+      pendingUnsavedExitActionRef.current = moveToFolder;
+      setUnsavedExitModalOpen(true);
+      return;
+    }
+
+    moveToFolder();
   };
 
   const setFileQuery = (fileId: string | null) => {
@@ -1105,6 +1325,14 @@ const FadditDrive: React.FC = () => {
 
   useEffect(() => {
     if (!isSearchMode) {
+      return;
+    }
+
+    if (!isSessionBootstrapped || !userId) {
+      setSearchLoading(false);
+      setSearchTotalCount(0);
+      setDriveFolders([]);
+      setItems([]);
       return;
     }
 
@@ -1151,14 +1379,14 @@ const FadditDrive: React.FC = () => {
                 imageSrc: previewUrl || ChildClothImage,
                 imageAlt: node.name,
                 title: node.name,
-                subtitle: node.mimetype ? `.${node.mimetype}` : 'file',
+                subtitle: formatDriveItemSubtitle(node.mimetype),
                 badge: node.tag ? String(node.tag) : '파일',
                 isStarred: node.isStarred,
                 owner: node.creatorName || undefined,
                 ownerProfileImg: node.creatorProfileImg || undefined,
                 recentActionType: node.recentActionType,
                 recentActorName: node.recentActorName || undefined,
-                date: node.updatedAt ? String(node.updatedAt).slice(0, 10) : '-',
+                date: formatKoreanDateTime(node.updatedAt),
                 size: formatBytes(node.size),
                 parentId: node.parentId,
                 sourcePath: node.path,
@@ -1194,10 +1422,35 @@ const FadditDrive: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [isSearchMode, searchCategories, searchKeyword, setDriveFolders, setItems]);
+  }, [
+    isSearchMode,
+    isSessionBootstrapped,
+    searchCategories,
+    searchKeyword,
+    setDriveFolders,
+    setItems,
+    setSearchLoading,
+    setSearchTotalCount,
+    userId,
+  ]);
 
   useEffect(() => {
     if (isSearchMode) {
+      return;
+    }
+
+    if (!isSessionBootstrapped) {
+      setDriveLoading(false);
+      setSearchLoading(false);
+      return;
+    }
+
+    if (!userId) {
+      setDriveLoading(false);
+      setSearchLoading(false);
+      setSearchTotalCount(0);
+      setDriveFolders([]);
+      setItems([]);
       return;
     }
 
@@ -1207,13 +1460,14 @@ const FadditDrive: React.FC = () => {
 
     const loadRecentView = async () => {
       const recentData = await getDriveRecent();
+      markRecentDocsDebug(recentData);
       const folders = recentData.folders
         .filter((node) => node.type === 'folder' && !node.isRoot)
         .map((node) => ({
           id: node.fileSystemId,
           name: node.name,
           shared: false,
-          updatedAt: node.updatedAt || '',
+          updatedAt: node.recentCreatedAt || node.updatedAt || '',
           updatedBy: '',
           parentId: node.parentId,
           isStarred: node.isStarred,
@@ -1234,14 +1488,14 @@ const FadditDrive: React.FC = () => {
               imageSrc: previewUrl || ChildClothImage,
               imageAlt: node.name,
               title: node.name,
-              subtitle: node.mimetype ? `.${node.mimetype}` : 'file',
+              subtitle: formatDriveItemSubtitle(node.mimetype),
               badge: node.tag ? String(node.tag) : '파일',
               isStarred: node.isStarred,
               owner: node.creatorName || undefined,
               ownerProfileImg: node.creatorProfileImg || undefined,
               recentActionType: node.recentActionType,
               recentActorName: node.recentActorName || undefined,
-              date: node.updatedAt ? String(node.updatedAt).slice(0, 10) : '-',
+              date: formatKoreanDateTime(node.recentCreatedAt || node.updatedAt),
               size: formatBytes(node.size),
               parentId: node.parentId,
               sourcePath: node.path,
@@ -1282,6 +1536,7 @@ const FadditDrive: React.FC = () => {
       await loadFolderView(targetFolderId);
 
       if (folderId && userId) {
+        markRecentTrackDebug(folderId, 'folder_enter');
         await trackDriveRecentActivity({
           userId,
           fileSystemId: folderId,
@@ -1308,11 +1563,15 @@ const FadditDrive: React.FC = () => {
     clearMaterialsForFiles,
     folderId,
     isRecentMode,
+    isSessionBootstrapped,
     isSearchMode,
     loadFolderView,
+    markRecentDocsDebug,
+    markRecentTrackDebug,
     rootFolderFromAuth,
     rootFolderId,
     setCurrentFolderLocation,
+    setDriveFolders,
     setItems,
     setMaterialsForFile,
     setSearchLoading,
@@ -1352,6 +1611,7 @@ const FadditDrive: React.FC = () => {
     }
 
     lastTrackedViewFileIdRef.current = activeItemId;
+    markRecentTrackDebug(activeItemId, 'file_view');
     trackDriveRecentActivity({
       userId,
       fileSystemId: activeItemId,
@@ -1359,7 +1619,7 @@ const FadditDrive: React.FC = () => {
     }).catch((error) => {
       console.error('Failed to track recent file view', error);
     });
-  }, [activeItemId, detailPanelOpen, userId]);
+  }, [activeItemId, detailPanelOpen, markRecentTrackDebug, userId]);
 
   const clearSelectionEffects = () => {
     setSelectedIds([]);
@@ -1425,13 +1685,18 @@ const FadditDrive: React.FC = () => {
           setResultFilterOpen(false);
           return;
         }
+        if (detailPanelEditMode && hasUnsavedDetailChanges) {
+          pendingUnsavedExitActionRef.current = clearSelectionEffects;
+          setUnsavedExitModalOpen(true);
+          return;
+        }
         clearSelectionEffects();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [resultFilterOpen]);
+  }, [detailPanelEditMode, hasUnsavedDetailChanges, resultFilterOpen]);
 
   useEffect(() => {
     if (!resultFilterOpen) {
@@ -1515,10 +1780,21 @@ const FadditDrive: React.FC = () => {
       return;
     }
 
-    setFileQuery(itemId);
-    setActiveItemId(itemId);
-    setDetailPanelEditMode(false);
-    setDetailPanelOpen(true);
+    const openFilePanel = () => {
+      setFileQuery(itemId);
+      setActiveItemId(itemId);
+      setDetailPanelEditMode(false);
+      setDetailPanelOpen(true);
+      setHasUnsavedDetailChanges(false);
+    };
+
+    if (detailPanelEditMode && hasUnsavedDetailChanges) {
+      pendingUnsavedExitActionRef.current = openFilePanel;
+      setUnsavedExitModalOpen(true);
+      return;
+    }
+
+    openFilePanel();
   };
 
   const isWorksheetDriveItem = (item: Pick<DriveItem, 'nodeType' | 'badge'>) => {
@@ -1534,7 +1810,17 @@ const FadditDrive: React.FC = () => {
 
   const handleOpenWorksheetFromDrive = (item: Pick<DriveItem, 'id' | 'worksheetId'>) => {
     const targetWorksheetId = item.worksheetId || item.id;
-    navigate(`/faddit/worksheet/${targetWorksheetId}`);
+    const moveToWorksheet = () => {
+      navigate(`/faddit/worksheet/${targetWorksheetId}`);
+    };
+
+    if (detailPanelEditMode && hasUnsavedDetailChanges) {
+      pendingUnsavedExitActionRef.current = moveToWorksheet;
+      setUnsavedExitModalOpen(true);
+      return;
+    }
+
+    moveToWorksheet();
   };
 
   const handleFileCardDoubleClick = (itemId: string) => {
@@ -1547,11 +1833,22 @@ const FadditDrive: React.FC = () => {
   };
 
   const handleOpenFileEditPanel = (itemId: string) => {
-    keepNextDetailEditModeRef.current = true;
-    setFileQuery(itemId);
-    setActiveItemId(itemId);
-    setDetailPanelEditMode(true);
-    setDetailPanelOpen(true);
+    const openEditPanel = () => {
+      keepNextDetailEditModeRef.current = true;
+      setFileQuery(itemId);
+      setActiveItemId(itemId);
+      setDetailPanelEditMode(true);
+      setDetailPanelOpen(true);
+      setHasUnsavedDetailChanges(false);
+    };
+
+    if (detailPanelEditMode && hasUnsavedDetailChanges) {
+      pendingUnsavedExitActionRef.current = openEditPanel;
+      setUnsavedExitModalOpen(true);
+      return;
+    }
+
+    openEditPanel();
   };
 
   const handleBulkDelete = async () => {
@@ -1643,7 +1940,16 @@ const FadditDrive: React.FC = () => {
     }
 
     const effectiveRoot = rootFolderId || rootFolderFromAuth || '';
-    const sourceParentId = getItemParentId(moveSourceId) || currentFolderId || effectiveRoot;
+    const sourceFolderParentId = driveFolders.find(
+      (folder) => folder.id === moveSourceId,
+    )?.parentId;
+    const sourceFileParentId = items.find((item) => item.id === moveSourceId)?.parentId;
+    const sourceParentId =
+      getItemParentId(moveSourceId) ||
+      sourceFolderParentId ||
+      sourceFileParentId ||
+      currentFolderId ||
+      effectiveRoot;
 
     if (
       !sourceParentId ||
@@ -1714,18 +2020,21 @@ const FadditDrive: React.FC = () => {
     if (!renameFolderId || !nextName) {
       return;
     }
+    const targetFolder = driveFolders.find((folder) => folder.id === renameFolderId);
 
     try {
       await updateDriveItems({
         id: [renameFolderId],
         name: nextName,
       });
+      renameSidebarItem(renameFolderId, nextName);
       setRenameDialogOpen(false);
-      await refreshDrive();
+      await refreshCurrentView();
+      await syncDriveLayoutAfterRecentRename(renameFolderId, targetFolder?.parentId ?? null);
     } catch (error) {
       console.error('Failed to rename folder from kebab menu', error);
       setRenameDialogOpen(false);
-      await refreshDrive();
+      await refreshCurrentView();
     }
   };
 
@@ -1820,7 +2129,7 @@ const FadditDrive: React.FC = () => {
         id: folder.id,
         kind: 'folder' as const,
         title: folder.name,
-        date: `${folder.updatedAt} ${folder.updatedBy}`,
+        date: `${formatKoreanDateTime(folder.updatedAt)} ${folder.updatedBy}`.trim(),
         size: '—',
         isStarred: folder.isStarred,
       })),
@@ -1876,10 +2185,21 @@ const FadditDrive: React.FC = () => {
       if (isMultiSelectGesture(event)) {
         return;
       }
-      setFileQuery(entry.id);
-      setActiveItemId(entry.id);
-      setDetailPanelEditMode(false);
-      setDetailPanelOpen(true);
+      const openListFile = () => {
+        setFileQuery(entry.id);
+        setActiveItemId(entry.id);
+        setDetailPanelEditMode(false);
+        setDetailPanelOpen(true);
+        setHasUnsavedDetailChanges(false);
+      };
+
+      if (detailPanelEditMode && hasUnsavedDetailChanges) {
+        pendingUnsavedExitActionRef.current = openListFile;
+        setUnsavedExitModalOpen(true);
+        return;
+      }
+
+      openListFile();
       return;
     }
 
@@ -1906,13 +2226,27 @@ const FadditDrive: React.FC = () => {
   };
 
   const handleCloseDetailPanel = () => {
-    lastTrackedViewFileIdRef.current = '';
-    setDetailPanelEditMode(false);
-    setDetailPanelOpen(false);
-    setFileQuery(null);
+    const closePanel = () => {
+      lastTrackedViewFileIdRef.current = '';
+      setDetailPanelEditMode(false);
+      setDetailPanelOpen(false);
+      setFileQuery(null);
+      setHasUnsavedDetailChanges(false);
+    };
+
+    if (detailPanelEditMode && hasUnsavedDetailChanges) {
+      pendingUnsavedExitActionRef.current = closePanel;
+      setUnsavedExitModalOpen(true);
+      return;
+    }
+
+    closePanel();
   };
 
   const handleEditAttributeChange = (key: string, value: unknown) => {
+    if (detailPanelEditMode) {
+      setHasUnsavedDetailChanges(true);
+    }
     setEditAttributes((prev) => ({
       ...prev,
       [key]: value,
@@ -1920,6 +2254,9 @@ const FadditDrive: React.FC = () => {
   };
 
   const handleDropEditImageFile = (nextFile: File | null) => {
+    if (detailPanelEditMode) {
+      setHasUnsavedDetailChanges(true);
+    }
     setEditImageFile(nextFile);
     setEditImageDragging(false);
   };
@@ -1937,20 +2274,66 @@ const FadditDrive: React.FC = () => {
     try {
       setDetailSaveLoading(true);
       let hasEdited = false;
+      let hasFileNameChanged = false;
       if (trimmedName !== activeItem.title) {
         await updateDriveItems({ id: [activeItem.id], name: trimmedName });
+        renameSidebarItem(activeItem.id, trimmedName);
         hasEdited = true;
+        hasFileNameChanged = true;
       }
 
       if (primaryActiveMaterial) {
+        const primaryAttributes = primaryActiveMaterial.attributes || {};
+        const fieldDefByKey = new Map(
+          editMaterialFieldDefs
+            .filter((fieldDef) => fieldDef.input_type !== 'group')
+            .map((fieldDef) => [fieldDef.field_key, fieldDef]),
+        );
+
         const nextAttributes: Record<string, unknown> = {};
         editableAttributeKeys.forEach((key) => {
-          nextAttributes[key] = editAttributes[key];
+          const fieldDef = fieldDefByKey.get(key);
+          const value = editAttributes[key];
+          const hasPrevious = Object.prototype.hasOwnProperty.call(primaryAttributes, key);
+
+          if (fieldDef) {
+            if (hasMeaningfulEditValue(fieldDef, value)) {
+              nextAttributes[key] = value;
+              return;
+            }
+          } else if (value !== '' && value !== null && value !== undefined) {
+            nextAttributes[key] = value;
+            return;
+          }
+
+          if (hasPrevious) {
+            nextAttributes[key] = null;
+          }
         });
 
-        const hasAttributeChange = Object.entries(nextAttributes).some(
-          ([key, value]) => value !== (primaryActiveMaterial.attributes || {})[key],
-        );
+        const nextCompared = { ...primaryAttributes, ...nextAttributes };
+        Object.keys(nextCompared).forEach((key) => {
+          const value = nextCompared[key];
+          if (value === '' || value === null || value === undefined) {
+            delete nextCompared[key];
+          }
+        });
+
+        const primaryCompared = { ...primaryAttributes };
+        Object.keys(primaryCompared).forEach((key) => {
+          const value = primaryCompared[key];
+          if (value === '' || value === null || value === undefined) {
+            delete primaryCompared[key];
+          }
+        });
+
+        const compareKeys = new Set([
+          ...Object.keys(primaryCompared),
+          ...Object.keys(nextCompared),
+        ]);
+        const hasAttributeChange = Array.from(compareKeys).some((key) => {
+          return JSON.stringify(primaryCompared[key]) !== JSON.stringify(nextCompared[key]);
+        });
         const normalizedImageUrl = editImageFile
           ? await fileToDataUrl(editImageFile)
           : editImageUrl;
@@ -1980,6 +2363,7 @@ const FadditDrive: React.FC = () => {
       }
 
       if (hasEdited) {
+        markRecentTrackDebug(activeItem.id, 'file_edit');
         await trackDriveRecentActivity({
           userId,
           fileSystemId: activeItem.id,
@@ -1987,15 +2371,19 @@ const FadditDrive: React.FC = () => {
         });
       }
 
-      await refreshDrive();
+      await refreshCurrentView();
+      if (hasFileNameChanged) {
+        await syncDriveLayoutAfterRecentRename(activeItem.id, activeItem.parentId ?? null);
+      }
       if (primaryActiveMaterial) {
         const nextMaterials = await getMaterialsByFileSystem(activeItem.id, userId);
         setMaterialsForFile(activeItem.id, nextMaterials);
       }
+      setHasUnsavedDetailChanges(false);
       setDetailPanelEditMode(false);
     } catch (error) {
       console.error('Failed to save file edit changes', error);
-      await refreshDrive();
+      await refreshCurrentView();
     } finally {
       setDetailSaveLoading(false);
     }
@@ -2052,10 +2440,106 @@ const FadditDrive: React.FC = () => {
     setSearchParams(next);
   };
 
+  const refreshCurrentView = async () => {
+    if (!isRecentMode) {
+      await refreshDrive();
+      return;
+    }
+
+    const recentData = await getDriveRecent();
+    markRecentDocsDebug(recentData);
+    const folders = recentData.folders
+      .filter((node) => node.type === 'folder' && !node.isRoot)
+      .map((node) => ({
+        id: node.fileSystemId,
+        name: node.name,
+        shared: false,
+        updatedAt: node.recentCreatedAt || node.updatedAt || '',
+        updatedBy: '',
+        parentId: node.parentId,
+        isStarred: node.isStarred,
+      }));
+
+    const files = await Promise.all(
+      recentData.files
+        .filter((node) => node.type !== 'folder')
+        .map(async (node) => {
+          const previewUrl = isImageFile(node.mimetype)
+            ? await getDriveFilePreviewUrl(node.fileSystemId).catch(() => '')
+            : '';
+
+          return {
+            id: node.fileSystemId,
+            worksheetId: node.worksheetId,
+            nodeType: node.type,
+            imageSrc: previewUrl || ChildClothImage,
+            imageAlt: node.name,
+            title: node.name,
+            subtitle: formatDriveItemSubtitle(node.mimetype),
+            badge: node.tag ? String(node.tag) : '파일',
+            isStarred: node.isStarred,
+            owner: node.creatorName || undefined,
+            ownerProfileImg: node.creatorProfileImg || undefined,
+            recentActionType: node.recentActionType,
+            recentActorName: node.recentActorName || undefined,
+            date: formatKoreanDateTime(node.recentCreatedAt || node.updatedAt),
+            size: formatBytes(node.size),
+            parentId: node.parentId,
+            sourcePath: node.path,
+            stateStoreKey: 'Drive.recent.items',
+          } as DriveItem;
+        }),
+    );
+
+    setCurrentFolderLocation(null, '', '');
+    setDriveFolders(folders);
+    setItems(files);
+
+    const fileSystemIds = recentData.files
+      .filter((node) => node.type !== 'folder')
+      .map((node) => node.fileSystemId);
+    if (!userId) {
+      clearMaterialsForFiles(fileSystemIds);
+    } else {
+      await Promise.all(
+        fileSystemIds.map(async (fileSystemId) => {
+          try {
+            const materials = await getMaterialsByFileSystem(fileSystemId, userId);
+            setMaterialsForFile(fileSystemId, materials);
+          } catch {
+            setMaterialsForFile(fileSystemId, []);
+          }
+        }),
+      );
+    }
+  };
+
+  const syncDriveLayoutAfterRecentRename = async (
+    targetId: string,
+    knownParentId?: string | null,
+  ) => {
+    if (!isRecentMode) {
+      return;
+    }
+
+    const effectiveRootFolderId = rootFolderId || rootFolderFromAuth;
+    if (effectiveRootFolderId) {
+      await hydrateDrive(effectiveRootFolderId);
+    }
+
+    const parentId = knownParentId ?? getItemParentId(targetId);
+    if (parentId) {
+      await loadFolderChildren(parentId).catch((error) => {
+        console.error('Failed to refresh parent folder after recent rename', error);
+      });
+    }
+  };
+
   const handleCreateFolder = async (folderName: string) => {
     try {
       setIsCreatingFolder(true);
       await createFolder(folderName);
+      await refreshCurrentView();
     } catch (error) {
       console.error('Failed to create folder', error);
     } finally {
@@ -2116,7 +2600,7 @@ const FadditDrive: React.FC = () => {
         attributes: value.attributes,
       });
 
-      await refreshDrive();
+      await refreshCurrentView();
     } catch (error) {
       console.error('Failed to create material', error);
     } finally {
@@ -2148,7 +2632,7 @@ const FadditDrive: React.FC = () => {
       });
 
       const worksheetId = created.worksheetId || created.worksheet_id;
-      await refreshDrive();
+      await refreshCurrentView();
 
       if (worksheetId) {
         navigate(`/faddit/worksheet/${worksheetId}`);
@@ -2276,6 +2760,12 @@ const FadditDrive: React.FC = () => {
       }
     }
 
+    if (detailPanelEditMode && hasUnsavedDetailChanges) {
+      pendingUnsavedExitActionRef.current = clearSelectionEffects;
+      setUnsavedExitModalOpen(true);
+      return;
+    }
+
     clearSelectionEffects();
   };
 
@@ -2288,7 +2778,9 @@ const FadditDrive: React.FC = () => {
     ? getDisplayImageSrc(activeItem.id, activeItem.imageSrc)
     : '';
   const activeAttributeEntries = primaryActiveMaterial
-    ? Object.entries(primaryActiveMaterial.attributes || {})
+    ? Object.entries(primaryActiveMaterial.attributes || {}).filter(
+        ([key]) => !MATERIAL_TOP_FIELDS.has(key),
+      )
     : [];
 
   const visibleEditMaterialFieldDefs = useMemo(
@@ -2333,29 +2825,38 @@ const FadditDrive: React.FC = () => {
     const value = editAttributes[key];
 
     if (!fieldDef) {
+      const normalized = formatAttributeValue(value, key);
       return (
         <input
           type='text'
-          value={String(value ?? '')}
+          value={normalized === '-' ? '' : normalized}
           onChange={(event) => handleEditAttributeChange(key, event.target.value)}
           className='form-input w-full'
-          placeholder={key}
         />
       );
     }
 
     if (fieldDef.input_type === 'number') {
-      return (
+      const unitText = formatUnitForDisplay(String(fieldDef.unit ?? '').trim());
+      const inputElement = (
         <input
           type='text'
           inputMode='decimal'
-          value={formatNumberWithCommas(typeof value === 'number' ? value : undefined)}
-          onChange={(event) =>
-            handleEditAttributeChange(key, parseFormattedNumber(event.target.value) ?? '')
-          }
+          value={getNumericInputValue(value)}
+          onChange={(event) => handleEditAttributeChange(key, event.target.value)}
           className='form-input w-full'
-          placeholder={key}
         />
+      );
+
+      if (!unitText) {
+        return inputElement;
+      }
+
+      return (
+        <div className='flex items-center gap-2'>
+          <div className='min-w-0 flex-1'>{inputElement}</div>
+          <span className='text-sm text-gray-500 dark:text-gray-400'>{unitText}</span>
+        </div>
       );
     }
 
@@ -2388,7 +2889,6 @@ const FadditDrive: React.FC = () => {
             <input
               type='text'
               className='form-input w-full'
-              placeholder='기타 입력'
               value={optionValue.customText ?? ''}
               onChange={(event) =>
                 handleEditAttributeChange(key, {
@@ -2416,11 +2916,11 @@ const FadditDrive: React.FC = () => {
               type='text'
               inputMode='decimal'
               className='form-input col-span-2 w-full'
-              value={formatNumberWithCommas(numberWithUnit.value)}
+              value={getNumericInputValue(numberWithUnit.value)}
               onChange={(event) =>
                 handleEditAttributeChange(key, {
                   ...numberWithUnit,
-                  value: parseFormattedNumber(event.target.value),
+                  value: event.target.value,
                 })
               }
             />
@@ -2436,7 +2936,7 @@ const FadditDrive: React.FC = () => {
             >
               {units.map((unit) => (
                 <option key={unit} value={unit}>
-                  {unit}
+                  {formatUnitForDisplay(unit)}
                 </option>
               ))}
             </select>
@@ -2464,12 +2964,11 @@ const FadditDrive: React.FC = () => {
             type='text'
             inputMode='decimal'
             className='form-input w-full'
-            placeholder={firstLabel}
-            value={formatNumberWithCommas(pair.first)}
+            value={getNumericInputValue(pair.first)}
             onChange={(event) =>
               handleEditAttributeChange(key, {
                 ...pair,
-                first: parseFormattedNumber(event.target.value),
+                first: event.target.value,
               })
             }
           />
@@ -2477,11 +2976,10 @@ const FadditDrive: React.FC = () => {
             type='text'
             inputMode={pairKind === 'price_quantity' ? undefined : 'decimal'}
             className='form-input w-full'
-            placeholder={secondLabel}
             value={
               pairKind === 'price_quantity'
                 ? String(pair.second ?? '')
-                : formatNumberWithCommas(pair.second as number | undefined)
+                : getNumericInputValue(pair.second)
             }
             onChange={(event) =>
               handleEditAttributeChange(key, {
@@ -2489,7 +2987,7 @@ const FadditDrive: React.FC = () => {
                 second:
                   pairKind === 'price_quantity'
                     ? event.target.value
-                    : parseFormattedNumber(event.target.value),
+                    : event.target.value,
               })
             }
           />
@@ -2497,14 +2995,26 @@ const FadditDrive: React.FC = () => {
       );
     }
 
-    return (
+    const unitText = formatUnitForDisplay(String(fieldDef.unit ?? '').trim());
+    const normalized = formatAttributeValue(value, key);
+    const inputElement = (
       <input
         type='text'
-        value={String(value ?? '')}
+        value={normalized === '-' ? '' : normalized}
         onChange={(event) => handleEditAttributeChange(key, event.target.value)}
         className='form-input w-full'
-        placeholder={key}
       />
+    );
+
+    if (!unitText) {
+      return inputElement;
+    }
+
+    return (
+      <div className='flex items-center gap-2'>
+        <div className='min-w-0 flex-1'>{inputElement}</div>
+        <span className='text-sm text-gray-500 dark:text-gray-400'>{unitText}</span>
+      </div>
     );
   };
 
@@ -2517,7 +3027,7 @@ const FadditDrive: React.FC = () => {
   const fileSkeletonCount = detailPanelOpen ? 6 : 8;
 
   useEffect(() => {
-    if (!detailPanelEditMode || !primaryActiveMaterial) {
+    if (!primaryActiveMaterial) {
       setEditMaterialFieldDefs([]);
       return;
     }
@@ -2532,7 +3042,7 @@ const FadditDrive: React.FC = () => {
         setEditMaterialFieldDefs(defs);
       })
       .catch((error) => {
-        console.error('Failed to load material field defs in edit panel', error);
+        console.error('Failed to load material field defs in detail panel', error);
         if (!cancelled) {
           setEditMaterialFieldDefs([]);
         }
@@ -2546,7 +3056,7 @@ const FadditDrive: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [detailPanelEditMode, primaryActiveMaterial]);
+  }, [primaryActiveMaterial]);
 
   useEffect(() => {
     if (!editImageFile) {
@@ -2577,6 +3087,7 @@ const FadditDrive: React.FC = () => {
     setEditImageUrl(primaryActiveMaterial?.image_url || '');
     setEditImageFile(null);
     setEditImageDragging(false);
+    setHasUnsavedDetailChanges(false);
     setEditAttributes(() => {
       const next: Record<string, unknown> = {};
       if (!primaryActiveMaterial) {
@@ -2597,6 +3108,52 @@ const FadditDrive: React.FC = () => {
     primaryActiveMaterial?.origin_country,
     primaryActiveMaterial?.image_url,
   ]);
+
+  const handleConfirmDiscardUnsavedChanges = () => {
+    const pendingAction = pendingUnsavedExitActionRef.current;
+    pendingUnsavedExitActionRef.current = null;
+    setUnsavedExitModalOpen(false);
+    setHasUnsavedDetailChanges(false);
+    pendingAction?.();
+  };
+
+  const handleCancelDiscardUnsavedChanges = () => {
+    pendingUnsavedExitActionRef.current = null;
+    setUnsavedExitModalOpen(false);
+  };
+
+  const handleCancelFileEdits = () => {
+    const exitEditMode = () => {
+      setDetailPanelEditMode(false);
+      setHasUnsavedDetailChanges(false);
+    };
+
+    if (detailPanelEditMode && hasUnsavedDetailChanges) {
+      pendingUnsavedExitActionRef.current = exitEditMode;
+      setUnsavedExitModalOpen(true);
+      return;
+    }
+
+    exitEditMode();
+  };
+
+  const navigateToWorkspaceRoot = () => {
+    const goRoot = () => {
+      if (effectiveRootFolderId) {
+        navigateToFolder(effectiveRootFolderId);
+        return;
+      }
+      navigate('/faddit/drive');
+    };
+
+    if (detailPanelEditMode && hasUnsavedDetailChanges) {
+      pendingUnsavedExitActionRef.current = goRoot;
+      setUnsavedExitModalOpen(true);
+      return;
+    }
+
+    goRoot();
+  };
 
   useEffect(() => {
     if (!detailPanelEditMode || editMaterialFieldDefs.length === 0) {
@@ -2641,7 +3198,10 @@ const FadditDrive: React.FC = () => {
                 <input
                   type='text'
                   value={editFileName}
-                  onChange={(event) => setEditFileName(event.target.value)}
+                  onChange={(event) => {
+                    setHasUnsavedDetailChanges(true);
+                    setEditFileName(event.target.value);
+                  }}
                   className='form-input w-full'
                   placeholder='파일 이름'
                 />
@@ -2649,28 +3209,40 @@ const FadditDrive: React.FC = () => {
                   <input
                     type='text'
                     value={editCodeInternal}
-                    onChange={(event) => setEditCodeInternal(event.target.value)}
+                    onChange={(event) => {
+                      setHasUnsavedDetailChanges(true);
+                      setEditCodeInternal(event.target.value);
+                    }}
                     className='form-input w-full'
                     placeholder='코드(내부)'
                   />
                   <input
                     type='text'
                     value={editVendorName}
-                    onChange={(event) => setEditVendorName(event.target.value)}
+                    onChange={(event) => {
+                      setHasUnsavedDetailChanges(true);
+                      setEditVendorName(event.target.value);
+                    }}
                     className='form-input w-full'
                     placeholder='업체명'
                   />
                   <input
                     type='text'
                     value={editItemName}
-                    onChange={(event) => setEditItemName(event.target.value)}
+                    onChange={(event) => {
+                      setHasUnsavedDetailChanges(true);
+                      setEditItemName(event.target.value);
+                    }}
                     className='form-input w-full'
                     placeholder='원단품명'
                   />
                   <input
                     type='text'
                     value={editOriginCountry}
-                    onChange={(event) => setEditOriginCountry(event.target.value)}
+                    onChange={(event) => {
+                      setHasUnsavedDetailChanges(true);
+                      setEditOriginCountry(event.target.value);
+                    }}
                     className='form-input w-full'
                     placeholder='원산지'
                   />
@@ -2682,7 +3254,7 @@ const FadditDrive: React.FC = () => {
               </h2>
             )}
             <p className='text-sm text-gray-500 dark:text-gray-400'>
-              {activeItem.subtitle || 'file'} · {activeItem.size || '-'}
+              {formatDriveItemSubtitle(activeItem.subtitle)} · {activeItem.size || '-'}
             </p>
           </div>
         </div>
@@ -2787,7 +3359,7 @@ const FadditDrive: React.FC = () => {
             <div className='mt-5 flex justify-end gap-2'>
               <button
                 type='button'
-                onClick={() => setDetailPanelEditMode(false)}
+                onClick={handleCancelFileEdits}
                 className='btn border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-200'
               >
                 취소
@@ -2820,7 +3392,13 @@ const FadditDrive: React.FC = () => {
               <div className='rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700/60 dark:bg-gray-800'>
                 <div className='text-xs text-gray-500 dark:text-gray-400'>폴더 경로</div>
                 <div className='mt-1 text-sm font-medium break-all text-gray-800 dark:text-gray-100'>
-                  {activeItem.sourcePath || '-'}
+                  {(() => {
+                    const rawPath = String(activeItem.sourcePath ?? '').trim();
+                    if (!rawPath || rawPath === '/' || rawPath === `/${activeItem.title}`) {
+                      return '내 워크스페이스';
+                    }
+                    return rawPath;
+                  })()}
                 </div>
               </div>
               <div className='rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700/60 dark:bg-gray-800'>
@@ -2880,7 +3458,16 @@ const FadditDrive: React.FC = () => {
                         {getAttributeLabel(key)}
                       </div>
                       <div className='text-right text-sm text-gray-800 dark:text-gray-100'>
-                        {formatAttributeValue(value, key)}
+                        {(() => {
+                          const formatted = formatAttributeValue(value, key);
+                          const unitText = formatUnitForDisplay(
+                            String(materialFieldDefByKey.get(key)?.unit ?? '').trim(),
+                          );
+                          if (!unitText || formatted === '-' || formatted.endsWith(unitText)) {
+                            return formatted;
+                          }
+                          return `${formatted} ${unitText}`;
+                        })()}
                       </div>
                     </div>
                   ))}
@@ -3015,13 +3602,7 @@ const FadditDrive: React.FC = () => {
                   <div className='mt-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-600 dark:text-gray-300'>
                     <button
                       type='button'
-                      onClick={() =>
-                        navigate(
-                          effectiveRootFolderId
-                            ? `/faddit/drive/${effectiveRootFolderId}`
-                            : '/faddit/drive',
-                        )
-                      }
+                      onClick={navigateToWorkspaceRoot}
                       className='rounded px-1.5 py-0.5 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-100'
                     >
                       내 워크스페이스
@@ -3035,7 +3616,7 @@ const FadditDrive: React.FC = () => {
                           {breadcrumbId ? (
                             <button
                               type='button'
-                              onClick={() => navigate(`/faddit/drive/${breadcrumbId}`)}
+                              onClick={() => navigateToFolder(breadcrumbId)}
                               className='rounded px-1.5 py-0.5 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-100'
                             >
                               {part}
@@ -3313,16 +3894,20 @@ const FadditDrive: React.FC = () => {
 
                           const recentActionLabel =
                             !isRecentMode && item.recentActionType && item.recentActorName
-                              ? item.recentActionType === 'file_edit'
-                                ? `${item.recentActorName}이 수정하셨습니다`
-                                : `${item.recentActorName}이 열람했습니다`
+                              ? item.recentActionType === 'file_create'
+                                ? `${item.recentActorName}이 생성하셨습니다`
+                                : item.recentActionType === 'file_edit'
+                                  ? `${item.recentActorName}이 수정하셨습니다`
+                                  : `${item.recentActorName}이 열람했습니다`
                               : undefined;
 
                           const creatorDisplayName =
                             isRecentMode && item.recentActionType
-                              ? item.recentActionType === 'file_edit'
-                                ? '내가 수정함'
-                                : '내가 열어본 항목'
+                              ? item.recentActionType === 'file_create'
+                                ? '내가 생성함'
+                                : item.recentActionType === 'file_edit'
+                                  ? '내가 수정함'
+                                  : '내가 열어본 항목'
                               : item.owner || currentUserName;
                           return (
                             <DriveItemCard
@@ -3700,6 +4285,12 @@ const FadditDrive: React.FC = () => {
           </div>
         </div>
       ) : null}
+
+      <UnsavedExitConfirmModal
+        open={unsavedExitModalOpen}
+        onCancel={handleCancelDiscardUnsavedChanges}
+        onConfirm={handleConfirmDiscardUnsavedChanges}
+      />
 
       <CreateFolderModal
         modalOpen={createFolderModalOpen}

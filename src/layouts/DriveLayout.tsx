@@ -66,10 +66,15 @@ const DriveLayoutContent: React.FC = () => {
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [favoriteToastOpen, setFavoriteToastOpen] = useState(false);
   const [favoriteMessage, setFavoriteMessage] = useState('즐겨찾기가 완료되었습니다');
+  const [moveToastOpen, setMoveToastOpen] = useState(false);
+  const [moveMessage, setMoveMessage] = useState('홈으로 이동되었습니다');
   const {
     activeDragItem,
     setActiveDragItem,
     items,
+    driveFolders,
+    workspaces,
+    favorites,
     rootFolderId,
     currentFolderId,
     hydrateDrive,
@@ -79,16 +84,18 @@ const DriveLayoutContent: React.FC = () => {
     setSidebarAutoOpenFolderId,
   } = useDrive();
   const rootFolderFromAuth = useAuthStore((state) => state.user?.rootFolder);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const isSessionBootstrapped = useAuthStore((state) => state.isSessionBootstrapped);
 
   useEffect(() => {
-    if (!rootFolderFromAuth) {
+    if (!isSessionBootstrapped || !isAuthenticated || !rootFolderFromAuth) {
       return;
     }
 
     hydrateDrive(rootFolderFromAuth).catch((error) => {
       console.error('Failed to hydrate drive', error);
     });
-  }, [rootFolderFromAuth, hydrateDrive]);
+  }, [hydrateDrive, isAuthenticated, isSessionBootstrapped, rootFolderFromAuth]);
 
   useEffect(() => {
     if (!favoriteToastOpen) {
@@ -101,6 +108,18 @@ const DriveLayoutContent: React.FC = () => {
 
     return () => window.clearTimeout(timer);
   }, [favoriteToastOpen]);
+
+  useEffect(() => {
+    if (!moveToastOpen) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setMoveToastOpen(false);
+    }, 5000);
+
+    return () => window.clearTimeout(timer);
+  }, [moveToastOpen]);
 
   const sensors = useSensors(
     useSensor(MouseSensor, {
@@ -229,6 +248,58 @@ const DriveLayoutContent: React.FC = () => {
             : sidebarFolderTargetId
           : targetId;
 
+    type NamedTreeNode = {
+      id: string;
+      name: string;
+      children?: NamedTreeNode[];
+    };
+
+    const findNodeName = (nodes: NamedTreeNode[], id: string): string => {
+      for (const node of nodes) {
+        if (node.id === id) {
+          return node.name;
+        }
+
+        if (node.children?.length) {
+          const childName = findNodeName(node.children, id);
+          if (childName) {
+            return childName;
+          }
+        }
+      }
+
+      return '';
+    };
+
+    const resolveTargetFolderName = (): string => {
+      if (
+        isWorkspaceRootTarget ||
+        targetId === 'drive-root-container' ||
+        normalizedTargetId === rootFolderId
+      ) {
+        return '홈';
+      }
+
+      const targetFromCurrentFolder = driveFolders.find(
+        (folder) => folder.id === normalizedTargetId,
+      )?.name;
+      if (targetFromCurrentFolder) {
+        return targetFromCurrentFolder;
+      }
+
+      const targetFromWorkspace = findNodeName(workspaces, normalizedTargetId);
+      if (targetFromWorkspace) {
+        return targetFromWorkspace;
+      }
+
+      const targetFromFavorite = findNodeName(favorites, normalizedTargetId);
+      if (targetFromFavorite) {
+        return targetFromFavorite;
+      }
+
+      return '선택한 폴더';
+    };
+
     const resolveSourceParentId = (itemId: string, fallbackParentId?: string | null) =>
       getItemParentId(itemId) || fallbackParentId || rootFolderId;
 
@@ -251,7 +322,10 @@ const DriveLayoutContent: React.FC = () => {
       return false;
     };
 
-    const isFolderDescendantByPath = async (candidateFolderId: string, ancestorFolderId: string) => {
+    const isFolderDescendantByPath = async (
+      candidateFolderId: string,
+      ancestorFolderId: string,
+    ) => {
       try {
         const folderData = await getDriveAll(candidateFolderId);
         const idPath = typeof folderData.idPath === 'string' ? folderData.idPath : '';
@@ -287,6 +361,7 @@ const DriveLayoutContent: React.FC = () => {
 
     try {
       if (activeType === 'sidebar-item') {
+        let hasMoved = false;
         const activeId = active.id.toString();
         const draggedSidebarItemType = String(active.data.current?.itemType || 'file');
         const sourceParentIdFromDrag =
@@ -320,6 +395,7 @@ const DriveLayoutContent: React.FC = () => {
             }
 
             await moveItems([activeId], normalizedTargetId, sourceParentId);
+            hasMoved = true;
             if (isFolderDropTarget) {
               setSidebarAutoOpenFolderId(normalizedTargetId);
             }
@@ -335,11 +411,18 @@ const DriveLayoutContent: React.FC = () => {
           }
         }
 
+        if (hasMoved) {
+          const destinationName = resolveTargetFolderName();
+          setMoveMessage(`${destinationName}으로 이동되었습니다`);
+          setMoveToastOpen(true);
+        }
+
         setActiveDragItem(null);
         return;
       }
 
       if (activeType === 'drive-item' || activeType === 'drive-folder') {
+        let hasMoved = false;
         const selectedEntries =
           (active.data.current?.selectedEntries as
             | Array<{ id: string; type: 'file' | 'folder'; name: string }>
@@ -402,11 +485,18 @@ const DriveLayoutContent: React.FC = () => {
 
           for (const [sourceParentId, ids] of groupedBySource.entries()) {
             await moveItems(ids, moveTargetFolderId, sourceParentId);
+            hasMoved = true;
           }
 
           if (isFolderDropTarget) {
             setSidebarAutoOpenFolderId(moveTargetFolderId);
           }
+        }
+
+        if (hasMoved) {
+          const destinationName = resolveTargetFolderName();
+          setMoveMessage(`${destinationName}으로 이동되었습니다`);
+          setMoveToastOpen(true);
         }
       }
     } catch (error) {
@@ -454,6 +544,18 @@ const DriveLayoutContent: React.FC = () => {
         <div className='mb-1 font-medium text-gray-800 dark:text-gray-100'>즐겨찾기</div>
         <div>
           <span>{favoriteMessage}</span>
+        </div>
+      </Notification>
+      <Notification
+        type='warning'
+        open={moveToastOpen}
+        setOpen={setMoveToastOpen}
+        showAction={false}
+        className='fixed right-4 bottom-4 z-50'
+      >
+        <div className='mb-1 font-medium text-gray-800 dark:text-gray-100'>폴더 이동</div>
+        <div>
+          <span>{moveMessage}</span>
         </div>
       </Notification>
       <DragOverlay modifiers={[cursorTopLeftModifier]}>

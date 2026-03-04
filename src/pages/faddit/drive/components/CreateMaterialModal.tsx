@@ -7,8 +7,8 @@ import {
 } from '../../../../lib/api/materialApi';
 
 type DimensionValue = {
-  width?: number;
-  height?: number;
+  width?: number | string;
+  height?: number | string;
   unit: 'cm' | 'inch';
 };
 
@@ -18,12 +18,12 @@ type OptionWithOtherValue = {
 };
 
 type NumberWithOptionValue = {
-  value?: number;
+  value?: number | string;
   unit: string;
 };
 
 type NumberPairValue = {
-  first?: number;
+  first?: number | string;
   second?: number | string;
 };
 
@@ -159,20 +159,53 @@ const formatNumberWithCommas = (value?: number) => {
   return value.toLocaleString('en-US');
 };
 
-const parseFormattedNumber = (raw: string) => {
-  const normalized = raw.replace(/,/g, '').trim();
-  if (!normalized) return undefined;
-  const parsed = Number(normalized);
-  return Number.isNaN(parsed) ? undefined : parsed;
+const toNumberOrUndefined = (value: unknown) => {
+  if (typeof value === 'number' && !Number.isNaN(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value.replace(/,/g, ''));
+    return Number.isNaN(parsed) ? undefined : parsed;
+  }
+  return undefined;
 };
+
+const getNumericInputValue = (value: unknown) => {
+  if (typeof value === 'number') {
+    return formatNumberWithCommas(value);
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  return '';
+};
+
+const formatUnitForDisplay = (unit: string) =>
+  unit.replace(/\^(\d+)/g, (_, exponent: string) => {
+    const superscriptDigits: Record<string, string> = {
+      '0': '⁰',
+      '1': '¹',
+      '2': '²',
+      '3': '³',
+      '4': '⁴',
+      '5': '⁵',
+      '6': '⁶',
+      '7': '⁷',
+      '8': '⁸',
+      '9': '⁹',
+    };
+
+    return exponent
+      .split('')
+      .map((digit) => superscriptDigits[digit] ?? digit)
+      .join('');
+  });
 
 const formatDualLengthText = (value: unknown) => {
   if (typeof value !== 'object' || value === null) return null;
   const payload = value as { value_cm?: unknown; value_inch?: unknown; value?: unknown; unit?: unknown };
-  let cm = typeof payload.value_cm === 'number' ? payload.value_cm : undefined;
-  let inch = typeof payload.value_inch === 'number' ? payload.value_inch : undefined;
+  let cm = toNumberOrUndefined(payload.value_cm);
+  let inch = toNumberOrUndefined(payload.value_inch);
 
-  const numeric = typeof payload.value === 'number' ? payload.value : undefined;
+  const numeric = toNumberOrUndefined(payload.value);
   const unit = String(payload.unit ?? '');
   if (numeric !== undefined && unit === 'cm') {
     cm = numeric;
@@ -210,7 +243,7 @@ const hasMeaningfulValue = (fieldDef: MaterialFieldDef, value: unknown) => {
   if (fieldDef.input_type === 'number_with_option') {
     if (typeof value === 'object' && value !== null) {
       const numberValue = (value as { value?: unknown }).value;
-      return typeof numberValue === 'number' && !Number.isNaN(numberValue);
+      return toNumberOrUndefined(numberValue) !== undefined;
     }
     return false;
   }
@@ -221,9 +254,9 @@ const hasMeaningfulValue = (fieldDef: MaterialFieldDef, value: unknown) => {
       const second = (value as { second?: unknown }).second;
       const pairKind = getNumberPairKind(fieldDef);
       if (pairKind === 'price_quantity') {
-        return typeof first === 'number' && String(second ?? '').trim() !== '';
+        return toNumberOrUndefined(first) !== undefined && String(second ?? '').trim() !== '';
       }
-      return typeof first === 'number' && typeof second === 'number';
+      return toNumberOrUndefined(first) !== undefined && toNumberOrUndefined(second) !== undefined;
     }
     return false;
   }
@@ -381,11 +414,11 @@ const CreateMaterialModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit }
             inputMode='decimal'
             className='form-input w-full'
             placeholder='가로'
-            value={formatNumberWithCommas(dimension.width)}
+            value={getNumericInputValue(dimension.width)}
             onChange={(event) =>
               handleFieldValueChange(fieldDef.field_key, {
                 ...dimension,
-                width: parseFormattedNumber(event.target.value),
+                width: event.target.value,
               })
             }
           />
@@ -394,11 +427,11 @@ const CreateMaterialModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit }
             inputMode='decimal'
             className='form-input w-full'
             placeholder='세로'
-            value={formatNumberWithCommas(dimension.height)}
+            value={getNumericInputValue(dimension.height)}
             onChange={(event) =>
               handleFieldValueChange(fieldDef.field_key, {
                 ...dimension,
-                height: parseFormattedNumber(event.target.value),
+                height: event.target.value,
               })
             }
           />
@@ -445,11 +478,11 @@ const CreateMaterialModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit }
               type='text'
               inputMode='decimal'
               className='form-input col-span-2 w-full'
-              value={formatNumberWithCommas(numberWithUnit.value)}
+              value={getNumericInputValue(numberWithUnit.value)}
               onChange={(event) =>
                 handleFieldValueChange(fieldDef.field_key, {
                   ...numberWithUnit,
-                  value: parseFormattedNumber(event.target.value),
+                  value: event.target.value,
                 } as NumberWithOptionValue)
               }
             />
@@ -465,7 +498,7 @@ const CreateMaterialModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit }
             >
               {unitOptions.map((unit) => (
                 <option key={unit} value={unit}>
-                  {unit}
+                  {formatUnitForDisplay(unit)}
                 </option>
               ))}
             </select>
@@ -489,11 +522,11 @@ const CreateMaterialModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit }
             inputMode='decimal'
             className='form-input w-full'
             placeholder={firstLabel}
-            value={formatNumberWithCommas(pairValue.first)}
+            value={getNumericInputValue(pairValue.first)}
             onChange={(event) =>
               handleFieldValueChange(fieldDef.field_key, {
                 ...pairValue,
-                first: parseFormattedNumber(event.target.value),
+                first: event.target.value,
               } as NumberPairValue)
             }
           />
@@ -505,7 +538,7 @@ const CreateMaterialModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit }
             value={
               pairKind === 'price_quantity'
                 ? String(pairValue.second ?? '')
-                : formatNumberWithCommas(pairValue.second)
+                : getNumericInputValue(pairValue.second)
             }
             onChange={(event) =>
               handleFieldValueChange(fieldDef.field_key, {
@@ -513,7 +546,7 @@ const CreateMaterialModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit }
                 second:
                   pairKind === 'price_quantity'
                     ? event.target.value
-                    : parseFormattedNumber(event.target.value),
+                    : event.target.value,
               } as NumberPairValue)
             }
           />
@@ -522,7 +555,8 @@ const CreateMaterialModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit }
     }
 
     const isNumber = fieldDef.input_type === 'number';
-    return (
+    const unitText = formatUnitForDisplay(String(fieldDef.unit ?? '').trim());
+    const inputElement = (
       <input
         id={`field-${fieldDef.field_key}`}
         type='text'
@@ -530,18 +564,27 @@ const CreateMaterialModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit }
         className='form-input w-full'
         value={
           isNumber
-            ? formatNumberWithCommas(typeof value === 'number' ? value : undefined)
+            ? getNumericInputValue(value)
             : String(value ?? '')
         }
         onChange={(event) =>
           handleFieldValueChange(
             fieldDef.field_key,
-            isNumber
-              ? parseFormattedNumber(event.target.value) ?? ''
-              : event.target.value,
+            isNumber ? event.target.value : event.target.value,
           )
         }
       />
+    );
+
+    if (!unitText) {
+      return inputElement;
+    }
+
+    return (
+      <div className='flex items-center gap-2'>
+        <div className='min-w-0 flex-1'>{inputElement}</div>
+        <span className='text-sm text-gray-500 dark:text-gray-400'>{unitText}</span>
+      </div>
     );
   };
 

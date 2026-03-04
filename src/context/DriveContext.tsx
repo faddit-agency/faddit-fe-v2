@@ -12,6 +12,7 @@ import {
 import ChildClothImage from '../images/faddit/childcloth.png';
 import { useAuthStore } from '../store/useAuthStore';
 import { getMaterialsByFileSystem } from '../lib/api/materialApi';
+import { formatKoreanDateTime } from '../lib/dateTime';
 import { useDriveStore } from '../store/useDriveStore';
 
 export interface DriveItem {
@@ -26,7 +27,7 @@ export interface DriveItem {
   isStarred?: boolean;
   owner?: string;
   ownerProfileImg?: string;
-  recentActionType?: 'file_view' | 'file_edit';
+  recentActionType?: 'file_view' | 'file_edit' | 'file_create';
   recentActorName?: string;
   date?: string;
   size?: string;
@@ -80,11 +81,7 @@ interface DriveContextType {
   currentFolderId: string | null;
   currentFolderPath: string;
   currentFolderIdPath: string;
-  setCurrentFolderLocation: (
-    folderId: string | null,
-    path: string,
-    idPath: string,
-  ) => void;
+  setCurrentFolderLocation: (folderId: string | null, path: string, idPath: string) => void;
   hydrateDrive: (rootFolderId: string) => Promise<void>;
   refreshDrive: () => Promise<void>;
   loadFolderView: (folderId: string) => Promise<void>;
@@ -93,6 +90,7 @@ interface DriveContextType {
   restoreItems: (ids: string[]) => Promise<void>;
   moveItems: (ids: string[], targetFolderId: string, currentFolderId: string) => Promise<void>;
   setItemsStarred: (ids: string[], isStarred: boolean) => Promise<void>;
+  renameSidebarItem: (id: string, name: string) => void;
   getItemParentId: (itemId: string) => string | null;
   loadFolderChildren: (folderId: string) => Promise<void>;
   setSidebarAutoOpenFolderId: (folderId: string | null) => void;
@@ -289,6 +287,41 @@ const moveNodesWithRootSupport = (
   return dedupeSidebarNodesById([...withoutMoved, ...rootInserted]);
 };
 
+const renameSidebarNodeInTree = (
+  nodes: SidebarItem[],
+  targetId: string,
+  nextName: string,
+): SidebarItem[] => {
+  let changed = false;
+
+  const nextNodes = nodes.map((node) => {
+    let nextNode = node;
+
+    if (node.children?.length) {
+      const nextChildren = renameSidebarNodeInTree(node.children, targetId, nextName);
+      if (nextChildren !== node.children) {
+        nextNode = {
+          ...nextNode,
+          children: nextChildren,
+        };
+        changed = true;
+      }
+    }
+
+    if (node.id === targetId && node.name !== nextName) {
+      nextNode = {
+        ...nextNode,
+        name: nextName,
+      };
+      changed = true;
+    }
+
+    return nextNode;
+  });
+
+  return changed ? nextNodes : nodes;
+};
+
 const formatBytes = (value?: number) => {
   if (!value || Number.isNaN(value)) {
     return '-';
@@ -309,6 +342,37 @@ const formatBytes = (value?: number) => {
   return `${next.toFixed(next >= 10 ? 0 : 1)} ${units[index]}`;
 };
 
+const isImageFile = (extension?: string) => {
+  if (!extension) {
+    return false;
+  }
+
+  const value = extension.toLowerCase().trim();
+  if (value.startsWith('image/')) {
+    return true;
+  }
+  const normalized = value.replace(/^\./, '');
+  return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(normalized);
+};
+
+const formatDriveItemSubtitle = (extension?: string) => {
+  const raw = String(extension ?? '').trim();
+  const normalized = raw.replace(/^\./, '').toLowerCase();
+  if (!normalized) {
+    return 'file';
+  }
+  if (isImageFile(normalized)) {
+    return '이미지 파일';
+  }
+  if (normalized === '이미지 파일' || normalized === 'file') {
+    return normalized;
+  }
+  if (!/^[a-z0-9]+$/.test(normalized)) {
+    return raw.replace(/^\./, '');
+  }
+  return `.${normalized}`;
+};
+
 const toDriveItem = (node: DriveNode, imageSrc: string): DriveItem => ({
   id: node.fileSystemId,
   worksheetId: node.worksheetId,
@@ -316,28 +380,19 @@ const toDriveItem = (node: DriveNode, imageSrc: string): DriveItem => ({
   imageSrc,
   imageAlt: node.name,
   title: node.name,
-  subtitle: node.mimetype ? `.${node.mimetype}` : 'file',
+  subtitle: formatDriveItemSubtitle(node.mimetype),
   badge: node.tag ? String(node.tag) : '파일',
   isStarred: node.isStarred,
   owner: node.creatorName || undefined,
   ownerProfileImg: node.creatorProfileImg || undefined,
   recentActionType: node.recentActionType,
   recentActorName: node.recentActorName || undefined,
-  date: node.updatedAt ? String(node.updatedAt).slice(0, 10) : '-',
+  date: formatKoreanDateTime(node.updatedAt),
   size: formatBytes(node.size),
   parentId: node.parentId,
   sourcePath: node.path,
   stateStoreKey: 'DriveContext.items',
 });
-
-const isImageFile = (extension?: string) => {
-  if (!extension) {
-    return false;
-  }
-
-  const value = extension.toLowerCase();
-  return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(value);
-};
 
 export const DriveProvider = ({ children }: { children: ReactNode }) => {
   const userId = useAuthStore((state) => state.user?.userId);
@@ -575,8 +630,12 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
         ...childData.files.map(toSidebarFile),
       ];
 
-      setWorkspaces((prev) => replaceChildrenInTree(prev, folderId, children));
-      setFavorites((prev) => replaceChildrenInTree(prev, folderId, children));
+      if (rootFolderId && folderId === rootFolderId) {
+        setWorkspaces((prev) => mergeSidebarNodesPreservingLoadedDescendants(prev, children));
+      } else {
+        setWorkspaces((prev) => replaceChildrenInTree(prev, folderId, children));
+        setFavorites((prev) => replaceChildrenInTree(prev, folderId, children));
+      }
       setItemParentMap((prev) => {
         const next = { ...prev };
         childData.folders.forEach((folder) => {
@@ -588,7 +647,7 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
         return next;
       });
     },
-    [replaceChildrenInTree],
+    [replaceChildrenInTree, rootFolderId],
   );
 
   const moveItems = useCallback(
@@ -798,6 +857,30 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
     [refreshDrive],
   );
 
+  const renameSidebarItem = useCallback((id: string, name: string) => {
+    const nextName = name.trim();
+    if (!id || !nextName) {
+      return;
+    }
+
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              title: nextName,
+              imageAlt: nextName,
+            }
+          : item,
+      ),
+    );
+    setDriveFolders((prev) =>
+      prev.map((folder) => (folder.id === id ? { ...folder, name: nextName } : folder)),
+    );
+    setWorkspaces((prev) => renameSidebarNodeInTree(prev, id, nextName));
+    setFavorites((prev) => renameSidebarNodeInTree(prev, id, nextName));
+  }, []);
+
   const getItemParentId = useCallback(
     (itemId: string) => {
       if (itemId in itemParentMap) {
@@ -841,6 +924,7 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
       restoreItems,
       moveItems,
       setItemsStarred,
+      renameSidebarItem,
       getItemParentId,
       loadFolderChildren,
       setSidebarAutoOpenFolderId,
@@ -865,6 +949,7 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
       restoreItems,
       moveItems,
       setItemsStarred,
+      renameSidebarItem,
       getItemParentId,
       loadFolderChildren,
     ],
