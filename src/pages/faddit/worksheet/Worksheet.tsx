@@ -229,6 +229,20 @@ const Worksheet: React.FC = () => {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      const isSaveShortcut =
+        (event.ctrlKey || event.metaKey) &&
+        !event.altKey &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === 's';
+
+      if (isSaveShortcut) {
+        event.preventDefault();
+        if (!event.repeat && !isSaving) {
+          void handleSave();
+        }
+        return;
+      }
+
       if (event.key !== 'Escape') {
         return;
       }
@@ -242,11 +256,11 @@ const Worksheet: React.FC = () => {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [activeTab, setActiveCard, blurActiveEditableElement]);
+  }, [activeTab, setActiveCard, blurActiveEditableElement, handleSave, isSaving]);
 
   return (
     <div
-      className='worksheet-pointer-scope flex h-screen w-screen gap-2 overflow-hidden bg-[#f9f9f9] p-2'
+      className='worksheet-pointer-scope flex h-screen w-screen gap-2 overflow-hidden bg-[#fafafa] p-2'
       data-worksheet-id={worksheetId || ''}
       onMouseDownCapture={handleRootMouseDownCapture}
     >

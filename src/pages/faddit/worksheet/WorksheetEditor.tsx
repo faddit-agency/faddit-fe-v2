@@ -193,13 +193,41 @@ const WorksheetEditor: React.FC = () => {
     };
   }, [autosaveEnabled, worksheetId, userId, hasUnsavedChanges, isInitialLoading, isSaving, saveEditorDocument]);
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isSaveShortcut =
+        (event.ctrlKey || event.metaKey) &&
+        !event.altKey &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === 's';
+
+      if (!isSaveShortcut) {
+        return;
+      }
+
+      event.preventDefault();
+
+      if (event.repeat || isSaving || isInitialLoading || !worksheetId || !userId) {
+        return;
+      }
+
+      void saveEditorDocument(editorDocRef.current);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [worksheetId, userId, isInitialLoading, isSaving, saveEditorDocument]);
+
   const topbarUnsaved = useMemo(
     () => hasUnsavedChanges && !isInitialLoading,
     [hasUnsavedChanges, isInitialLoading],
   );
 
   return (
-    <div className='worksheet-pointer-scope flex h-screen w-screen gap-2 overflow-hidden bg-[var(--worksheet-common-bg)] p-2'>
+    <div className='worksheet-pointer-scope flex h-screen w-screen gap-2 overflow-hidden bg-[#fafafa] p-2'>
       <CanvasProvider>
         <div className='h-full shrink-0'>
           <WorksheetToolbox />
