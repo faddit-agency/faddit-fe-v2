@@ -812,7 +812,6 @@ export const useWorksheetStore = create<WorksheetState>()(
 
         try {
           const parsed = JSON.parse(uiInfoRaw) as {
-            activeTab?: MenuTab;
             tabLayouts?: TabLayoutsMap;
             cardVisibility?: CardVisibilityMap;
             sizeSpecUnit?: SizeSpecDisplayUnit;
@@ -854,7 +853,6 @@ export const useWorksheetStore = create<WorksheetState>()(
             }
 
             return {
-              activeTab: parsed.activeTab ?? state.activeTab,
               tabLayouts: normalizedLayouts,
               cardVisibility: nextCardVisibility,
               customCards: nextCustomCards,

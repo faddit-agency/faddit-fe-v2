@@ -95,7 +95,6 @@ const Worksheet: React.FC = () => {
     (document: WorksheetEditorDocument): Record<string, unknown> => {
       const state = useWorksheetStore.getState();
       return {
-        activeTab: state.activeTab,
         tabLayouts: state.tabLayouts,
         cardVisibility: state.cardVisibility,
         sizeSpecUnit: state.sizeSpecUnit,
