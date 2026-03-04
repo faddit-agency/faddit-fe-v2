@@ -10,7 +10,7 @@ import type {
   WorksheetElementItem,
   WorksheetCostState,
   WorksheetModuleSheetState,
-} from './worksheetV2Types';
+} from './worksheetTypes';
 import {
   CARD_DEFINITIONS,
   GRID_CONFIG,
@@ -19,7 +19,7 @@ import {
   LABEL_SHEET_STATE,
   TRIM_SHEET_STATE,
   COLOR_SIZE_QTY_STATE,
-} from './worksheetV2Constants';
+} from './worksheetConstants';
 
 const WORKSHEET_TABS: MenuTab[] = ['diagram', 'basic', 'size', 'cost'];
 const GRID_FILL_ROWS = GRID_CONFIG.cols;
@@ -289,7 +289,7 @@ function buildInitialModuleSheetStates(): Record<string, WorksheetModuleSheetSta
   };
 }
 
-interface WorksheetV2State {
+interface WorksheetState {
   activeTab: MenuTab;
   tabLayouts: TabLayoutsMap;
   cardVisibility: CardVisibilityMap;
@@ -338,7 +338,7 @@ interface WorksheetV2State {
   hydrateWorksheetUiInfo: (uiInfoRaw: string | null | undefined) => void;
 }
 
-export const useWorksheetV2Store = create<WorksheetV2State>()(
+export const useWorksheetStore = create<WorksheetState>()(
   devtools(
     (set) => ({
       activeTab: 'diagram',
@@ -908,6 +908,6 @@ export const useWorksheetV2Store = create<WorksheetV2State>()(
         }
       },
     }),
-    { name: 'worksheet-v2-store' },
+    { name: 'worksheet-store' },
   ),
 );

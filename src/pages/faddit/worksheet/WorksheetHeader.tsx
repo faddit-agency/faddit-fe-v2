@@ -1,9 +1,9 @@
 import { CloudCheck, CloudOff, Loader2, Play } from 'lucide-react';
-import WorksheetTopBar from '../worksheet/WorksheetTopBar';
-import { useWorksheetV2Store } from './useWorksheetV2Store';
-import { MENU_TABS } from './worksheetV2Constants';
+import WorksheetTopBar from './WorksheetTopBar';
+import { useWorksheetStore } from './useWorksheetStore';
+import { MENU_TABS } from './worksheetConstants';
 
-type WorksheetV2HeaderProps = {
+type WorksheetHeaderProps = {
   onSave: () => void;
   isSaving: boolean;
   hasUnsavedChanges: boolean;
@@ -11,18 +11,18 @@ type WorksheetV2HeaderProps = {
   saveSuccessAt: number | null;
 };
 
-export default function WorksheetV2Header({
+export default function WorksheetHeader({
   onSave,
   isSaving,
   hasUnsavedChanges,
   saveError,
   saveSuccessAt,
-}: WorksheetV2HeaderProps) {
-  const activeTab = useWorksheetV2Store((s) => s.activeTab);
-  const setActiveTab = useWorksheetV2Store((s) => s.setActiveTab);
-  const worksheetTitle = useWorksheetV2Store((s) => s.worksheetTitle);
-  const isLoadingWorksheet = useWorksheetV2Store((s) => s.isLoadingWorksheet);
-  const worksheetLoadError = useWorksheetV2Store((s) => s.worksheetLoadError);
+}: WorksheetHeaderProps) {
+  const activeTab = useWorksheetStore((s) => s.activeTab);
+  const setActiveTab = useWorksheetStore((s) => s.setActiveTab);
+  const worksheetTitle = useWorksheetStore((s) => s.worksheetTitle);
+  const isLoadingWorksheet = useWorksheetStore((s) => s.isLoadingWorksheet);
+  const worksheetLoadError = useWorksheetStore((s) => s.worksheetLoadError);
 
   const saveStatus = isSaving
     ? {

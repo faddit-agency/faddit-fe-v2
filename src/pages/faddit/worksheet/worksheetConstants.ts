@@ -1,4 +1,4 @@
-import type { MenuTab, MenuTabConfig, CardDefinition } from './worksheetV2Types';
+import type { MenuTab, MenuTabConfig, CardDefinition } from './worksheetTypes';
 
 export const MENU_TABS: MenuTabConfig[] = [
   { key: 'diagram', label: '도식화 & 패턴' },

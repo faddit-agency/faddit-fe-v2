@@ -1,5 +1,5 @@
 import type { DriveUploadTag } from '../../../lib/api/driveApi';
-import type { WorksheetElementCategory } from '../worksheet-v2/worksheetV2Types';
+import type { WorksheetElementCategory } from './worksheetTypes';
 
 export const getWorksheetElementFolderName = (worksheetId: string) => `worksheet-elements-${worksheetId}`;
 

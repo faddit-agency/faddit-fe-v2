@@ -5,12 +5,12 @@ import { ChevronLeft, ChevronRight, LogIn } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import 'react-grid-layout/css/styles.css';
 
-import { useWorksheetV2Store } from './useWorksheetV2Store';
-import { CARD_DEFINITIONS, GRID_CONFIG } from './worksheetV2Constants';
-import WorksheetV2GridCard from './WorksheetV2GridCard';
+import { useWorksheetStore } from './useWorksheetStore';
+import { CARD_DEFINITIONS, GRID_CONFIG } from './worksheetConstants';
+import WorksheetGridCard from './WorksheetGridCard';
 import WorksheetCostView from './WorksheetCostView';
-import WorksheetSizeSpecView from '../worksheet/WorksheetSizeSpecView';
-import WorksheetNoticeEditor from '../worksheet/WorksheetNoticeEditor';
+import WorksheetSizeSpecView from './WorksheetSizeSpecView';
+import WorksheetNoticeEditor from './WorksheetNoticeEditor';
 import DropdownButton from '../../../components/atoms/DropdownButton';
 import {
   LABEL_SHEET_STATE,
@@ -19,18 +19,18 @@ import {
   SIZE_UNIT_OPTIONS,
   FABRIC_INFO_STATE,
   RIB_FABRIC_INFO_STATE,
-} from './worksheetV2Constants';
+} from './worksheetConstants';
 import {
   WORKSHEET_ELEMENT_CATEGORIES,
   type CardDefinition,
   type WorksheetElementCategory,
   type WorksheetElementItem,
   type WorksheetModuleSheetState,
-} from './worksheetV2Types';
+} from './worksheetTypes';
 import type {
   WorksheetEditorDocument,
   WorksheetEditorPage,
-} from '../worksheet/worksheetEditorSchema';
+} from './worksheetEditorSchema';
 import {
   createDriveFile,
   createDriveFolder,
@@ -43,7 +43,7 @@ import {
   mapWorksheetElementCategoryToUploadTag,
   normalizeWorksheetElementUploadFile,
   WORKSHEET_ELEMENT_UPLOAD_REFRESH_EVENT,
-} from '../worksheet/worksheetElementUploadUtils';
+} from './worksheetElementUploadUtils';
 
 const WORKSHEET_MODULE_DRAG_TYPE = 'application/x-faddit-worksheet-card';
 const WORKSHEET_ELEMENT_DRAG_TYPE = 'application/x-faddit-worksheet-element';
@@ -324,7 +324,7 @@ function DiagramPlaceholder({
 
       <div
         ref={stripScrollRef}
-        className='worksheet-v2-no-drag shrink-0 overflow-x-auto overflow-y-hidden px-4 pb-3'
+        className='worksheet-no-drag shrink-0 overflow-x-auto overflow-y-hidden px-4 pb-3'
       >
         <div className='flex w-max min-w-full items-center justify-start gap-3 py-1 pr-1 pl-0.5 lg:justify-center'>
           {sheets.map((sheet, index) => {
@@ -426,8 +426,8 @@ function CustomWebEditorCell({
 }
 
 function SizeSpecUnitSelector() {
-  const sizeSpecUnit = useWorksheetV2Store((s) => s.sizeSpecUnit);
-  const setSizeSpecUnit = useWorksheetV2Store((s) => s.setSizeSpecUnit);
+  const sizeSpecUnit = useWorksheetStore((s) => s.sizeSpecUnit);
+  const setSizeSpecUnit = useWorksheetStore((s) => s.setSizeSpecUnit);
   const label = sizeSpecUnit === 'inch' ? 'inch/단면' : 'cm/단면';
 
   return (
@@ -484,7 +484,7 @@ function CardBodyRenderer({
   onConsumeRowValuePatch: (rowIndex: number) => void;
 }) {
   const cardId = card.id;
-  const sizeSpecUnit = useWorksheetV2Store((s) => s.sizeSpecUnit);
+  const sizeSpecUnit = useWorksheetStore((s) => s.sizeSpecUnit);
 
   switch (cardId) {
     case 'diagram-view':
@@ -638,7 +638,7 @@ function CardBodyRenderer({
   }
 }
 
-export default function WorksheetV2GridContent({
+export default function WorksheetGridContent({
   editorDocument,
 }: {
   editorDocument: WorksheetEditorDocument;
@@ -649,28 +649,28 @@ export default function WorksheetV2GridContent({
   const userId = useAuthStore((state) => state.user?.userId || null);
   const rootFolderId = useAuthStore((state) => state.user?.rootFolder || null);
 
-  const activeTab = useWorksheetV2Store((s) => s.activeTab);
-  const tabLayouts = useWorksheetV2Store((s) => s.tabLayouts);
-  const cardVisibility = useWorksheetV2Store((s) => s.cardVisibility);
-  const activeCardIdByTab = useWorksheetV2Store((s) => s.activeCardIdByTab);
-  const customCards = useWorksheetV2Store((s) => s.customCards);
-  const customCardContent = useWorksheetV2Store((s) => s.customCardContent);
-  const moduleElements = useWorksheetV2Store((s) => s.moduleElements);
-  const moduleSheetStates = useWorksheetV2Store((s) => s.moduleSheetStates);
-  const draggingCardId = useWorksheetV2Store((s) => s.draggingCardId);
-  const draggingElement = useWorksheetV2Store((s) => s.draggingElement);
-  const updateLayout = useWorksheetV2Store((s) => s.updateLayout);
-  const removeCard = useWorksheetV2Store((s) => s.removeCard);
-  const showCardAt = useWorksheetV2Store((s) => s.showCardAt);
-  const updateCustomCardContent = useWorksheetV2Store((s) => s.updateCustomCardContent);
-  const addElementToModule = useWorksheetV2Store((s) => s.addElementToModule);
-  const setElementAtModuleRow = useWorksheetV2Store((s) => s.setElementAtModuleRow);
-  const removeElementAtModuleRow = useWorksheetV2Store((s) => s.removeElementAtModuleRow);
-  const moveElementModuleRow = useWorksheetV2Store((s) => s.moveElementModuleRow);
-  const setDraggingCardId = useWorksheetV2Store((s) => s.setDraggingCardId);
-  const setDraggingElement = useWorksheetV2Store((s) => s.setDraggingElement);
-  const setActiveCard = useWorksheetV2Store((s) => s.setActiveCard);
-  const setModuleSheetState = useWorksheetV2Store((s) => s.setModuleSheetState);
+  const activeTab = useWorksheetStore((s) => s.activeTab);
+  const tabLayouts = useWorksheetStore((s) => s.tabLayouts);
+  const cardVisibility = useWorksheetStore((s) => s.cardVisibility);
+  const activeCardIdByTab = useWorksheetStore((s) => s.activeCardIdByTab);
+  const customCards = useWorksheetStore((s) => s.customCards);
+  const customCardContent = useWorksheetStore((s) => s.customCardContent);
+  const moduleElements = useWorksheetStore((s) => s.moduleElements);
+  const moduleSheetStates = useWorksheetStore((s) => s.moduleSheetStates);
+  const draggingCardId = useWorksheetStore((s) => s.draggingCardId);
+  const draggingElement = useWorksheetStore((s) => s.draggingElement);
+  const updateLayout = useWorksheetStore((s) => s.updateLayout);
+  const removeCard = useWorksheetStore((s) => s.removeCard);
+  const showCardAt = useWorksheetStore((s) => s.showCardAt);
+  const updateCustomCardContent = useWorksheetStore((s) => s.updateCustomCardContent);
+  const addElementToModule = useWorksheetStore((s) => s.addElementToModule);
+  const setElementAtModuleRow = useWorksheetStore((s) => s.setElementAtModuleRow);
+  const removeElementAtModuleRow = useWorksheetStore((s) => s.removeElementAtModuleRow);
+  const moveElementModuleRow = useWorksheetStore((s) => s.moveElementModuleRow);
+  const setDraggingCardId = useWorksheetStore((s) => s.setDraggingCardId);
+  const setDraggingElement = useWorksheetStore((s) => s.setDraggingElement);
+  const setActiveCard = useWorksheetStore((s) => s.setActiveCard);
+  const setModuleSheetState = useWorksheetStore((s) => s.setModuleSheetState);
 
   const [isInteracting, setIsInteracting] = useState(false);
   const [pendingLayout, setPendingLayout] = useState<LayoutItem[] | null>(null);
@@ -1132,7 +1132,7 @@ export default function WorksheetV2GridContent({
             };
 
             return (
-              <WorksheetV2GridCard
+              <WorksheetGridCard
                 cardId={card.id}
                 title={card.title}
                 headerExtra={card.id === 'size-spec' ? <SizeSpecUnitSelector /> : undefined}
@@ -1144,7 +1144,7 @@ export default function WorksheetV2GridContent({
                         event.stopPropagation();
                         handleEnterEditMode();
                       }}
-                      className='worksheet-v2-no-drag inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-zinc-700'
+                      className='worksheet-no-drag inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-zinc-700'
                     >
                       <LogIn size={14} className='shrink-0 translate-y-[0.5px]' />
                       Edit Mode
@@ -1242,7 +1242,7 @@ export default function WorksheetV2GridContent({
                     <div className='pointer-events-none absolute inset-2 rounded-md border-2 border-dashed border-violet-400 bg-violet-100/30' />
                   ) : null}
                 </div>
-              </WorksheetV2GridCard>
+              </WorksheetGridCard>
             );
           })()}
         </div>
@@ -1362,8 +1362,8 @@ export default function WorksheetV2GridContent({
           }}
           dragConfig={{
             enabled: true,
-            handle: '.worksheet-v2-drag-handle',
-            cancel: '.worksheet-v2-no-drag',
+            handle: '.worksheet-drag-handle',
+            cancel: '.worksheet-no-drag',
           }}
           resizeConfig={{
             enabled: true,

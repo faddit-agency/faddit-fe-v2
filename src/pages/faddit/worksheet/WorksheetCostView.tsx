@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { ChevronDown, WandSparkles } from 'lucide-react';
 
-import { useWorksheetV2Store } from './useWorksheetV2Store';
+import { useWorksheetStore } from './useWorksheetStore';
 
 type MaterialSectionKey = 'fabric' | 'label' | 'trim';
 
@@ -63,12 +63,12 @@ const getUsageQuantity = (cardId: string, row: string[] | undefined) => {
 };
 
 export default function WorksheetCostView() {
-  const worksheetTitle = useWorksheetV2Store((s) => s.worksheetTitle);
-  const moduleElements = useWorksheetV2Store((s) => s.moduleElements);
-  const moduleSheetStates = useWorksheetV2Store((s) => s.moduleSheetStates);
-  const costState = useWorksheetV2Store((s) => s.costState);
-  const setCostElementUnitPrice = useWorksheetV2Store((s) => s.setCostElementUnitPrice);
-  const setCostProcessingUnitCost = useWorksheetV2Store((s) => s.setCostProcessingUnitCost);
+  const worksheetTitle = useWorksheetStore((s) => s.worksheetTitle);
+  const moduleElements = useWorksheetStore((s) => s.moduleElements);
+  const moduleSheetStates = useWorksheetStore((s) => s.moduleSheetStates);
+  const costState = useWorksheetStore((s) => s.costState);
+  const setCostElementUnitPrice = useWorksheetStore((s) => s.setCostElementUnitPrice);
+  const setCostProcessingUnitCost = useWorksheetStore((s) => s.setCostProcessingUnitCost);
 
   const colorSizeState = moduleSheetStates['color-size-qty'];
   const totalProductionQty = useMemo(() => {

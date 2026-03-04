@@ -30,9 +30,9 @@ import {
   type DriveNode,
 } from '../../../lib/api/driveApi';
 import { useAuthStore } from '../../../store/useAuthStore';
-import { useWorksheetV2Store } from '../worksheet-v2/useWorksheetV2Store';
-import { CARD_DEFINITIONS } from '../worksheet-v2/worksheetV2Constants';
-import type { WorksheetElementCategory, WorksheetElementItem } from '../worksheet-v2/worksheetV2Types';
+import { useWorksheetStore } from './useWorksheetStore';
+import { CARD_DEFINITIONS } from './worksheetConstants';
+import type { WorksheetElementCategory, WorksheetElementItem } from './worksheetTypes';
 import {
   getWorksheetElementFolderName,
   isWorksheetElementCategory,
@@ -271,16 +271,16 @@ export default function WorksheetTemplateSidebar({
   const elementCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const elementDetailPanelRef = useRef<HTMLDivElement | null>(null);
 
-  const worksheetActiveTab = useWorksheetV2Store((s) => s.activeTab);
-  const cardVisibility = useWorksheetV2Store((s) => s.cardVisibility);
-  const toggleCardVisibility = useWorksheetV2Store((s) => s.toggleCardVisibility);
-  const restoreCard = useWorksheetV2Store((s) => s.restoreCard);
-  const addCustomCard = useWorksheetV2Store((s) => s.addCustomCard);
-  const updateCustomCardTitle = useWorksheetV2Store((s) => s.updateCustomCardTitle);
-  const deleteCustomCard = useWorksheetV2Store((s) => s.deleteCustomCard);
-  const customCards = useWorksheetV2Store((s) => s.customCards);
-  const setDraggingCardId = useWorksheetV2Store((s) => s.setDraggingCardId);
-  const setDraggingElement = useWorksheetV2Store((s) => s.setDraggingElement);
+  const worksheetActiveTab = useWorksheetStore((s) => s.activeTab);
+  const cardVisibility = useWorksheetStore((s) => s.cardVisibility);
+  const toggleCardVisibility = useWorksheetStore((s) => s.toggleCardVisibility);
+  const restoreCard = useWorksheetStore((s) => s.restoreCard);
+  const addCustomCard = useWorksheetStore((s) => s.addCustomCard);
+  const updateCustomCardTitle = useWorksheetStore((s) => s.updateCustomCardTitle);
+  const deleteCustomCard = useWorksheetStore((s) => s.deleteCustomCard);
+  const customCards = useWorksheetStore((s) => s.customCards);
+  const setDraggingCardId = useWorksheetStore((s) => s.setDraggingCardId);
+  const setDraggingElement = useWorksheetStore((s) => s.setDraggingElement);
   const userId = useAuthStore((state) => state.user?.userId || null);
   const rootFolderId = useAuthStore((state) => state.user?.rootFolder || null);
 
