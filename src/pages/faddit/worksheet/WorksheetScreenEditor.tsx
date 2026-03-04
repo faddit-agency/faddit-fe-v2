@@ -1,21 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, GripVertical, Plus, Trash2 } from 'lucide-react';
-import { useWorksheetV2Store } from './useWorksheetV2Store';
-import { CARD_DEFINITIONS } from './worksheetV2Constants';
+import { useWorksheetStore } from './useWorksheetStore';
+import { CARD_DEFINITIONS } from './worksheetConstants';
 
-export default function WorksheetV2ScreenEditor() {
+export default function WorksheetScreenEditor() {
   const [open, setOpen] = useState(false);
   const [dragCardId, setDragCardId] = useState<string | null>(null);
   const [customTitle, setCustomTitle] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const activeTab = useWorksheetV2Store((s) => s.activeTab);
-  const cardVisibility = useWorksheetV2Store((s) => s.cardVisibility);
-  const toggleCardVisibility = useWorksheetV2Store((s) => s.toggleCardVisibility);
-  const restoreCard = useWorksheetV2Store((s) => s.restoreCard);
-  const addCustomCard = useWorksheetV2Store((s) => s.addCustomCard);
-  const deleteCustomCard = useWorksheetV2Store((s) => s.deleteCustomCard);
-  const customCards = useWorksheetV2Store((s) => s.customCards);
+  const activeTab = useWorksheetStore((s) => s.activeTab);
+  const cardVisibility = useWorksheetStore((s) => s.cardVisibility);
+  const toggleCardVisibility = useWorksheetStore((s) => s.toggleCardVisibility);
+  const restoreCard = useWorksheetStore((s) => s.restoreCard);
+  const addCustomCard = useWorksheetStore((s) => s.addCustomCard);
+  const deleteCustomCard = useWorksheetStore((s) => s.deleteCustomCard);
+  const customCards = useWorksheetStore((s) => s.customCards);
 
   const cards = [...CARD_DEFINITIONS[activeTab], ...customCards[activeTab]];
   const visMap = cardVisibility[activeTab];

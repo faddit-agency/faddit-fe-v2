@@ -60,6 +60,7 @@ export const getWorksheetDetail = async (worksheetId: string, userId?: string) =
 
 export type UpdateWorksheetPayload = {
   userId: string;
+  name?: string;
   ui_info_json?: string;
   accessory_json?: string;
   fabric_json?: string;
