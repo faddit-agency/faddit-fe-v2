@@ -365,8 +365,8 @@ export default function WorksheetToolbox() {
             ) : activePanelKey === 'layer' ? (
               <div className='flex min-h-0 flex-1 flex-col gap-y-3 overflow-hidden'>
                 <div className='shrink-0'>
-                  <p className='mb-1.5 text-[11px] font-semibold tracking-wider text-gray-400 uppercase'>
-                    Position
+                  <p className='mb-1.5 text-[11px] font-semibold text-gray-400'>
+                    정렬
                   </p>
                   <div className='grid grid-cols-6 gap-1'>
                     {ALIGN_BUTTONS.map(({ type, icon, title }) => (
@@ -382,8 +382,8 @@ export default function WorksheetToolbox() {
                 </div>
 
                 <div className='shrink-0'>
-                  <p className='mb-1.5 text-[11px] font-semibold tracking-wider text-gray-400 uppercase'>
-                    Pathfinder
+                  <p className='mb-1.5 text-[11px] font-semibold text-gray-400'>
+                    패스파인더
                   </p>
                   <div className='grid grid-cols-5 gap-1'>
                     {PATHFINDER_BUTTONS.map(({ op, title }) => (
@@ -401,8 +401,8 @@ export default function WorksheetToolbox() {
 
                 <div className='flex min-h-0 flex-1 flex-col overflow-hidden'>
                   <div className='mb-1.5 flex shrink-0 items-center gap-1'>
-                    <p className='flex-1 text-[11px] font-semibold tracking-wider text-gray-400 uppercase'>
-                      Layers
+                    <p className='flex-1 text-[11px] font-semibold text-gray-400'>
+                      레이어
                     </p>
                     <SidePanelTooltip title='그룹화 (Cmd/Ctrl+G)'>
                       <button

@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import WorksheetTemplateSidebar from './WorksheetTemplateSidebar';
 import WorksheetHeader from './WorksheetHeader';
 import WorksheetGridContent from './WorksheetGridContent';
-import { getWorksheetDetail, saveWorksheetUiInfo } from '../../../lib/api/worksheetApi';
+import { getWorksheetDetail, saveWorksheetUiInfo, updateWorksheet } from '../../../lib/api/worksheetApi';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { useWorksheetStore } from './useWorksheetStore';
 import {
@@ -150,6 +150,36 @@ const Worksheet: React.FC = () => {
     }
   }, [worksheetId, userId, blurActiveEditableElement, buildSavePayload]);
 
+  const handleRenameTitle = useCallback(
+    async (nextTitle: string) => {
+      if (!worksheetId || !userId) {
+        return false;
+      }
+
+      const normalizedTitle = nextTitle.trim();
+      if (!normalizedTitle) {
+        return false;
+      }
+
+      const currentTitle = useWorksheetStore.getState().worksheetTitle;
+      if (normalizedTitle === currentTitle) {
+        return true;
+      }
+
+      try {
+        await updateWorksheet(worksheetId, {
+          userId,
+          name: normalizedTitle,
+        });
+        setWorksheetTitle(normalizedTitle);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [worksheetId, userId, setWorksheetTitle],
+  );
+
   useEffect(() => {
     editorDocumentRef.current = editorDocument;
     syncUnsavedState();
@@ -269,6 +299,8 @@ const Worksheet: React.FC = () => {
       <main className='flex min-w-0 flex-1 flex-col gap-y-6 p-4'>
         <WorksheetHeader
           onSave={handleSave}
+          onRenameTitle={handleRenameTitle}
+          canRenameTitle={Boolean(worksheetId && userId)}
           isSaving={isSaving}
           hasUnsavedChanges={hasUnsavedChanges}
           saveError={saveError}
