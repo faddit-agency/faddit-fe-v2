@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import DropdownButton from '../../../../components/atoms/DropdownButton';
 import {
   getMaterialFieldDefs,
   MaterialCategory,
@@ -24,6 +25,27 @@ type NumberWithOptionValue = {
 type NumberPairValue = {
   first?: number | string;
   second?: number | string;
+};
+
+type CurrencyCode = string;
+
+type MoqFieldValue = {
+  value?: number | string;
+  unit?: string;
+  value_m?: number | string;
+  value_yd?: number | string;
+};
+
+type ProcessingFeeFieldValue = {
+  amount?: number | string;
+  currency?: CurrencyCode | string;
+};
+
+type CurrencyOption = {
+  code: CurrencyCode;
+  flag: string;
+  label: string;
+  symbol: string;
 };
 
 export type CreateMaterialFormValue = {
@@ -113,13 +135,220 @@ const TEMPLATE_TO_MATERIAL_CATEGORY: Partial<Record<TemplateKey, MaterialCategor
   trim: 'trim',
 };
 
+const DEFAULT_CURRENCY_CODE: CurrencyCode = 'KRW';
+const DEFAULT_CURRENCY_CODES: CurrencyCode[] = ['KRW', 'USD', 'EUR', 'JPY', 'CNY', 'GBP', 'VND'];
+const CURRENCY_META_BY_CODE: Record<string, Omit<CurrencyOption, 'code'>> = {
+  KRW: { flag: '🇰🇷', label: '원화', symbol: '₩' },
+  USD: { flag: '🇺🇸', label: '달러', symbol: '$' },
+  EUR: { flag: '🇪🇺', label: '유로', symbol: '€' },
+  JPY: { flag: '🇯🇵', label: '엔', symbol: '¥' },
+  CNY: { flag: '🇨🇳', label: '위안', symbol: '¥' },
+  GBP: { flag: '🇬🇧', label: '파운드', symbol: '£' },
+  VND: { flag: '🇻🇳', label: '동', symbol: '₫' },
+};
+
+const MOQ_UNITS_BY_CATEGORY: Partial<Record<MaterialCategory, string[]>> = {
+  fabric: ['m', 'yd'],
+  rib_fabric: ['m', 'yd'],
+  label: ['ea'],
+  trim: ['ea'],
+};
+
+const MATERIAL_FIELD_EXCLUSION_KEYS_BY_CATEGORY: Partial<Record<MaterialCategory, Set<string>>> = {
+  fabric: new Set(['color', 'pattern_total_area', 'marker_efficiency', 'yocheok', 'total_required_fabric']),
+  rib_fabric: new Set(['color', 'pattern_total_area', 'marker_efficiency', 'yocheok', 'total_required_fabric']),
+  label: new Set(['attach_position', 'usage_quantity', 'fabric_blend_ratio', 'manufacture_country', 'company_info']),
+  trim: new Set([
+    'attach_position',
+    'usage_quantity_per_garment',
+    'usage_length',
+    'color',
+    'cost_per_garment',
+    'total_trim_cost',
+  ]),
+};
+
+const MATERIAL_FIELD_EXCLUSION_LABEL_KEYWORDS_BY_CATEGORY: Partial<Record<MaterialCategory, string[]>> = {
+  fabric: ['컬러', '패턴총면적', '마커효율', '요척', '총필요원단량'],
+  rib_fabric: ['컬러', '패턴총면적', '마커효율', '요척', '총필요원단량'],
+  label: ['부착위치', '사용수량', '원단혼용률', '제조국', '기업정보'],
+  trim: ['부착위치', '사용수량1벌', '사용길이', '컬러', '1벌당자동원가개별', '총부자재원가'],
+};
+
+const MATERIAL_FIELD_DISPLAY_ORDER_BY_CATEGORY: Partial<Record<MaterialCategory, string[]>> = {
+  fabric: [
+    'code_internal',
+    'vendor_name',
+    'item_name',
+    'origin_country',
+    'material_position',
+    'weave',
+    'pattern',
+    'width',
+    'weight',
+    'blend_ratio',
+    'stretch',
+    'shrinkage_pct',
+    'processing',
+    'moq',
+    'price_per_unit',
+    'processing_fee',
+  ],
+  rib_fabric: [
+    'code_internal',
+    'vendor_name',
+    'item_name',
+    'origin_country',
+    'rib_type',
+    'width_type',
+    'weave',
+    'pattern',
+    'rib_spec',
+    'rib_direction',
+    'grain_direction',
+    'weight',
+    'blend_ratio',
+    'moq',
+    'price_per_unit',
+    'processing_fee',
+  ],
+  label: [
+    'code_internal',
+    'vendor_name',
+    'item_name',
+    'origin_country',
+    'type',
+    'material',
+    'size_spec',
+    'thickness_mm',
+    'finishing',
+    'print_method',
+    'color',
+    'moq',
+    'price_per_unit',
+    'processing_fee',
+  ],
+  trim: [
+    'code_internal',
+    'vendor_name',
+    'item_name',
+    'origin_country',
+    'type',
+    'material',
+    'size_spec',
+    'gauge_no',
+    'thickness_mm',
+    'finishing',
+    'post_processing',
+    'moq',
+    'price_per_unit',
+  ],
+};
+
+const normalizeFieldText = (value: string) => value.replace(/\s+/g, '').replace(/[()]/g, '').toLowerCase();
+
+const shouldExcludeMaterialField = (materialCategory: MaterialCategory, fieldDef: MaterialFieldDef) => {
+  const exclusionKeys = MATERIAL_FIELD_EXCLUSION_KEYS_BY_CATEGORY[materialCategory];
+  if (exclusionKeys?.has(fieldDef.field_key)) {
+    return true;
+  }
+
+  const labelKeywords = MATERIAL_FIELD_EXCLUSION_LABEL_KEYWORDS_BY_CATEGORY[materialCategory] ?? [];
+  if (labelKeywords.length === 0) {
+    return false;
+  }
+
+  const normalizedLabel = normalizeFieldText(fieldDef.label);
+  return labelKeywords.some((keyword) => normalizedLabel.includes(normalizeFieldText(keyword)));
+};
+
+const filterMaterialFieldDefs = (fieldDefs: MaterialFieldDef[], materialCategory: MaterialCategory) =>
+  fieldDefs.filter((fieldDef) => {
+    if (fieldDef.input_type === 'group') {
+      return true;
+    }
+
+    return !shouldExcludeMaterialField(materialCategory, fieldDef);
+  });
+
+const dedupeStringList = (items: unknown[]) => {
+  const seen = new Set<string>();
+  return items
+    .map((item) => String(item).trim())
+    .filter((item) => {
+      if (!item || seen.has(item)) {
+        return false;
+      }
+      seen.add(item);
+      return true;
+    });
+};
+
+const toDropdownOptions = (values: string[], placeholder?: string) => {
+  const options = values.map((value, index) => ({
+    id: `${value}-${index}`,
+    value,
+    label: value,
+  }));
+
+  if (placeholder === undefined) {
+    return options;
+  }
+
+  return [
+    {
+      id: '__placeholder__',
+      value: '',
+      label: placeholder,
+    },
+    ...options,
+  ];
+};
+
+const sortMaterialFieldDefsForCreateModal = (
+  fieldDefs: MaterialFieldDef[],
+  materialCategory: MaterialCategory,
+) => {
+  const displayOrder = MATERIAL_FIELD_DISPLAY_ORDER_BY_CATEGORY[materialCategory];
+  if (!displayOrder || displayOrder.length === 0) {
+    return [...fieldDefs];
+  }
+
+  const orderByFieldKey = new Map(displayOrder.map((fieldKey, index) => [fieldKey, index]));
+  return [...fieldDefs].sort((left, right) => {
+    const leftOrder = orderByFieldKey.get(left.field_key);
+    const rightOrder = orderByFieldKey.get(right.field_key);
+
+    if (leftOrder !== undefined && rightOrder !== undefined && leftOrder !== rightOrder) {
+      return leftOrder - rightOrder;
+    }
+    if (leftOrder !== undefined) {
+      return -1;
+    }
+    if (rightOrder !== undefined) {
+      return 1;
+    }
+
+    if (left.sort_order !== right.sort_order) {
+      return left.sort_order - right.sort_order;
+    }
+    return left.id - right.id;
+  });
+};
+
 const appendEtcOption = (fieldDef: MaterialFieldDef) => {
   if (fieldDef.input_type === 'option_with_other') {
     if (fieldDef.options && typeof fieldDef.options === 'object' && !Array.isArray(fieldDef.options)) {
       const optionsRaw = (fieldDef.options as { options?: unknown }).options;
-      const options = Array.isArray(optionsRaw) ? optionsRaw.map((option) => String(option)) : [];
+      const options = Array.isArray(optionsRaw) ? dedupeStringList(optionsRaw) : [];
       if (options.includes('기타')) {
-        return fieldDef;
+        return {
+          ...fieldDef,
+          options: {
+            ...(fieldDef.options as Record<string, unknown>),
+            options,
+          },
+        };
       }
       return {
         ...fieldDef,
@@ -139,7 +368,7 @@ const appendEtcOption = (fieldDef: MaterialFieldDef) => {
     return fieldDef;
   }
 
-  const normalized = fieldDef.options.map((option) => String(option));
+  const normalized = dedupeStringList(fieldDef.options);
   if (normalized.includes('기타')) {
     return { ...fieldDef, options: normalized };
   }
@@ -149,12 +378,12 @@ const appendEtcOption = (fieldDef: MaterialFieldDef) => {
 
 const getSelectOptions = (fieldDef: MaterialFieldDef) => {
   if (Array.isArray(fieldDef.options)) {
-    return fieldDef.options.map((option) => String(option));
+    return dedupeStringList(fieldDef.options);
   }
   if (fieldDef.options && typeof fieldDef.options === 'object' && !Array.isArray(fieldDef.options)) {
     const optionsRaw = (fieldDef.options as { options?: unknown }).options;
     if (Array.isArray(optionsRaw)) {
-      return optionsRaw.map((option) => String(option));
+      return dedupeStringList(optionsRaw);
     }
   }
   return [];
@@ -164,10 +393,95 @@ const getUnitOptions = (fieldDef: MaterialFieldDef) => {
   if (fieldDef.options && typeof fieldDef.options === 'object' && !Array.isArray(fieldDef.options)) {
     const unitsRaw = (fieldDef.options as { units?: unknown }).units;
     if (Array.isArray(unitsRaw)) {
-      return unitsRaw.map((unit) => String(unit));
+      const deduped = dedupeStringList(unitsRaw);
+      const meterUnit = deduped.find((unit) => unit.trim().toLowerCase() === 'm');
+      const yardUnit = deduped.find((unit) => unit.trim().toLowerCase() === 'yd');
+      if (meterUnit && yardUnit) {
+        return [
+          meterUnit,
+          yardUnit,
+          ...deduped.filter((unit) => unit !== meterUnit && unit !== yardUnit),
+        ];
+      }
+      return deduped;
     }
   }
   return [];
+};
+
+const formatPriceUnitOptionLabel = (unit: string) => {
+  const normalized = formatUnitForDisplay(unit);
+  return normalized ? `/${normalized}` : '/';
+};
+
+const normalizeCurrencyCodeToken = (value: unknown) => {
+  const raw = String(value ?? '').trim().toUpperCase();
+  if (!raw) {
+    return '';
+  }
+  if (raw === '$') {
+    return 'USD';
+  }
+  if (raw === '₩') {
+    return 'KRW';
+  }
+  return raw;
+};
+
+const dedupeCurrencyCodes = (values: unknown[]) => {
+  const seen = new Set<string>();
+  return values
+    .map((value) => normalizeCurrencyCodeToken(value))
+    .filter((code) => {
+      if (!code || seen.has(code)) {
+        return false;
+      }
+      seen.add(code);
+      return true;
+    });
+};
+
+const getCurrencyCodes = (fieldDef?: MaterialFieldDef) => {
+  if (!fieldDef || !fieldDef.options || typeof fieldDef.options !== 'object' || Array.isArray(fieldDef.options)) {
+    return DEFAULT_CURRENCY_CODES;
+  }
+
+  const currenciesRaw = (fieldDef.options as { currencies?: unknown }).currencies;
+  if (!Array.isArray(currenciesRaw)) {
+    return DEFAULT_CURRENCY_CODES;
+  }
+
+  const deduped = dedupeCurrencyCodes(currenciesRaw);
+  return deduped.length > 0 ? deduped : DEFAULT_CURRENCY_CODES;
+};
+
+const getDefaultCurrencyCode = (fieldDef?: MaterialFieldDef) => {
+  const currencyCodes = getCurrencyCodes(fieldDef);
+  const fallback = currencyCodes[0] ?? DEFAULT_CURRENCY_CODE;
+
+  if (!fieldDef || !fieldDef.options || typeof fieldDef.options !== 'object' || Array.isArray(fieldDef.options)) {
+    return fallback;
+  }
+
+  const defaultRaw = (fieldDef.options as { default_currency?: unknown }).default_currency;
+  const normalized = normalizeCurrencyCodeToken(defaultRaw);
+  if (normalized && currencyCodes.includes(normalized)) {
+    return normalized;
+  }
+  return fallback;
+};
+
+const toCurrencyOption = (code: CurrencyCode): CurrencyOption => {
+  const meta = CURRENCY_META_BY_CODE[code];
+  if (meta) {
+    return { code, ...meta };
+  }
+  return {
+    code,
+    flag: '🌐',
+    label: code,
+    symbol: code,
+  };
 };
 
 const getNumberPairLabels = (fieldDef: MaterialFieldDef) => {
@@ -189,7 +503,72 @@ const getNumberPairKind = (fieldDef: MaterialFieldDef) => {
   return 'width_height';
 };
 
-const getDefaultFieldValue = (fieldDef: MaterialFieldDef): unknown => {
+const getPriceQuantityUnitOptions = (
+  fieldDef: MaterialFieldDef,
+  materialCategory: MaterialCategory | null,
+  currentValue?: unknown,
+) => {
+  let options: string[] = [];
+
+  if (fieldDef.options && typeof fieldDef.options === 'object' && !Array.isArray(fieldDef.options)) {
+    const unitsRaw = (fieldDef.options as { units?: unknown }).units;
+    if (Array.isArray(unitsRaw)) {
+      options = dedupeStringList(unitsRaw);
+      const meterUnit = options.find((unit) => unit.trim().toLowerCase() === 'm');
+      const yardUnit = options.find((unit) => unit.trim().toLowerCase() === 'yd');
+      if (meterUnit && yardUnit) {
+        options = [
+          meterUnit,
+          yardUnit,
+          ...options.filter((unit) => unit !== meterUnit && unit !== yardUnit),
+        ];
+      }
+    }
+  }
+
+  if (options.length === 0) {
+    if (materialCategory === 'label' || materialCategory === 'trim') {
+      options = ['ea'];
+    } else {
+      options = ['ea'];
+    }
+  }
+
+  const currentText = String(currentValue ?? '').trim();
+  if (currentText && !options.includes(currentText)) {
+    options = [currentText, ...options];
+  }
+
+  return options.length > 0 ? options : ['ea'];
+};
+
+const normalizePriceQuantityUnit = (value: unknown, unitOptions: string[]) => {
+  const normalized = String(value ?? '').trim();
+  if (normalized && unitOptions.includes(normalized)) {
+    return normalized;
+  }
+  return unitOptions[0] ?? 'ea';
+};
+
+const getDefaultFieldValue = (
+  fieldDef: MaterialFieldDef,
+  materialCategory?: MaterialCategory,
+): unknown => {
+  if (fieldDef.field_key === 'moq') {
+    const unitOptions = getMoqUnitOptions(materialCategory ?? null);
+    return {
+      value: undefined,
+      unit: unitOptions[0] ?? 'ea',
+    } as MoqFieldValue;
+  }
+
+  if (fieldDef.field_key === 'processing_fee') {
+    return {
+      amount: undefined,
+      currency: getDefaultCurrencyCode(fieldDef),
+    } as ProcessingFeeFieldValue;
+  }
+
   if (fieldDef.input_type === 'dimension') {
     return { unit: 'cm' } as DimensionValue;
   }
@@ -198,9 +577,22 @@ const getDefaultFieldValue = (fieldDef: MaterialFieldDef): unknown => {
   }
   if (fieldDef.input_type === 'number_with_option') {
     const units = getUnitOptions(fieldDef);
+    if (fieldDef.field_key === 'price_per_unit') {
+      return {
+        unit: units[0] ?? '',
+        currency: getDefaultCurrencyCode(fieldDef),
+      } as NumberWithOptionValue & { currency?: CurrencyCode };
+    }
     return { unit: units[0] ?? '' } as NumberWithOptionValue;
   }
   if (fieldDef.input_type === 'number_pair') {
+    if (fieldDef.field_key === 'price_per_unit') {
+      const unitOptions = getPriceQuantityUnitOptions(fieldDef, materialCategory ?? null);
+      return {
+        currency: getDefaultCurrencyCode(fieldDef),
+        second: unitOptions[0] ?? 'ea',
+      } as NumberPairValue & { currency?: CurrencyCode };
+    }
     return {} as NumberPairValue;
   }
   return '';
@@ -218,6 +610,231 @@ const toNumberOrUndefined = (value: unknown) => {
     return Number.isNaN(parsed) ? undefined : parsed;
   }
   return undefined;
+};
+
+const sanitizeNumericInput = (raw: string) => {
+  const withoutCommas = raw.replace(/,/g, '');
+  const kept = withoutCommas.replace(/[^\d.]/g, '');
+  const [whole, ...decimalParts] = kept.split('.');
+
+  if (decimalParts.length === 0) {
+    return whole;
+  }
+
+  return `${whole}.${decimalParts.join('')}`;
+};
+
+const parseNumericOnlyNumber = (raw: string) => toNumberOrUndefined(sanitizeNumericInput(raw));
+
+const normalizeCurrencyCode = (
+  value: unknown,
+  allowedCodes: CurrencyCode[],
+  fallbackCode: CurrencyCode,
+): CurrencyCode => {
+  const normalized = normalizeCurrencyCodeToken(value);
+  if (!normalized) {
+    return fallbackCode;
+  }
+  if (allowedCodes.includes(normalized)) {
+    return normalized;
+  }
+  if (/^[A-Z]{3}$/.test(normalized)) {
+    return normalized;
+  }
+  return fallbackCode;
+};
+
+const getCurrencyOptionLabel = (option: CurrencyOption) => `${option.flag} ${option.label} (${option.symbol})`;
+
+const YARD_TO_METER = 0.9144;
+
+const roundTo = (value: number, digits = 4) => {
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+};
+
+const convertLengthAmountValue = (
+  rawValue: unknown,
+  fromUnit: string,
+  toUnit: string,
+): number | undefined => {
+  const value = toNumberOrUndefined(rawValue);
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const from = fromUnit.trim().toLowerCase();
+  const to = toUnit.trim().toLowerCase();
+  if (!from || !to || from === to) {
+    return value;
+  }
+  if (from === 'yd' && to === 'm') {
+    return roundTo(value * YARD_TO_METER);
+  }
+  if (from === 'm' && to === 'yd') {
+    return roundTo(value / YARD_TO_METER);
+  }
+
+  return value;
+};
+
+const getMoqUnitOptions = (materialCategory: MaterialCategory | null) => {
+  if (!materialCategory) {
+    return ['ea'];
+  }
+
+  return MOQ_UNITS_BY_CATEGORY[materialCategory] ?? ['ea'];
+};
+
+const getMoqLengthUnits = (materialCategory: MaterialCategory | null) => {
+  const unitOptions = getMoqUnitOptions(materialCategory);
+  const meterUnit = unitOptions.find((unit) => unit.trim().toLowerCase() === 'm');
+  const yardUnit = unitOptions.find((unit) => unit.trim().toLowerCase() === 'yd');
+  return { meterUnit, yardUnit };
+};
+
+const normalizeMoqFieldValue = (
+  value: unknown,
+  materialCategory: MaterialCategory | null,
+): { value?: number; unit: string; value_m?: number; value_yd?: number } => {
+  const unitOptions = getMoqUnitOptions(materialCategory);
+  const defaultUnit = unitOptions[0] ?? 'ea';
+  const { meterUnit, yardUnit } = getMoqLengthUnits(materialCategory);
+  const supportsDualLength = Boolean(meterUnit && yardUnit);
+
+  const normalizePayload = (payload: {
+    value?: unknown;
+    unit?: unknown;
+    value_m?: unknown;
+    value_yd?: unknown;
+  }) => {
+    const normalizedUnitRaw = String(payload.unit ?? defaultUnit).trim();
+    const unit = unitOptions.includes(normalizedUnitRaw) ? normalizedUnitRaw : defaultUnit;
+    const numericValue = toNumberOrUndefined(payload.value);
+
+    if (!supportsDualLength || !meterUnit || !yardUnit) {
+      return {
+        value: numericValue,
+        unit,
+      };
+    }
+
+    let valueMeter = toNumberOrUndefined(payload.value_m);
+    let valueYard = toNumberOrUndefined(payload.value_yd);
+    if (numericValue !== undefined) {
+      if (unit === meterUnit) {
+        valueMeter = numericValue;
+        valueYard = convertLengthAmountValue(numericValue, meterUnit, yardUnit);
+      } else if (unit === yardUnit) {
+        valueYard = numericValue;
+        valueMeter = convertLengthAmountValue(numericValue, yardUnit, meterUnit);
+      }
+    }
+
+    if (valueMeter !== undefined && valueYard === undefined) {
+      valueYard = convertLengthAmountValue(valueMeter, meterUnit, yardUnit);
+    }
+    if (valueYard !== undefined && valueMeter === undefined) {
+      valueMeter = convertLengthAmountValue(valueYard, yardUnit, meterUnit);
+    }
+
+    return {
+      value: numericValue,
+      unit,
+      value_m: valueMeter,
+      value_yd: valueYard,
+    };
+  };
+
+  if (typeof value === 'object' && value !== null) {
+    return normalizePayload(value as { value?: unknown; unit?: unknown; value_m?: unknown; value_yd?: unknown });
+  }
+
+  const rawText = String(value ?? '').trim();
+  if (!rawText) {
+    return normalizePayload({
+      value: undefined,
+      unit: defaultUnit,
+    });
+  }
+
+  const detectedUnit =
+    unitOptions.find((unit) => rawText.toLowerCase().includes(unit.toLowerCase())) ?? defaultUnit;
+
+  return normalizePayload({
+    value: parseNumericOnlyNumber(rawText),
+    unit: detectedUnit,
+  });
+};
+
+const formatMoqDualLengthText = (
+  value: unknown,
+  materialCategory: MaterialCategory | null,
+) => {
+  const { meterUnit, yardUnit } = getMoqLengthUnits(materialCategory);
+  if (!meterUnit || !yardUnit) {
+    return null;
+  }
+
+  const normalized = normalizeMoqFieldValue(value, materialCategory);
+  const meterValue = toNumberOrUndefined(normalized.value_m);
+  const yardValue = toNumberOrUndefined(normalized.value_yd);
+  if (meterValue === undefined && yardValue === undefined) {
+    return null;
+  }
+
+  const meterText = meterValue !== undefined ? `${formatNumberWithCommas(meterValue)} ${meterUnit}` : '-';
+  const yardText = yardValue !== undefined ? `${formatNumberWithCommas(yardValue)} ${yardUnit}` : '-';
+  const normalizedUnit = String(normalized.unit ?? '').trim().toLowerCase();
+  if (normalizedUnit === yardUnit.trim().toLowerCase()) {
+    return `${yardText} / ${meterText}`;
+  }
+  return `${meterText} / ${yardText}`;
+};
+
+const formatMoqForSubmit = (value: unknown, materialCategory: MaterialCategory | null) => {
+  const normalized = normalizeMoqFieldValue(value, materialCategory);
+  if (normalized.value === undefined) {
+    return '';
+  }
+
+  return `${normalized.value} ${normalized.unit}`.trim();
+};
+
+const normalizeProcessingFeeFieldValue = (
+  value: unknown,
+  fieldDef?: MaterialFieldDef,
+): { amount?: number; currency: CurrencyCode } => {
+  const currencyCodes = getCurrencyCodes(fieldDef);
+  const fallbackCurrency = getDefaultCurrencyCode(fieldDef);
+
+  if (typeof value === 'object' && value !== null) {
+    const payload = value as { amount?: unknown; value?: unknown; currency?: unknown; unit?: unknown };
+    return {
+      amount: toNumberOrUndefined(payload.amount ?? payload.value),
+      currency: normalizeCurrencyCode(payload.currency ?? payload.unit, currencyCodes, fallbackCurrency),
+    };
+  }
+
+  const rawText = String(value ?? '').trim();
+  if (!rawText) {
+    return { amount: undefined, currency: fallbackCurrency };
+  }
+
+  const currency = normalizeCurrencyCode(rawText.match(/([A-Za-z]{3})/)?.[1], currencyCodes, fallbackCurrency);
+  return {
+    amount: parseNumericOnlyNumber(rawText),
+    currency,
+  };
+};
+
+const formatProcessingFeeForSubmit = (value: unknown, fieldDef?: MaterialFieldDef) => {
+  const normalized = normalizeProcessingFeeFieldValue(value, fieldDef);
+  if (normalized.amount === undefined) {
+    return '';
+  }
+
+  return `${normalized.currency} ${normalized.amount}`;
 };
 
 const getNumericInputValue = (value: unknown) => {
@@ -251,6 +868,38 @@ const formatUnitForDisplay = (unit: string) =>
       .join('');
   });
 
+const normalizeUnitToken = (value: string) =>
+  value
+    .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g, (digit) => {
+      const digitBySuperscript: Record<string, string> = {
+        '⁰': '0',
+        '¹': '1',
+        '²': '2',
+        '³': '3',
+        '⁴': '4',
+        '⁵': '5',
+        '⁶': '6',
+        '⁷': '7',
+        '⁸': '8',
+        '⁹': '9',
+      };
+      return digitBySuperscript[digit] ?? digit;
+    })
+    .replace(/\^(\d+)/g, '$1')
+    .replace(/\s+/g, '')
+    .replace(/[()]/g, '')
+    .toLowerCase();
+
+const shouldShowUnitSuffix = (fieldDef: MaterialFieldDef, unit: string) => {
+  const normalizedUnit = normalizeUnitToken(unit);
+  if (!normalizedUnit) {
+    return false;
+  }
+
+  const normalizedLabel = normalizeUnitToken(fieldDef.label);
+  return !normalizedLabel.includes(normalizedUnit);
+};
+
 const formatDualLengthText = (value: unknown) => {
   if (typeof value !== 'object' || value === null) return null;
   const payload = value as { value_cm?: unknown; value_inch?: unknown; value?: unknown; unit?: unknown };
@@ -272,6 +921,10 @@ const formatDualLengthText = (value: unknown) => {
 
   const cmText = cm !== undefined ? `${formatNumberWithCommas(cm)} cm` : '-';
   const inchText = inch !== undefined ? `${formatNumberWithCommas(inch)} inch` : '-';
+  const normalizedUnit = unit.trim().toLowerCase();
+  if (normalizedUnit === 'inch') {
+    return `${inchText} / ${cmText}`;
+  }
   return `${cmText} / ${inchText}`;
 };
 
@@ -279,6 +932,17 @@ const hasMeaningfulValue = (fieldDef: MaterialFieldDef, value: unknown) => {
   if (value === '' || value === null || value === undefined) {
     return false;
   }
+
+  if (fieldDef.field_key === 'moq') {
+    const normalized = normalizeMoqFieldValue(value, null);
+    return normalized.value !== undefined;
+  }
+
+  if (fieldDef.field_key === 'processing_fee') {
+    const normalized = normalizeProcessingFeeFieldValue(value, fieldDef);
+    return normalized.amount !== undefined;
+  }
+
   if (fieldDef.input_type === 'option_with_other') {
     if (typeof value === 'string') return value.trim() !== '';
     if (typeof value === 'object' && value !== null) {
@@ -297,15 +961,25 @@ const hasMeaningfulValue = (fieldDef: MaterialFieldDef, value: unknown) => {
     }
     return false;
   }
+  if (fieldDef.input_type === 'number') {
+    if (typeof value === 'number') {
+      return !Number.isNaN(value);
+    }
+    return parseNumericOnlyNumber(String(value ?? '')) !== undefined;
+  }
   if (fieldDef.input_type === 'number_pair') {
     if (typeof value === 'object' && value !== null) {
       const first = (value as { first?: unknown }).first;
       const second = (value as { second?: unknown }).second;
       const pairKind = getNumberPairKind(fieldDef);
+      const firstNumber = toNumberOrUndefined(first);
+      const secondNumber = toNumberOrUndefined(second);
+
       if (pairKind === 'price_quantity') {
-        return toNumberOrUndefined(first) !== undefined && String(second ?? '').trim() !== '';
+        return firstNumber !== undefined && String(second ?? '').trim() !== '';
       }
-      return toNumberOrUndefined(first) !== undefined && toNumberOrUndefined(second) !== undefined;
+
+      return firstNumber !== undefined && secondNumber !== undefined;
     }
     return false;
   }
@@ -542,15 +1216,17 @@ const TemplateCreateModal = ({
     getMaterialFieldDefs(category)
       .then((defs) => {
         const withEtc = defs.map(appendEtcOption);
-        setFieldDefs(withEtc);
+        const filteredDefs = filterMaterialFieldDefs(withEtc, category);
+        const sortedDefs = sortMaterialFieldDefsForCreateModal(filteredDefs, category);
+        setFieldDefs(sortedDefs);
         setFieldValues((prev) => {
           const next: Record<string, unknown> = {};
-          withEtc.forEach((fieldDef) => {
+          sortedDefs.forEach((fieldDef) => {
             if (prev[fieldDef.field_key] !== undefined) {
               next[fieldDef.field_key] = prev[fieldDef.field_key];
               return;
             }
-            next[fieldDef.field_key] = getDefaultFieldValue(fieldDef);
+            next[fieldDef.field_key] = getDefaultFieldValue(fieldDef, category);
           });
           return next;
         });
@@ -567,6 +1243,10 @@ const TemplateCreateModal = ({
   }, [fieldDefs]);
 
   const isMaterial = selectedTemplate ? isMaterialTemplate(selectedTemplate) : false;
+  const selectedMaterialCategory =
+    selectedTemplate && isMaterialTemplate(selectedTemplate)
+      ? TEMPLATE_TO_MATERIAL_CATEGORY[selectedTemplate]
+      : null;
   const isFolder = selectedTemplate === 'folder';
   const requiresFileForCustomTemplate =
     Boolean(selectedTemplate) &&
@@ -663,6 +1343,31 @@ const TemplateCreateModal = ({
             return;
           }
 
+          if (fieldKey === 'moq') {
+            const moqText = formatMoqForSubmit(value, category);
+            if (moqText) {
+              next.attributes[fieldKey] = moqText;
+            }
+            return;
+          }
+
+          if (fieldKey === 'processing_fee') {
+            const processingFeeText = formatProcessingFeeForSubmit(value, fieldDef);
+            if (processingFeeText) {
+              next.attributes[fieldKey] = processingFeeText;
+            }
+            return;
+          }
+
+          if (fieldDef.input_type === 'number') {
+            const normalizedNumber =
+              typeof value === 'number' ? value : parseNumericOnlyNumber(String(value ?? ''));
+            if (normalizedNumber !== undefined) {
+              next.attributes[fieldKey] = normalizedNumber;
+            }
+            return;
+          }
+
           next.attributes[fieldKey] = value;
         });
 
@@ -706,21 +1411,15 @@ const TemplateCreateModal = ({
 
     if (fieldDef.input_type === 'select') {
       const options = getSelectOptions(fieldDef);
+      const dropdownOptions = toDropdownOptions(options, '선택');
 
       return (
-        <select
-          id={`field-${fieldDef.field_key}`}
-          className='form-select w-full'
+        <DropdownButton
+          options={dropdownOptions}
           value={String(value ?? '')}
-          onChange={(event) => handleFieldValueChange(fieldDef.field_key, event.target.value)}
-        >
-          <option value=''>선택</option>
-          {options.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
+          size='form'
+          onChange={(nextValue) => handleFieldValueChange(fieldDef.field_key, nextValue)}
+        />
       );
     }
 
@@ -733,24 +1432,17 @@ const TemplateCreateModal = ({
 
       return (
         <div className='space-y-2'>
-          <select
-            id={`field-${fieldDef.field_key}`}
-            className='form-select w-full'
+          <DropdownButton
+            options={toDropdownOptions(options, '선택')}
             value={optionValue.selected}
-            onChange={(event) =>
+            size='form'
+            onChange={(nextValue) =>
               handleFieldValueChange(fieldDef.field_key, {
                 ...optionValue,
-                selected: event.target.value,
+                selected: nextValue,
               } as OptionWithOtherValue)
             }
-          >
-            <option value=''>선택</option>
-            {options.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
+          />
           {optionValue.selected === '기타' ? (
             <input
               type='text'
@@ -803,19 +1495,17 @@ const TemplateCreateModal = ({
               })
             }
           />
-          <select
-            className='form-select w-full'
+          <DropdownButton
+            options={toDropdownOptions(['cm', 'inch'])}
             value={dimension.unit}
-            onChange={(event) =>
+            size='form'
+            onChange={(nextValue) =>
               handleFieldValueChange(fieldDef.field_key, {
                 ...dimension,
-                unit: event.target.value as 'cm' | 'inch',
+                unit: nextValue as 'cm' | 'inch',
               })
             }
-          >
-            <option value='cm'>cm</option>
-            <option value='inch'>inch</option>
-          </select>
+          />
         </div>
       );
     }
@@ -831,46 +1521,206 @@ const TemplateCreateModal = ({
       );
     }
 
+    if (fieldDef.field_key === 'moq') {
+      const unitOptions = getMoqUnitOptions(selectedMaterialCategory);
+      const moqValue = normalizeMoqFieldValue(value, selectedMaterialCategory);
+      const moqDualLengthText = formatMoqDualLengthText(moqValue, selectedMaterialCategory);
+
+      return (
+        <div className='space-y-2'>
+          <div className='grid grid-cols-[minmax(0,1fr)_7.25rem] gap-2'>
+            <input
+              type='text'
+              inputMode='decimal'
+              className='form-input w-full'
+              value={getNumericInputValue(moqValue.value)}
+              onChange={(event) =>
+                handleFieldValueChange(
+                  fieldDef.field_key,
+                  normalizeMoqFieldValue(
+                    {
+                      ...moqValue,
+                      value: parseNumericOnlyNumber(event.target.value),
+                    },
+                    selectedMaterialCategory,
+                  ) as MoqFieldValue,
+                )
+              }
+            />
+            <DropdownButton
+              options={unitOptions.map((unit, index) => ({
+                id: `${unit}-${index}`,
+                value: unit,
+                label: formatUnitForDisplay(unit),
+              }))}
+              value={moqValue.unit}
+              size='form'
+              onChange={(nextUnit) =>
+                handleFieldValueChange(
+                  fieldDef.field_key,
+                  normalizeMoqFieldValue(
+                    {
+                      ...moqValue,
+                      unit: nextUnit,
+                    },
+                    selectedMaterialCategory,
+                  ) as MoqFieldValue,
+                )
+              }
+            />
+          </div>
+          {moqDualLengthText ? (
+            <div className='text-xs text-gray-500 dark:text-gray-400'>{moqDualLengthText}</div>
+          ) : null}
+        </div>
+      );
+    }
+
+    if (fieldDef.field_key === 'processing_fee') {
+      const currencyCodes = getCurrencyCodes(fieldDef);
+      const defaultCurrency = getDefaultCurrencyCode(fieldDef);
+      const processingFee = normalizeProcessingFeeFieldValue(value, fieldDef);
+      const selectedCurrency = normalizeCurrencyCode(
+        processingFee.currency,
+        currencyCodes,
+        defaultCurrency,
+      );
+      const currencyOptionCodes = currencyCodes.includes(selectedCurrency)
+        ? currencyCodes
+        : [selectedCurrency, ...currencyCodes];
+      const currencyOptions = currencyOptionCodes.map((code) => toCurrencyOption(code));
+
+      return (
+        <div className='grid grid-cols-[minmax(0,1fr)_7.25rem] gap-2'>
+          <input
+            type='text'
+            inputMode='decimal'
+            className='form-input w-full'
+            value={getNumericInputValue(processingFee.amount)}
+            onChange={(event) =>
+              handleFieldValueChange(fieldDef.field_key, {
+                amount: parseNumericOnlyNumber(event.target.value),
+                currency: processingFee.currency,
+              } as ProcessingFeeFieldValue)
+            }
+          />
+          <DropdownButton
+            options={currencyOptions.map((option) => ({
+              id: option.code,
+              value: option.code,
+              label: getCurrencyOptionLabel(option),
+            }))}
+            value={selectedCurrency}
+            size='form'
+            onChange={(nextCurrency) =>
+              handleFieldValueChange(fieldDef.field_key, {
+                amount: processingFee.amount,
+                currency: normalizeCurrencyCode(nextCurrency, currencyCodes, defaultCurrency),
+              } as ProcessingFeeFieldValue)
+            }
+          />
+        </div>
+      );
+    }
+
     if (fieldDef.input_type === 'number_with_option') {
       const unitOptions = getUnitOptions(fieldDef);
       const numberWithUnit =
         typeof value === 'object' && value !== null
           ? (value as NumberWithOptionValue)
           : ({ unit: unitOptions[0] ?? '' } as NumberWithOptionValue);
+      const showCurrencySelector = fieldDef.field_key === 'price_per_unit';
+      const currencyCodes = showCurrencySelector ? getCurrencyCodes(fieldDef) : [];
+      const defaultCurrency = showCurrencySelector ? getDefaultCurrencyCode(fieldDef) : DEFAULT_CURRENCY_CODE;
+      const selectedCurrency = showCurrencySelector
+        ? normalizeCurrencyCode(
+            (numberWithUnit as NumberWithOptionValue & { currency?: unknown }).currency,
+            currencyCodes,
+            defaultCurrency,
+          )
+        : defaultCurrency;
+      const currencyOptionCodes = showCurrencySelector
+        ? currencyCodes.includes(selectedCurrency)
+          ? currencyCodes
+          : [selectedCurrency, ...currencyCodes]
+        : [];
+      const currencyOptions = currencyOptionCodes.map((code) => toCurrencyOption(code));
+
+      const amountInput = (
+        <input
+          type='text'
+          inputMode='decimal'
+          className='form-input w-full'
+          value={getNumericInputValue(numberWithUnit.value)}
+          onChange={(event) =>
+            handleFieldValueChange(fieldDef.field_key, {
+              ...numberWithUnit,
+              value: parseNumericOnlyNumber(event.target.value),
+              ...(showCurrencySelector ? { currency: selectedCurrency } : {}),
+            } as NumberWithOptionValue & { currency?: CurrencyCode })
+          }
+        />
+      );
+
+      const currencyDropdown = showCurrencySelector ? (
+        <DropdownButton
+          options={currencyOptions.map((option) => ({
+            id: option.code,
+            value: option.code,
+            label: getCurrencyOptionLabel(option),
+          }))}
+          value={selectedCurrency}
+          size='form'
+          onChange={(nextCurrency) =>
+            handleFieldValueChange(fieldDef.field_key, {
+              ...numberWithUnit,
+              value:
+                typeof numberWithUnit.value === 'number'
+                  ? numberWithUnit.value
+                  : parseNumericOnlyNumber(String(numberWithUnit.value ?? '')),
+              currency: normalizeCurrencyCode(nextCurrency, currencyCodes, defaultCurrency),
+            } as NumberWithOptionValue & { currency?: CurrencyCode })
+          }
+        />
+      ) : null;
+
+      const unitDropdown = (
+        <DropdownButton
+          options={unitOptions.map((unit, index) => ({
+            id: `${unit}-${index}`,
+            value: unit,
+            label: showCurrencySelector ? formatPriceUnitOptionLabel(unit) : formatUnitForDisplay(unit),
+          }))}
+          value={numberWithUnit.unit ?? ''}
+          size='form'
+          onChange={(nextUnit) =>
+            handleFieldValueChange(fieldDef.field_key, {
+              ...numberWithUnit,
+              value: numberWithUnit.value,
+              unit: nextUnit,
+              ...(showCurrencySelector ? { currency: selectedCurrency } : {}),
+            } as NumberWithOptionValue & { currency?: CurrencyCode })
+          }
+        />
+      );
 
       const dualLengthText = formatDualLengthText(numberWithUnit);
       return (
         <div className='space-y-2'>
-          <div className='grid grid-cols-3 gap-2'>
-            <input
-              type='text'
-              inputMode='decimal'
-              className='form-input col-span-2 w-full'
-              value={getNumericInputValue(numberWithUnit.value)}
-              onChange={(event) =>
-                handleFieldValueChange(fieldDef.field_key, {
-                  ...numberWithUnit,
-                  value: event.target.value,
-                } as NumberWithOptionValue)
-              }
-            />
-            <select
-              className='form-select w-full'
-              value={numberWithUnit.unit ?? ''}
-              onChange={(event) =>
-                handleFieldValueChange(fieldDef.field_key, {
-                  ...numberWithUnit,
-                  unit: event.target.value,
-                } as NumberWithOptionValue)
-              }
-            >
-              {unitOptions.map((unit) => (
-                <option key={unit} value={unit}>
-                  {formatUnitForDisplay(unit)}
-                </option>
-              ))}
-            </select>
-          </div>
+          {showCurrencySelector ? (
+            <div className='grid grid-cols-2 gap-2'>
+              <div className='grid grid-cols-[minmax(0,1fr)_7.25rem] gap-2'>
+                {amountInput}
+                {currencyDropdown}
+              </div>
+              {unitDropdown}
+            </div>
+          ) : (
+            <div className='grid grid-cols-[minmax(0,1fr)_7.25rem] gap-2'>
+              {amountInput}
+              {unitDropdown}
+            </div>
+          )}
           {dualLengthText ? (
             <div className='text-xs text-gray-500 dark:text-gray-400'>{dualLengthText}</div>
           ) : null}
@@ -883,47 +1733,155 @@ const TemplateCreateModal = ({
         typeof value === 'object' && value !== null ? (value as NumberPairValue) : ({} as NumberPairValue);
       const { firstLabel, secondLabel } = getNumberPairLabels(fieldDef);
       const pairKind = getNumberPairKind(fieldDef);
-      return (
-        <div className='grid grid-cols-2 gap-2'>
+      const firstNumericValue =
+        typeof pairValue.first === 'number'
+          ? pairValue.first
+          : parseNumericOnlyNumber(String(pairValue.first ?? ''));
+      const showCurrencySelector =
+        fieldDef.field_key === 'price_per_unit' && pairKind === 'price_quantity';
+      const currencyCodes = showCurrencySelector ? getCurrencyCodes(fieldDef) : [];
+      const defaultCurrency = showCurrencySelector ? getDefaultCurrencyCode(fieldDef) : DEFAULT_CURRENCY_CODE;
+      const pairCurrency = showCurrencySelector
+        ? normalizeCurrencyCode(
+            (pairValue as NumberPairValue & { currency?: unknown }).currency,
+            currencyCodes,
+            defaultCurrency,
+          )
+        : defaultCurrency;
+      const currencyOptionCodes = showCurrencySelector
+        ? currencyCodes.includes(pairCurrency)
+          ? currencyCodes
+          : [pairCurrency, ...currencyCodes]
+        : [];
+      const currencyOptions = currencyOptionCodes.map((code) => toCurrencyOption(code));
+      const unitOptions =
+        pairKind === 'price_quantity'
+          ? getPriceQuantityUnitOptions(fieldDef, selectedMaterialCategory, pairValue.second)
+          : [];
+      const selectedPairUnit =
+        pairKind === 'price_quantity'
+          ? normalizePriceQuantityUnit(pairValue.second, unitOptions)
+          : '';
+      const secondNumericValue =
+        pairKind === 'price_quantity'
+          ? undefined
+          : typeof pairValue.second === 'number'
+            ? pairValue.second
+            : parseNumericOnlyNumber(String(pairValue.second ?? ''));
+      const pairUnitText =
+        pairKind === 'width_height' ? String(fieldDef.unit ?? '').trim() : '';
+
+      const secondInput =
+        pairKind === 'price_quantity' ? (
+          <DropdownButton
+            options={unitOptions.map((unit, index) => ({
+              id: `${unit}-${index}`,
+              value: unit,
+              label: showCurrencySelector ? formatPriceUnitOptionLabel(unit) : formatUnitForDisplay(unit),
+            }))}
+            value={selectedPairUnit}
+            size='form'
+            onChange={(nextUnit) =>
+              handleFieldValueChange(fieldDef.field_key, {
+                ...pairValue,
+                second: nextUnit,
+                ...(showCurrencySelector ? { currency: pairCurrency } : {}),
+              } as NumberPairValue & { currency?: CurrencyCode })
+            }
+          />
+        ) : (
           <input
             type='text'
             inputMode='decimal'
             className='form-input w-full'
-            placeholder={firstLabel}
-            value={getNumericInputValue(pairValue.first)}
-            onChange={(event) =>
-              handleFieldValueChange(fieldDef.field_key, {
-                ...pairValue,
-                first: event.target.value,
-              } as NumberPairValue)
-            }
-          />
-          <input
-            type='text'
-            inputMode={pairKind === 'price_quantity' ? undefined : 'decimal'}
-            className='form-input w-full'
             placeholder={secondLabel}
-            value={
-              pairKind === 'price_quantity'
-                ? String(pairValue.second ?? '')
-                : getNumericInputValue(pairValue.second)
-            }
+            value={getNumericInputValue(secondNumericValue)}
             onChange={(event) =>
               handleFieldValueChange(fieldDef.field_key, {
                 ...pairValue,
-                second:
-                  pairKind === 'price_quantity'
-                    ? event.target.value
-                    : event.target.value,
-              } as NumberPairValue)
+                second: parseNumericOnlyNumber(event.target.value),
+                ...(showCurrencySelector ? { currency: pairCurrency } : {}),
+              } as NumberPairValue & { currency?: CurrencyCode })
             }
           />
+        );
+
+      const firstInput = (
+        <input
+          type='text'
+          inputMode='decimal'
+          className='form-input w-full'
+          placeholder={firstLabel}
+          value={getNumericInputValue(firstNumericValue)}
+          onChange={(event) =>
+            handleFieldValueChange(fieldDef.field_key, {
+              ...pairValue,
+              first: parseNumericOnlyNumber(event.target.value),
+              ...(showCurrencySelector ? { currency: pairCurrency } : {}),
+            } as NumberPairValue & { currency?: CurrencyCode })
+          }
+        />
+      );
+
+      if (showCurrencySelector) {
+        return (
+          <div className='grid grid-cols-2 gap-2'>
+            <div className='grid grid-cols-[minmax(0,1fr)_7.25rem] gap-2'>
+              {firstInput}
+              <DropdownButton
+                options={currencyOptions.map((option) => ({
+                  id: option.code,
+                  value: option.code,
+                  label: getCurrencyOptionLabel(option),
+                }))}
+                value={pairCurrency}
+                size='form'
+                onChange={(nextCurrency) =>
+                  handleFieldValueChange(fieldDef.field_key, {
+                    ...pairValue,
+                    first: firstNumericValue,
+                    second: pairKind === 'price_quantity' ? selectedPairUnit : secondNumericValue,
+                    currency: normalizeCurrencyCode(nextCurrency, currencyCodes, defaultCurrency),
+                  } as NumberPairValue & { currency?: CurrencyCode })
+                }
+              />
+            </div>
+            {secondInput}
+          </div>
+        );
+      }
+
+      return (
+        <div
+          className={
+            pairUnitText
+              ? 'grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7.25rem] gap-2'
+              : 'grid grid-cols-2 gap-2'
+          }
+        >
+          {firstInput}
+          {secondInput}
+          {pairUnitText ? (
+            <DropdownButton
+              options={[
+                {
+                  id: pairUnitText,
+                  value: pairUnitText,
+                  label: formatUnitForDisplay(pairUnitText),
+                },
+              ]}
+              value={pairUnitText}
+              size='form'
+              onChange={() => undefined}
+            />
+          ) : null}
         </div>
       );
     }
 
     const isNumber = fieldDef.input_type === 'number';
-    const unitText = formatUnitForDisplay(String(fieldDef.unit ?? '').trim());
+    const rawUnitText = String(fieldDef.unit ?? '').trim();
+    const shouldPreserveDecimalInput = fieldDef.field_key === 'thickness_mm';
     const inputElement = (
       <input
         id={`field-${fieldDef.field_key}`}
@@ -938,20 +1896,35 @@ const TemplateCreateModal = ({
         onChange={(event) =>
           handleFieldValueChange(
             fieldDef.field_key,
-            isNumber ? event.target.value : event.target.value,
+            isNumber
+              ? shouldPreserveDecimalInput
+                ? sanitizeNumericInput(event.target.value)
+                : parseNumericOnlyNumber(event.target.value)
+              : event.target.value,
           )
         }
       />
     );
 
-    if (!unitText) {
+    if (!rawUnitText) {
       return inputElement;
     }
 
     return (
-      <div className='flex items-center gap-2'>
-        <div className='min-w-0 flex-1'>{inputElement}</div>
-        <span className='text-sm text-gray-500 dark:text-gray-400'>{unitText}</span>
+      <div className='grid grid-cols-[minmax(0,1fr)_7.25rem] gap-2'>
+        {inputElement}
+        <DropdownButton
+          options={[
+            {
+              id: rawUnitText,
+              value: rawUnitText,
+              label: formatUnitForDisplay(rawUnitText),
+            },
+          ]}
+          value={rawUnitText}
+          size='form'
+              onChange={() => undefined}
+        />
       </div>
     );
   };

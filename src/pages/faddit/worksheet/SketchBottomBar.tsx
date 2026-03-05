@@ -63,8 +63,12 @@ export default function SketchBottomBar({ onZoomReset }: SketchBottomBarProps) {
     setActiveTool,
     strokeColor,
     setStrokeColor,
+    strokePantoneCode,
+    setStrokePantoneCode,
     fillColor,
     setFillColor,
+    fillPantoneCode,
+    setFillPantoneCode,
     strokeWidth,
     setStrokeWidth,
     fontSize,
@@ -239,7 +243,7 @@ export default function SketchBottomBar({ onZoomReset }: SketchBottomBarProps) {
           </button>
 
           {colorPopupOpen && (
-            <div className='absolute bottom-full left-1/2 mb-2 w-56 -translate-x-1/2 rounded-xl bg-white ring-1 shadow-lg ring-gray-200'>
+            <div className='absolute bottom-full left-1/2 mb-2 w-72 -translate-x-1/2 rounded-xl bg-white ring-1 shadow-lg ring-gray-200'>
               <div className='flex border-b border-gray-100'>
                 <button
                   type='button'
@@ -265,9 +269,21 @@ export default function SketchBottomBar({ onZoomReset }: SketchBottomBarProps) {
                 </button>
               </div>
               {colorTab === 'fill' ? (
-                <SketchColorPicker color={fillColor} onChange={setFillColor} label='채우기 색상' />
+                <SketchColorPicker
+                  color={fillColor}
+                  onChange={setFillColor}
+                  selectedPantoneCode={fillPantoneCode}
+                  onPantoneCodeChange={setFillPantoneCode}
+                  label='채우기 색상'
+                />
               ) : (
-                <SketchColorPicker color={strokeColor} onChange={setStrokeColor} label='선 색상' />
+                <SketchColorPicker
+                  color={strokeColor}
+                  onChange={setStrokeColor}
+                  selectedPantoneCode={strokePantoneCode}
+                  onPantoneCodeChange={setStrokePantoneCode}
+                  label='선 색상'
+                />
               )}
             </div>
           )}

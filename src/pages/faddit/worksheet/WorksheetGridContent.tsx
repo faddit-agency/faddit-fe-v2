@@ -8,7 +8,6 @@ import 'react-grid-layout/css/styles.css';
 import { useWorksheetStore } from './useWorksheetStore';
 import { CARD_DEFINITIONS, GRID_CONFIG } from './worksheetConstants';
 import WorksheetGridCard from './WorksheetGridCard';
-import WorksheetCostView from './WorksheetCostView';
 import WorksheetSizeSpecView from './WorksheetSizeSpecView';
 import WorksheetNoticeEditor from './WorksheetNoticeEditor';
 import DropdownButton from '../../../components/atoms/DropdownButton';
@@ -17,6 +16,7 @@ import {
   TRIM_SHEET_STATE,
   COLOR_SIZE_QTY_STATE,
   SIZE_UNIT_OPTIONS,
+  FABRIC_LENGTH_UNIT_OPTIONS,
   FABRIC_INFO_STATE,
   RIB_FABRIC_INFO_STATE,
 } from './worksheetConstants';
@@ -131,7 +131,8 @@ function stringifyMaterialCellValue(value: unknown): string {
       const numericValue = stringifyMaterialCellValue(payload.value ?? '');
       const unit = stringifyMaterialCellValue(payload.unit ?? '');
       if (numericValue && unit) {
-        return `${numericValue}/${unit}`;
+        const hasCurrency = payload.currency !== undefined || payload.currency_code !== undefined;
+        return hasCurrency ? `${numericValue}/${unit}` : `${numericValue} ${unit}`;
       }
       return numericValue || unit;
     }
@@ -593,6 +594,22 @@ function SizeSpecUnitSelector() {
   );
 }
 
+function FabricLengthUnitSelector() {
+  const fabricLengthUnit = useWorksheetStore((s) => s.fabricLengthUnit);
+  const setFabricLengthUnit = useWorksheetStore((s) => s.setFabricLengthUnit);
+
+  return (
+    <div className='min-w-[72px]'>
+      <DropdownButton
+        options={FABRIC_LENGTH_UNIT_OPTIONS}
+        value={fabricLengthUnit}
+        size='compact'
+        onChange={(next: string) => setFabricLengthUnit(next === 'm' ? 'm' : 'yd')}
+      />
+    </div>
+  );
+}
+
 function CardBodyRenderer({
   card,
   customCardContent,
@@ -636,6 +653,13 @@ function CardBodyRenderer({
 }) {
   const cardId = card.id;
   const sizeSpecUnit = useWorksheetStore((s) => s.sizeSpecUnit);
+  const fabricLengthUnit = useWorksheetStore((s) => s.fabricLengthUnit);
+  const fabricHeaderLabelOverrides = {
+    2: '패턴 총 면적 (m²)',
+    3: '마커 효율 (%)',
+    4: `요척 (${fabricLengthUnit})`,
+    5: `총 필요 원단량 (${fabricLengthUnit})`,
+  };
 
   switch (cardId) {
     case 'diagram-view':
@@ -730,6 +754,8 @@ function CardBodyRenderer({
           enableUnitConversion={false}
           showRowDeleteButton
           lockedColumnCount={FABRIC_INFO_STATE.headers.length}
+          headerLabelOverrides={fabricHeaderLabelOverrides}
+          readOnlyHeaderColumns={[2, 3, 4, 5]}
           fillWidth
           initialState={moduleSheetStates['fabric-info'] ?? FABRIC_INFO_STATE}
           onStateChange={(nextState) => onSheetStateChange('fabric-info', nextState)}
@@ -755,6 +781,8 @@ function CardBodyRenderer({
           enableUnitConversion={false}
           showRowDeleteButton
           lockedColumnCount={RIB_FABRIC_INFO_STATE.headers.length}
+          headerLabelOverrides={fabricHeaderLabelOverrides}
+          readOnlyHeaderColumns={[2, 3, 4, 5]}
           fillWidth
           initialState={moduleSheetStates['rib-fabric-info'] ?? RIB_FABRIC_INFO_STATE}
           onStateChange={(nextState) => onSheetStateChange('rib-fabric-info', nextState)}
@@ -773,8 +801,6 @@ function CardBodyRenderer({
           }}
         />
       );
-    case 'cost-calc':
-      return <WorksheetCostView />;
     default:
       if (!card.isDefault && cardId.startsWith('custom-')) {
         return (
@@ -1330,7 +1356,13 @@ export default function WorksheetGridContent({
               <WorksheetGridCard
                 cardId={card.id}
                 title={card.title}
-                headerExtra={card.id === 'size-spec' ? <SizeSpecUnitSelector /> : undefined}
+                headerExtra={
+                  card.id === 'size-spec' ? (
+                    <SizeSpecUnitSelector />
+                  ) : card.id === 'fabric-info' || card.id === 'rib-fabric-info' ? (
+                    <FabricLengthUnitSelector />
+                  ) : undefined
+                }
                 headerActions={
                   card.id === 'diagram-view' ? (
                     <button

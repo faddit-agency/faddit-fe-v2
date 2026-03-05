@@ -243,6 +243,96 @@ const resolveElementWorkspaceCategory = async (
 
 const ELEMENT_DETAIL_PANEL_WIDTH = 308;
 
+const formatNumberWithCommas = (value: number) => {
+  if (!Number.isFinite(value)) {
+    return String(value);
+  }
+  return value.toLocaleString('ko-KR');
+};
+
+const toNumberOrUndefined = (value: unknown) => {
+  if (typeof value === 'number' && !Number.isNaN(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value.replace(/,/g, ''));
+    return Number.isNaN(parsed) ? undefined : parsed;
+  }
+  return undefined;
+};
+
+const toDisplayText = (value: unknown): string => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
+};
+
+const formatUnitForDisplay = (unit: string) =>
+  unit.replace(/\^(\d+)/g, (_, exponent: string) => {
+    const superscriptDigits: Record<string, string> = {
+      '0': '⁰',
+      '1': '¹',
+      '2': '²',
+      '3': '³',
+      '4': '⁴',
+      '5': '⁵',
+      '6': '⁶',
+      '7': '⁷',
+      '8': '⁸',
+      '9': '⁹',
+    };
+
+    return exponent
+      .split('')
+      .map((digit) => superscriptDigits[digit] ?? digit)
+      .join('');
+  });
+
+const formatNumericChunksInText = (text: string) =>
+  text.replace(/-?\d[\d,]*(?:\.\d+)?/g, (chunk) => {
+    const cleaned = chunk.replace(/,/g, '');
+    if (!/^-?\d+(?:\.\d+)?$/.test(cleaned)) {
+      return chunk;
+    }
+
+    const sign = cleaned.startsWith('-') ? '-' : '';
+    const unsigned = sign ? cleaned.slice(1) : cleaned;
+    const [intPart, decimalPart] = unsigned.split('.');
+
+    if (intPart.length <= 3) {
+      return chunk;
+    }
+    if (intPart.length > 1 && intPart.startsWith('0')) {
+      return chunk;
+    }
+
+    const formattedInt = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return `${sign}${formattedInt}${decimalPart ? `.${decimalPart}` : ''}`;
+  });
+
+const normalizeUnitToken = (value: string) =>
+  value
+    .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g, (digit) => {
+      const digitBySuperscript: Record<string, string> = {
+        '⁰': '0',
+        '¹': '1',
+        '²': '2',
+        '³': '3',
+        '⁴': '4',
+        '⁵': '5',
+        '⁶': '6',
+        '⁷': '7',
+        '⁸': '8',
+        '⁹': '9',
+      };
+      return digitBySuperscript[digit] ?? digit;
+    })
+    .replace(/\^(\d+)/g, '$1')
+    .replace(/\s+/g, '')
+    .replace(/[()]/g, '')
+    .toLowerCase();
+
 const stringifyDetailValue = (value: unknown) => {
   if (value === null || value === undefined || value === '') {
     return '-';
@@ -250,12 +340,110 @@ const stringifyDetailValue = (value: unknown) => {
   if (typeof value === 'boolean') {
     return value ? 'true' : 'false';
   }
+  if (typeof value === 'number') {
+    return formatNumberWithCommas(value);
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((item) => stringifyDetailValue(item))
+      .filter((item) => item !== '-' && item !== '');
+    return parts.length > 0 ? parts.join(', ') : '-';
+  }
   if (typeof value === 'object') {
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return String(value);
+    const objectValue = value as Record<string, unknown>;
+
+    if ('selected' in objectValue || 'option' in objectValue) {
+      const selected = toDisplayText(objectValue.selected ?? objectValue.option);
+      const customText = toDisplayText(objectValue.customText ?? objectValue.custom_text);
+      if (customText) {
+        return customText;
+      }
+      if (selected === '기타') {
+        return '기타';
+      }
+      return selected || '-';
     }
+
+    if ('value' in objectValue || 'unit' in objectValue) {
+      const rawValue = objectValue.value;
+      const rawUnit = objectValue.unit;
+      const rawCurrency = objectValue.currency ?? objectValue.currency_code;
+      const numericValue = toNumberOrUndefined(rawValue);
+      const valueText = numericValue !== undefined ? formatNumberWithCommas(numericValue) : toDisplayText(rawValue);
+      const currencyText = toDisplayText(rawCurrency);
+      const unitText = formatUnitForDisplay(toDisplayText(rawUnit));
+      const normalizedRawUnit = normalizeUnitToken(toDisplayText(rawUnit));
+
+      const convertedUnitParts = Object.entries(objectValue)
+        .filter(([key]) => key.startsWith('value_'))
+        .map(([key, nestedValue]) => {
+          const numeric = toNumberOrUndefined(nestedValue);
+          if (numeric === undefined) {
+            return null;
+          }
+          const unitTokenRaw = key.slice('value_'.length);
+          const unitToken = unitTokenRaw.replace(/_/g, '/');
+          const unitDisplay = formatUnitForDisplay(unitToken);
+          return {
+            unitToken,
+            valueText: `${formatNumberWithCommas(numeric)} ${unitDisplay}`,
+          };
+        })
+        .filter((item): item is { unitToken: string; valueText: string } => Boolean(item));
+
+      if (convertedUnitParts.length > 0) {
+        const prioritized = [...convertedUnitParts].sort((left, right) => {
+          const leftIsSelected =
+            normalizedRawUnit !== '' && normalizeUnitToken(left.unitToken) === normalizedRawUnit;
+          const rightIsSelected =
+            normalizedRawUnit !== '' && normalizeUnitToken(right.unitToken) === normalizedRawUnit;
+          if (leftIsSelected === rightIsSelected) {
+            return 0;
+          }
+          return leftIsSelected ? -1 : 1;
+        });
+        return prioritized.map((part) => part.valueText).join(' / ');
+      }
+
+      const valueWithCurrency = currencyText && valueText ? `${currencyText} ${valueText}` : valueText || currencyText;
+      if (valueWithCurrency && unitText) {
+        if (currencyText) {
+          return `${valueWithCurrency}/${unitText}`;
+        }
+        return `${valueWithCurrency} ${unitText}`;
+      }
+      return valueWithCurrency || '-';
+    }
+
+    if ('amount' in objectValue || 'currency' in objectValue || 'currency_code' in objectValue) {
+      const amountValue = objectValue.amount ?? objectValue.value;
+      const currencyValue = objectValue.currency ?? objectValue.currency_code;
+      const numericAmount = toNumberOrUndefined(amountValue);
+      const amountText =
+        numericAmount !== undefined ? formatNumberWithCommas(numericAmount) : toDisplayText(amountValue);
+      const currencyText = toDisplayText(currencyValue);
+      if (amountText && currencyText) {
+        return `${currencyText} ${amountText}`;
+      }
+      return amountText || currencyText || '-';
+    }
+
+    if ('first' in objectValue || 'second' in objectValue) {
+      const firstText = stringifyDetailValue(objectValue.first);
+      const secondText = stringifyDetailValue(objectValue.second);
+      if (firstText !== '-' && secondText !== '-') {
+        return `${firstText}/${secondText}`;
+      }
+      return firstText !== '-' ? firstText : secondText;
+    }
+
+    const nestedParts = Object.values(objectValue)
+      .map((nestedValue) => stringifyDetailValue(nestedValue))
+      .filter((item) => item !== '-' && item !== '');
+    return nestedParts.length > 0 ? nestedParts.join(' / ') : '-';
   }
   return String(value);
 };
@@ -468,9 +656,13 @@ export default function WorksheetTemplateSidebar({
     ];
 
     Object.entries(selectedPrimaryMaterial.attributes || {}).forEach(([key, value]) => {
+      const displayValue =
+        key === 'processing_fee' && typeof value === 'string'
+          ? formatNumericChunksInText(value)
+          : stringifyDetailValue(value);
       rows.push({
         label: selectedMaterialFieldLabelMap.get(key) ?? key,
-        value: stringifyDetailValue(value),
+        value: displayValue,
       });
     });
 

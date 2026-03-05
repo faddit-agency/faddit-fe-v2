@@ -51,8 +51,12 @@ interface CanvasCtx {
   setActiveTool: (t: ToolType) => void;
   strokeColor: string;
   setStrokeColor: (c: string) => void;
+  strokePantoneCode: string | null;
+  setStrokePantoneCode: (code: string | null) => void;
   fillColor: string;
   setFillColor: (c: string) => void;
+  fillPantoneCode: string | null;
+  setFillPantoneCode: (code: string | null) => void;
   strokeWidth: number;
   setStrokeWidth: (w: number) => void;
   fontSize: number;
@@ -115,7 +119,15 @@ const LAYER_NAME_MAP: Record<string, string> = {
   group: '그룹',
 };
 
-type ObjWithData = FabricObject & { data?: { id?: string; name?: string; kind?: string } };
+type ObjectData = {
+  id?: string;
+  name?: string;
+  kind?: string;
+  fill_pantone_code?: string | null;
+  stroke_pantone_code?: string | null;
+};
+
+type ObjWithData = FabricObject & { data?: ObjectData };
 
 function isArrowObject(obj: FabricObject): boolean {
   const data = (obj as ObjWithData).data;
@@ -163,24 +175,25 @@ function buildLayerTree(
       const currentData = (obj as ObjWithData).data;
       const fallbackId = `obj-${Date.now()}-${counter.n}`;
       const fallbackName = LAYER_NAME_MAP[type] ?? type;
-    const normalizedData = {
-      id: currentData?.id ?? fallbackId,
-      name: currentData?.name ?? fallbackName,
-    };
+      const normalizedData = {
+        ...(currentData ?? {}),
+        id: currentData?.id ?? fallbackId,
+        name: currentData?.name ?? fallbackName,
+      };
 
-    if (!currentData?.id || !currentData?.name) {
-      (obj as ObjWithData).data = normalizedData;
-    }
+      if (!currentData?.id || !currentData?.name) {
+        (obj as ObjWithData).data = normalizedData;
+      }
 
-    const id = normalizedData.id;
-    const name = normalizedData.name;
-    const isGroup = obj instanceof Group;
-    const isExpanded = expandedIds.has(id);
+      const id = normalizedData.id;
+      const name = normalizedData.name;
+      const isGroup = obj instanceof Group;
+      const isExpanded = expandedIds.has(id);
 
-    const children: LayerItem[] =
-      isGroup && isExpanded
-        ? buildLayerTree((obj as Group).getObjects(), depth + 1, expandedIds, counter)
-        : [];
+      const children: LayerItem[] =
+        isGroup && isExpanded
+          ? buildLayerTree((obj as Group).getObjects(), depth + 1, expandedIds, counter)
+          : [];
 
       return {
         obj,
@@ -238,7 +251,9 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
 
   const [activeTool, setActiveTool] = useState<ToolType>('select');
   const [strokeColor, setStrokeColorState] = useState('#000000');
+  const [strokePantoneCode, setStrokePantoneCodeState] = useState<string | null>(null);
   const [fillColor, setFillColorState] = useState('#ffffff');
+  const [fillPantoneCode, setFillPantoneCodeState] = useState<string | null>(null);
   const [strokeWidth, setStrokeWidthState] = useState(2);
   const [fontSize, setFontSizeState] = useState(20);
   const [fontFamily, setFontFamilyState] = useState('Arial');
@@ -295,6 +310,8 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
     if (!obj) {
       setSelectedType(null);
       setActiveLayerId(null);
+      setFillPantoneCodeState(null);
+      setStrokePantoneCodeState(null);
       return;
     }
     setSelectedType(obj.type ?? null);
@@ -312,7 +329,18 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
     } else {
       setCornerRadiusState(0);
     }
-    setActiveLayerId((obj as ObjWithData).data?.id ?? null);
+    const data = (obj as ObjWithData).data;
+    setFillPantoneCodeState(
+      typeof data?.fill_pantone_code === 'string' && data.fill_pantone_code.trim() !== ''
+        ? data.fill_pantone_code
+        : null,
+    );
+    setStrokePantoneCodeState(
+      typeof data?.stroke_pantone_code === 'string' && data.stroke_pantone_code.trim() !== ''
+        ? data.stroke_pantone_code
+        : null,
+    );
+    setActiveLayerId(data?.id ?? null);
   }, []);
 
   const exportCanvasJson = useCallback(() => {
@@ -409,6 +437,24 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const setFillPantoneCode = useCallback((code: string | null) => {
+    setFillPantoneCodeState(code);
+    const obj = canvasRef.current?.getActiveObject() as ObjWithData | undefined;
+    if (!obj) {
+      return;
+    }
+
+    const currentData = obj.data ?? {};
+    const nextData: ObjectData = { ...currentData };
+    if (code && code.trim() !== '') {
+      nextData.fill_pantone_code = code;
+    } else {
+      delete nextData.fill_pantone_code;
+    }
+    obj.data = nextData;
+    canvasRef.current?.renderAll();
+  }, []);
+
   const setStrokeColor = useCallback((c: string) => {
     setStrokeColorState(c);
     const obj = canvasRef.current?.getActiveObject();
@@ -416,6 +462,24 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
       obj.set('stroke', c);
       canvasRef.current?.renderAll();
     }
+  }, []);
+
+  const setStrokePantoneCode = useCallback((code: string | null) => {
+    setStrokePantoneCodeState(code);
+    const obj = canvasRef.current?.getActiveObject() as ObjWithData | undefined;
+    if (!obj) {
+      return;
+    }
+
+    const currentData = obj.data ?? {};
+    const nextData: ObjectData = { ...currentData };
+    if (code && code.trim() !== '') {
+      nextData.stroke_pantone_code = code;
+    } else {
+      delete nextData.stroke_pantone_code;
+    }
+    obj.data = nextData;
+    canvasRef.current?.renderAll();
   }, []);
 
   const setStrokeWidth = useCallback((w: number) => {
@@ -1020,8 +1084,12 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
         setActiveTool,
         strokeColor,
         setStrokeColor,
+        strokePantoneCode,
+        setStrokePantoneCode,
         fillColor,
         setFillColor,
+        fillPantoneCode,
+        setFillPantoneCode,
         strokeWidth,
         setStrokeWidth,
         fontSize,

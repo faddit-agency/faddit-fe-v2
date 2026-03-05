@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import WorksheetTemplateSidebar from './WorksheetTemplateSidebar';
 import WorksheetHeader from './WorksheetHeader';
 import WorksheetGridContent from './WorksheetGridContent';
+import WorksheetCostView from './WorksheetCostView';
 import { getWorksheetDetail, saveWorksheetUiInfo, updateWorksheet } from '../../../lib/api/worksheetApi';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { useWorksheetStore } from './useWorksheetStore';
@@ -98,6 +99,7 @@ const Worksheet: React.FC = () => {
         tabLayouts: state.tabLayouts,
         cardVisibility: state.cardVisibility,
         sizeSpecUnit: state.sizeSpecUnit,
+        fabricLengthUnit: state.fabricLengthUnit,
         moduleElements: state.moduleElements,
         moduleSheetStates: state.moduleSheetStates,
         costState: state.costState,
@@ -306,7 +308,11 @@ const Worksheet: React.FC = () => {
           saveError={saveError}
           saveSuccessAt={saveSuccessAt}
         />
-        <WorksheetGridContent editorDocument={editorDocument} />
+        {activeTab === 'cost' ? (
+          <WorksheetCostView />
+        ) : (
+          <WorksheetGridContent editorDocument={editorDocument} />
+        )}
       </main>
     </div>
   );

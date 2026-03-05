@@ -22,6 +22,8 @@ type WorksheetSizeSpecViewProps = {
   showRowDeleteButton?: boolean;
   showTotals?: boolean;
   lockedColumnCount?: number;
+  headerLabelOverrides?: Record<number, string>;
+  readOnlyHeaderColumns?: number[];
   onDeleteRow?: (rowIndex: number) => void;
   onMoveRow?: (fromIndex: number, toIndex: number) => void;
   rowValuePatches?: Record<number, string[]>;
@@ -254,6 +256,8 @@ export default function WorksheetSizeSpecView({
   showRowDeleteButton = true,
   showTotals = false,
   lockedColumnCount = 0,
+  headerLabelOverrides,
+  readOnlyHeaderColumns = [],
   onDeleteRow,
   onMoveRow,
   rowValuePatches,
@@ -285,6 +289,10 @@ export default function WorksheetSizeSpecView({
   const showRowActionRail = !showRowHeader;
   const showTrailingActionColumn = showAddColumnButton;
   const normalizedLockedColumnCount = Math.max(0, lockedColumnCount);
+  const readOnlyHeaderColumnSet = useMemo(
+    () => new Set(readOnlyHeaderColumns),
+    [readOnlyHeaderColumns],
+  );
 
   const shouldConvertColumn = useCallback(
     (colIndex: number) => enableUnitConversion && showRowHeader && colIndex > 0,
@@ -721,7 +729,9 @@ export default function WorksheetSizeSpecView({
                 )}
                 {spec.headers.slice(dataHeaderStart).map((header, visibleIndex) => {
                   const colIndex = visibleIndex + dataHeaderStart;
+                  const displayHeaderLabel = headerLabelOverrides?.[colIndex] ?? header;
                   const isLockedColumn = colIndex < normalizedLockedColumnCount;
+                  const isReadOnlyHeader = readOnlyHeaderColumnSet.has(colIndex);
                   const isDragOver = dragOver?.type === 'column' && dragOver.index === colIndex;
                   const isDragged = dragItem?.type === 'column' && dragItem.index === colIndex;
                   const xShift = getColumnShift(colIndex);
@@ -773,24 +783,62 @@ export default function WorksheetSizeSpecView({
                             }}
                           />
                         )}
-                        <input
-                          value={header}
-                          onChange={(e) => handleHeaderChange(colIndex, e.target.value)}
-                          placeholder='사이즈'
-                          className={`relative z-0 w-full border-0 py-1.5 text-center text-xs font-semibold text-slate-600 outline-none focus:bg-blue-50 ${isDragOver ? 'bg-blue-50/50' : 'bg-transparent'}`}
-                          style={{
-                            ...getMotionStyle(xShift, 0, isDragged, isDragOver && !isDragged),
-                            paddingLeft: `${hoveredDataCol === colIndex ? DATA_HEADER_EXPANDED_PADDING : DATA_HEADER_COMPACT_PADDING}px`,
-                            paddingRight: `${hoveredDataCol === colIndex ? DATA_HEADER_EXPANDED_PADDING : DATA_HEADER_COMPACT_PADDING}px`,
-                            transition:
-                              'padding-left 220ms ease, padding-right 220ms ease, transform 220ms cubic-bezier(0.2, 0.9, 0.25, 1), box-shadow 180ms ease, opacity 180ms ease',
-                            boxShadow:
-                              dropFlash?.type === 'column' && dropFlash.index === colIndex
-                                ? 'inset 0 0 0 1px rgba(59,130,246,0.45), inset 0 0 24px rgba(59,130,246,0.14)'
-                                : getMotionStyle(xShift, 0, isDragged, isDragOver && !isDragged)
-                                    .boxShadow,
-                          }}
-                        />
+                        {isReadOnlyHeader ? (
+                          <div
+                            className={`relative z-0 w-full py-1.5 text-center text-xs font-semibold text-slate-600 ${
+                              isDragOver ? 'bg-blue-50/50' : 'bg-transparent'
+                            }`}
+                            style={{
+                              ...getMotionStyle(xShift, 0, isDragged, isDragOver && !isDragged),
+                              paddingLeft: `${
+                                hoveredDataCol === colIndex
+                                  ? DATA_HEADER_EXPANDED_PADDING
+                                  : DATA_HEADER_COMPACT_PADDING
+                              }px`,
+                              paddingRight: `${
+                                hoveredDataCol === colIndex
+                                  ? DATA_HEADER_EXPANDED_PADDING
+                                  : DATA_HEADER_COMPACT_PADDING
+                              }px`,
+                              transition:
+                                'padding-left 220ms ease, padding-right 220ms ease, transform 220ms cubic-bezier(0.2, 0.9, 0.25, 1), box-shadow 180ms ease, opacity 180ms ease',
+                              boxShadow:
+                                dropFlash?.type === 'column' && dropFlash.index === colIndex
+                                  ? 'inset 0 0 0 1px rgba(59,130,246,0.45), inset 0 0 24px rgba(59,130,246,0.14)'
+                                  : getMotionStyle(xShift, 0, isDragged, isDragOver && !isDragged)
+                                      .boxShadow,
+                            }}
+                          >
+                            {displayHeaderLabel}
+                          </div>
+                        ) : (
+                          <input
+                            value={displayHeaderLabel}
+                            onChange={(e) => handleHeaderChange(colIndex, e.target.value)}
+                            placeholder='사이즈'
+                            className={`relative z-0 w-full border-0 py-1.5 text-center text-xs font-semibold text-slate-600 outline-none focus:bg-blue-50 ${isDragOver ? 'bg-blue-50/50' : 'bg-transparent'}`}
+                            style={{
+                              ...getMotionStyle(xShift, 0, isDragged, isDragOver && !isDragged),
+                              paddingLeft: `${
+                                hoveredDataCol === colIndex
+                                  ? DATA_HEADER_EXPANDED_PADDING
+                                  : DATA_HEADER_COMPACT_PADDING
+                              }px`,
+                              paddingRight: `${
+                                hoveredDataCol === colIndex
+                                  ? DATA_HEADER_EXPANDED_PADDING
+                                  : DATA_HEADER_COMPACT_PADDING
+                              }px`,
+                              transition:
+                                'padding-left 220ms ease, padding-right 220ms ease, transform 220ms cubic-bezier(0.2, 0.9, 0.25, 1), box-shadow 180ms ease, opacity 180ms ease',
+                              boxShadow:
+                                dropFlash?.type === 'column' && dropFlash.index === colIndex
+                                  ? 'inset 0 0 0 1px rgba(59,130,246,0.45), inset 0 0 24px rgba(59,130,246,0.14)'
+                                  : getMotionStyle(xShift, 0, isDragged, isDragOver && !isDragged)
+                                      .boxShadow,
+                            }}
+                          />
+                        )}
                         {showColumnActions && (
                           <>
                             {!isLockedColumn ? (
@@ -1046,7 +1094,10 @@ export default function WorksheetSizeSpecView({
 
                     {row.slice(dataHeaderStart).map((cell, visibleColIndex) => {
                       const colIndex = visibleColIndex + dataHeaderStart;
-                      const columnTooltipTitle = spec.headers[colIndex]?.trim() || '사이즈';
+                      const columnTooltipTitle =
+                        headerLabelOverrides?.[colIndex]?.trim() ||
+                        spec.headers[colIndex]?.trim() ||
+                        '사이즈';
                       const isDraggedColumn =
                         dragItem?.type === 'column' && dragItem.index === colIndex;
                       const isColumnDropTarget =
