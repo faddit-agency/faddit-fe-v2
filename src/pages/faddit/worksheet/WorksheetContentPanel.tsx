@@ -36,6 +36,18 @@ const GUIDE_MANUAL_ITEMS: Array<{ title: string; shortcut: string; usage: string
   { title: '패스 편집', shortcut: 'A', usage: '선택한 패스를 직접 편집(더블클릭과 동일)' },
   { title: '그룹화', shortcut: 'Cmd/Ctrl+G', usage: '선택 객체 그룹화' },
   { title: '그룹 해제', shortcut: 'Cmd/Ctrl+Alt+G', usage: '그룹 해제' },
+  { title: '앞으로 가져오기', shortcut: 'Cmd/Ctrl+]', usage: '선택 객체를 한 단계 앞으로 이동' },
+  { title: '뒤로 보내기', shortcut: 'Cmd/Ctrl+[', usage: '선택 객체를 한 단계 뒤로 이동' },
+  {
+    title: '맨 앞으로 가져오기',
+    shortcut: 'Cmd/Ctrl+Alt+]',
+    usage: '선택 객체를 최상단 레이어로 이동',
+  },
+  {
+    title: '맨 뒤로 보내기',
+    shortcut: 'Cmd/Ctrl+Alt+[',
+    usage: '선택 객체를 최하단 레이어로 이동',
+  },
   { title: '복사/붙여넣기', shortcut: 'Cmd/Ctrl+C, V', usage: '선택 객체 복사/붙여넣기' },
   { title: '실행 취소/다시 실행', shortcut: 'Cmd/Ctrl+Z, Y', usage: '최근 작업 되돌리기/복원' },
   { title: '팬', shortcut: 'Space + Drag', usage: '캔버스 이동(패닝)' },

@@ -39,6 +39,7 @@ import {
   mapWorksheetUploadCategoryToDriveTag,
   normalizeWorksheetElementUploadFile,
   WORKSHEET_ELEMENT_UPLOAD_REFRESH_EVENT,
+  type WorksheetUploadCategory,
 } from './worksheetElementUploadUtils';
 import {
   createMaterial,
@@ -47,9 +48,12 @@ import {
   type MaterialFieldDef,
   type MaterialItem,
 } from '../../../lib/api/materialApi';
-import WorksheetElementUploadModal, {
-  type WorksheetElementUploadSubmitPayload,
-} from './WorksheetElementUploadModal';
+import TemplateCreateModal, {
+  type CreateCustomTemplateFormValue,
+  type CreateMaterialFormValue,
+  type CreateWorksheetFormValue,
+  type TemplateKey,
+} from '../drive/components/TemplateCreateModal';
 
 type ToolTab = 'template' | 'module' | 'element' | 'history' | 'comment';
 
@@ -99,6 +103,42 @@ type ElementWorkspaceFile = Omit<WorksheetElementItem, 'category'> & {
   type: DriveNode['type'];
   tag?: string;
   node: DriveNode;
+};
+
+type WorksheetElementUploadMaterialDetails = {
+  category: CreateMaterialFormValue['category'];
+  codeInternal?: string;
+  vendorName?: string;
+  itemName?: string;
+  originCountry?: string;
+  attributes: Record<string, unknown>;
+};
+
+type WorksheetElementUploadSubmitPayload = {
+  files: File[];
+  category: WorksheetUploadCategory;
+  materialDetails?: WorksheetElementUploadMaterialDetails;
+  title?: string;
+  description?: string;
+};
+
+const WORKSHEET_ELEMENT_MODAL_HIDDEN_TEMPLATE_KEYS: TemplateKey[] = [
+  'folder',
+  'worksheet',
+  'schematic',
+  'pattern',
+];
+
+const WORKSHEET_ELEMENT_MODAL_FILE_REQUIRED_TEMPLATE_KEYS: TemplateKey[] = ['print', 'etc'];
+
+const MATERIAL_CATEGORY_TO_WORKSHEET_UPLOAD_CATEGORY: Record<
+  CreateMaterialFormValue['category'],
+  WorksheetUploadCategory
+> = {
+  fabric: '원단',
+  rib_fabric: '시보리원단',
+  label: '라벨',
+  trim: '부자재',
 };
 
 const getElementCategoryBadgeClass = (category: ElementDisplayCategory) => {
@@ -203,6 +243,96 @@ const resolveElementWorkspaceCategory = async (
 
 const ELEMENT_DETAIL_PANEL_WIDTH = 308;
 
+const formatNumberWithCommas = (value: number) => {
+  if (!Number.isFinite(value)) {
+    return String(value);
+  }
+  return value.toLocaleString('ko-KR');
+};
+
+const toNumberOrUndefined = (value: unknown) => {
+  if (typeof value === 'number' && !Number.isNaN(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value.replace(/,/g, ''));
+    return Number.isNaN(parsed) ? undefined : parsed;
+  }
+  return undefined;
+};
+
+const toDisplayText = (value: unknown): string => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
+};
+
+const formatUnitForDisplay = (unit: string) =>
+  unit.replace(/\^(\d+)/g, (_, exponent: string) => {
+    const superscriptDigits: Record<string, string> = {
+      '0': '⁰',
+      '1': '¹',
+      '2': '²',
+      '3': '³',
+      '4': '⁴',
+      '5': '⁵',
+      '6': '⁶',
+      '7': '⁷',
+      '8': '⁸',
+      '9': '⁹',
+    };
+
+    return exponent
+      .split('')
+      .map((digit) => superscriptDigits[digit] ?? digit)
+      .join('');
+  });
+
+const formatNumericChunksInText = (text: string) =>
+  text.replace(/-?\d[\d,]*(?:\.\d+)?/g, (chunk) => {
+    const cleaned = chunk.replace(/,/g, '');
+    if (!/^-?\d+(?:\.\d+)?$/.test(cleaned)) {
+      return chunk;
+    }
+
+    const sign = cleaned.startsWith('-') ? '-' : '';
+    const unsigned = sign ? cleaned.slice(1) : cleaned;
+    const [intPart, decimalPart] = unsigned.split('.');
+
+    if (intPart.length <= 3) {
+      return chunk;
+    }
+    if (intPart.length > 1 && intPart.startsWith('0')) {
+      return chunk;
+    }
+
+    const formattedInt = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return `${sign}${formattedInt}${decimalPart ? `.${decimalPart}` : ''}`;
+  });
+
+const normalizeUnitToken = (value: string) =>
+  value
+    .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g, (digit) => {
+      const digitBySuperscript: Record<string, string> = {
+        '⁰': '0',
+        '¹': '1',
+        '²': '2',
+        '³': '3',
+        '⁴': '4',
+        '⁵': '5',
+        '⁶': '6',
+        '⁷': '7',
+        '⁸': '8',
+        '⁹': '9',
+      };
+      return digitBySuperscript[digit] ?? digit;
+    })
+    .replace(/\^(\d+)/g, '$1')
+    .replace(/\s+/g, '')
+    .replace(/[()]/g, '')
+    .toLowerCase();
+
 const stringifyDetailValue = (value: unknown) => {
   if (value === null || value === undefined || value === '') {
     return '-';
@@ -210,12 +340,110 @@ const stringifyDetailValue = (value: unknown) => {
   if (typeof value === 'boolean') {
     return value ? 'true' : 'false';
   }
+  if (typeof value === 'number') {
+    return formatNumberWithCommas(value);
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((item) => stringifyDetailValue(item))
+      .filter((item) => item !== '-' && item !== '');
+    return parts.length > 0 ? parts.join(', ') : '-';
+  }
   if (typeof value === 'object') {
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return String(value);
+    const objectValue = value as Record<string, unknown>;
+
+    if ('selected' in objectValue || 'option' in objectValue) {
+      const selected = toDisplayText(objectValue.selected ?? objectValue.option);
+      const customText = toDisplayText(objectValue.customText ?? objectValue.custom_text);
+      if (customText) {
+        return customText;
+      }
+      if (selected === '기타') {
+        return '기타';
+      }
+      return selected || '-';
     }
+
+    if ('value' in objectValue || 'unit' in objectValue) {
+      const rawValue = objectValue.value;
+      const rawUnit = objectValue.unit;
+      const rawCurrency = objectValue.currency ?? objectValue.currency_code;
+      const numericValue = toNumberOrUndefined(rawValue);
+      const valueText = numericValue !== undefined ? formatNumberWithCommas(numericValue) : toDisplayText(rawValue);
+      const currencyText = toDisplayText(rawCurrency);
+      const unitText = formatUnitForDisplay(toDisplayText(rawUnit));
+      const normalizedRawUnit = normalizeUnitToken(toDisplayText(rawUnit));
+
+      const convertedUnitParts = Object.entries(objectValue)
+        .filter(([key]) => key.startsWith('value_'))
+        .map(([key, nestedValue]) => {
+          const numeric = toNumberOrUndefined(nestedValue);
+          if (numeric === undefined) {
+            return null;
+          }
+          const unitTokenRaw = key.slice('value_'.length);
+          const unitToken = unitTokenRaw.replace(/_/g, '/');
+          const unitDisplay = formatUnitForDisplay(unitToken);
+          return {
+            unitToken,
+            valueText: `${formatNumberWithCommas(numeric)} ${unitDisplay}`,
+          };
+        })
+        .filter((item): item is { unitToken: string; valueText: string } => Boolean(item));
+
+      if (convertedUnitParts.length > 0) {
+        const prioritized = [...convertedUnitParts].sort((left, right) => {
+          const leftIsSelected =
+            normalizedRawUnit !== '' && normalizeUnitToken(left.unitToken) === normalizedRawUnit;
+          const rightIsSelected =
+            normalizedRawUnit !== '' && normalizeUnitToken(right.unitToken) === normalizedRawUnit;
+          if (leftIsSelected === rightIsSelected) {
+            return 0;
+          }
+          return leftIsSelected ? -1 : 1;
+        });
+        return prioritized.map((part) => part.valueText).join(' / ');
+      }
+
+      const valueWithCurrency = currencyText && valueText ? `${currencyText} ${valueText}` : valueText || currencyText;
+      if (valueWithCurrency && unitText) {
+        if (currencyText) {
+          return `${valueWithCurrency}/${unitText}`;
+        }
+        return `${valueWithCurrency} ${unitText}`;
+      }
+      return valueWithCurrency || '-';
+    }
+
+    if ('amount' in objectValue || 'currency' in objectValue || 'currency_code' in objectValue) {
+      const amountValue = objectValue.amount ?? objectValue.value;
+      const currencyValue = objectValue.currency ?? objectValue.currency_code;
+      const numericAmount = toNumberOrUndefined(amountValue);
+      const amountText =
+        numericAmount !== undefined ? formatNumberWithCommas(numericAmount) : toDisplayText(amountValue);
+      const currencyText = toDisplayText(currencyValue);
+      if (amountText && currencyText) {
+        return `${currencyText} ${amountText}`;
+      }
+      return amountText || currencyText || '-';
+    }
+
+    if ('first' in objectValue || 'second' in objectValue) {
+      const firstText = stringifyDetailValue(objectValue.first);
+      const secondText = stringifyDetailValue(objectValue.second);
+      if (firstText !== '-' && secondText !== '-') {
+        return `${firstText}/${secondText}`;
+      }
+      return firstText !== '-' ? firstText : secondText;
+    }
+
+    const nestedParts = Object.values(objectValue)
+      .map((nestedValue) => stringifyDetailValue(nestedValue))
+      .filter((item) => item !== '-' && item !== '');
+    return nestedParts.length > 0 ? nestedParts.join(' / ') : '-';
   }
   return String(value);
 };
@@ -428,9 +656,13 @@ export default function WorksheetTemplateSidebar({
     ];
 
     Object.entries(selectedPrimaryMaterial.attributes || {}).forEach(([key, value]) => {
+      const displayValue =
+        key === 'processing_fee' && typeof value === 'string'
+          ? formatNumericChunksInText(value)
+          : stringifyDetailValue(value);
       rows.push({
         label: selectedMaterialFieldLabelMap.get(key) ?? key,
-        value: stringifyDetailValue(value),
+        value: displayValue,
       });
     });
 
@@ -704,13 +936,13 @@ export default function WorksheetTemplateSidebar({
   const handleElementUploadSubmit = useCallback(
     async ({ files, category, materialDetails, title, description }: WorksheetElementUploadSubmitPayload) => {
       if (files.length === 0) {
-        return;
+        return false;
       }
       if (!userId || !rootFolderId || !worksheetId) {
         const errorMessage = '작업지시서 업로드에 필요한 정보가 없습니다.';
         setElementUploadError(errorMessage);
         setElementUploadModalError(errorMessage);
-        return;
+        return false;
       }
 
       try {
@@ -791,10 +1023,12 @@ export default function WorksheetTemplateSidebar({
           }),
         );
         setElementUploadModalOpen(false);
+        return true;
       } catch {
         const errorMessage = '요소 업로드에 실패했습니다. 잠시 후 다시 시도해주세요.';
         setElementUploadError(errorMessage);
         setElementUploadModalError(errorMessage);
+        return false;
       } finally {
         setElementUploadSubmitting(false);
       }
@@ -806,6 +1040,64 @@ export default function WorksheetTemplateSidebar({
       userId,
       worksheetId,
     ],
+  );
+
+  const handleTemplateCreateMaterial = useCallback(
+    async (value: CreateMaterialFormValue) => {
+      const uploadCategory = MATERIAL_CATEGORY_TO_WORKSHEET_UPLOAD_CATEGORY[value.category];
+      const success = await handleElementUploadSubmit({
+        files: [value.file],
+        category: uploadCategory,
+        materialDetails: {
+          category: value.category,
+          codeInternal: value.codeInternal,
+          vendorName: value.vendorName,
+          itemName: value.itemName,
+          originCountry: value.originCountry,
+          attributes: value.attributes,
+        },
+      });
+
+      if (!success) {
+        throw new Error('worksheet element material upload failed');
+      }
+    },
+    [handleElementUploadSubmit],
+  );
+
+  const handleTemplateCreateCustom = useCallback(
+    async (value: CreateCustomTemplateFormValue) => {
+      if (value.template !== 'print' && value.template !== 'etc') {
+        return;
+      }
+
+      if (!value.file) {
+        throw new Error('worksheet element file is required');
+      }
+
+      const success = await handleElementUploadSubmit({
+        files: [value.file],
+        category: value.template === 'print' ? '인쇄' : '기타',
+        title: value.title,
+        description: value.description,
+      });
+
+      if (!success) {
+        throw new Error('worksheet element custom upload failed');
+      }
+    },
+    [handleElementUploadSubmit],
+  );
+
+  const handleTemplateCreateNoopFolder = useCallback(async (_folderName: string) => {
+    return;
+  }, []);
+
+  const handleTemplateCreateNoopWorksheet = useCallback(
+    async (_value: CreateWorksheetFormValue) => {
+      return;
+    },
+    [],
   );
 
   useEffect(() => {
@@ -1639,7 +1931,7 @@ export default function WorksheetTemplateSidebar({
         <nav className='flex w-14 shrink-0 flex-col gap-y-2'>
           <Link
             to='/faddit/drive'
-            className='flex aspect-square cursor-pointer items-center justify-center rounded-md p-2 text-gray-600 transition-colors hover:bg-gray-200/60'
+            className='flex aspect-square items-center justify-center rounded-md border border-transparent p-2 text-gray-600 transition-all duration-150 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1'
             aria-label='패딧 홈으로 이동'
           >
             <img src={FadditLogoOnly} alt='Faddit' className='h-7 w-7' />
@@ -1650,10 +1942,10 @@ export default function WorksheetTemplateSidebar({
               key={key}
               type='button'
               onClick={() => handleToolTabClick(key)}
-              className={`flex aspect-square cursor-pointer flex-col items-center justify-center gap-0.5 rounded-md p-2 text-[10px] transition-colors ${
+              className={`flex aspect-square flex-col items-center justify-center gap-0.5 rounded-md border p-2 text-[10px] transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1 ${
                 activeTab === key
-                  ? 'bg-gray-100 text-gray-800'
-                  : 'text-gray-600 hover:bg-gray-200/60'
+                  ? 'border-violet-500 bg-faddit text-white shadow-[0_6px_14px_rgba(118,59,255,0.26)] hover:bg-violet-600'
+                  : 'border-transparent text-gray-600 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700'
               }`}
             >
               <Icon size={20} strokeWidth={1.5} />
@@ -1665,7 +1957,7 @@ export default function WorksheetTemplateSidebar({
               <button
                 type='button'
                 onClick={() => setContentOpen((open) => !open)}
-                className='cursor-pointer rounded p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-700'
+                className='rounded-md border border-transparent p-1 text-gray-500 transition-all duration-150 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1'
                 aria-label={contentOpen ? '도구모음 접기' : '도구모음 펼치기'}
               >
                 {contentOpen ? (
@@ -1695,12 +1987,21 @@ export default function WorksheetTemplateSidebar({
         )}
         </div>
       </div>
-      <WorksheetElementUploadModal
+      <TemplateCreateModal
         modalOpen={elementUploadModalOpen}
         setModalOpen={setElementUploadModalOpen}
-        isSubmitting={elementUploadSubmitting}
+        isSubmittingFolder={false}
+        isSubmittingMaterial={elementUploadSubmitting}
+        isSubmittingWorksheet={false}
+        onCreateFolder={handleTemplateCreateNoopFolder}
+        onCreateMaterial={handleTemplateCreateMaterial}
+        onCreateWorksheet={handleTemplateCreateNoopWorksheet}
+        onCreateCustomTemplate={handleTemplateCreateCustom}
+        hiddenTemplateKeys={WORKSHEET_ELEMENT_MODAL_HIDDEN_TEMPLATE_KEYS}
+        fileRequiredTemplateKeys={WORKSHEET_ELEMENT_MODAL_FILE_REQUIRED_TEMPLATE_KEYS}
+        fileAccept='image/*'
         submitError={elementUploadModalError}
-        onSubmit={handleElementUploadSubmit}
+        submitLabel='업로드'
       />
       {elementDetailPanelPortal}
     </>

@@ -70,20 +70,17 @@ export const CARD_DEFINITIONS: Record<MenuTab, CardDefinition[]> = {
       isDefault: true,
     },
   ],
-  cost: [
-    {
-      id: 'cost-calc',
-      title: '원가계산서',
-      tab: 'cost',
-      defaultLayout: { x: 0, y: 0, w: 12, h: 16, minW: 8, minH: 10 },
-      isDefault: true,
-    },
-  ],
+  cost: [],
 };
 
 export const SIZE_UNIT_OPTIONS = [
   { id: 1, period: 'cm/단면' },
   { id: 2, period: 'inch/단면' },
+];
+
+export const FABRIC_LENGTH_UNIT_OPTIONS = [
+  { id: 1, period: 'yd' },
+  { id: 2, period: 'm' },
 ];
 
 export const LABEL_SHEET_STATE = {

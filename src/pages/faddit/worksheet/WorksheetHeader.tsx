@@ -226,10 +226,10 @@ export default function WorksheetHeader({
               key={tab.key}
               type='button'
               onClick={() => setActiveTab(tab.key)}
-              className={`cursor-pointer border-b-2 text-[14px] font-semibold transition-colors ${
+              className={`cursor-pointer border-b-2 text-[14px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1 ${
                 activeTab === tab.key
                   ? 'border-faddit text-faddit'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  : 'border-transparent text-gray-500 hover:border-violet-200 hover:text-violet-700'
               }`}
             >
               {tab.label}

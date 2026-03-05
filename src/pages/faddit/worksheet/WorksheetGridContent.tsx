@@ -8,7 +8,6 @@ import 'react-grid-layout/css/styles.css';
 import { useWorksheetStore } from './useWorksheetStore';
 import { CARD_DEFINITIONS, GRID_CONFIG } from './worksheetConstants';
 import WorksheetGridCard from './WorksheetGridCard';
-import WorksheetCostView from './WorksheetCostView';
 import WorksheetSizeSpecView from './WorksheetSizeSpecView';
 import WorksheetNoticeEditor from './WorksheetNoticeEditor';
 import DropdownButton from '../../../components/atoms/DropdownButton';
@@ -17,6 +16,7 @@ import {
   TRIM_SHEET_STATE,
   COLOR_SIZE_QTY_STATE,
   SIZE_UNIT_OPTIONS,
+  FABRIC_LENGTH_UNIT_OPTIONS,
   FABRIC_INFO_STATE,
   RIB_FABRIC_INFO_STATE,
 } from './worksheetConstants';
@@ -44,6 +44,7 @@ import {
   normalizeWorksheetElementUploadFile,
   WORKSHEET_ELEMENT_UPLOAD_REFRESH_EVENT,
 } from './worksheetElementUploadUtils';
+import { getMaterialsByFileSystem, type MaterialItem } from '../../../lib/api/materialApi';
 
 const WORKSHEET_MODULE_DRAG_TYPE = 'application/x-faddit-worksheet-card';
 const WORKSHEET_ELEMENT_DRAG_TYPE = 'application/x-faddit-worksheet-element';
@@ -55,7 +56,135 @@ const MODULE_ELEMENT_ACCEPT_CATEGORY: Record<string, WorksheetElementCategory> =
   'trim-sheet': '부자재',
 };
 
-function buildWorkspaceElementRowValues(cardId: string, item: WorksheetElementItem): string[] {
+const MODULE_PREFERRED_MATERIAL_CATEGORIES: Partial<Record<string, MaterialItem['category'][]>> = {
+  'fabric-info': ['fabric', 'rib_fabric', 'trim', 'label'],
+  'rib-fabric-info': ['rib_fabric', 'fabric', 'trim', 'label'],
+  'label-sheet': ['label', 'trim', 'fabric', 'rib_fabric'],
+  'trim-sheet': ['trim', 'label', 'fabric', 'rib_fabric'],
+};
+
+const MODULE_ROW_FIELD_CANDIDATES: Partial<Record<string, string[][]>> = {
+  'fabric-info': [
+    ['material_position', 'attach_position'],
+    ['color'],
+    ['pattern_total_area'],
+    ['marker_efficiency'],
+    ['yocheok'],
+    ['total_required_fabric'],
+  ],
+  'rib-fabric-info': [
+    ['rib_type', 'material_position', 'attach_position'],
+    ['color'],
+    ['pattern_total_area'],
+    ['marker_efficiency'],
+    ['yocheok'],
+    ['total_required_fabric'],
+  ],
+  'label-sheet': [
+    ['attach_position', 'material_position'],
+    ['usage_quantity', 'usage_quantity_per_garment'],
+    ['fabric_blend_ratio', 'blend_ratio'],
+    ['manufacture_country', 'origin_country'],
+    ['care_symbol', 'care_symbols', 'washing_symbol', 'washing_symbols'],
+    ['skin_irritation'],
+    ['company_info', 'vendor_name'],
+  ],
+  'trim-sheet': [
+    ['attach_position', 'material_position'],
+    ['usage_quantity_per_garment', 'usage_quantity'],
+    ['usage_length'],
+    ['color'],
+    ['cost_per_garment', 'price_amount'],
+    ['total_trim_cost'],
+  ],
+};
+
+function stringifyMaterialCellValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => stringifyMaterialCellValue(entry)).filter(Boolean).join(', ');
+  }
+
+  if (typeof value === 'object') {
+    const payload = value as Record<string, unknown>;
+    if ('selected' in payload || 'customText' in payload) {
+      const selected = stringifyMaterialCellValue(payload.selected ?? '');
+      const customText = stringifyMaterialCellValue(payload.customText ?? '');
+      if (selected === '기타' && customText) {
+        return customText;
+      }
+      return selected || customText;
+    }
+
+    if ('value' in payload || 'unit' in payload) {
+      const numericValue = stringifyMaterialCellValue(payload.value ?? '');
+      const unit = stringifyMaterialCellValue(payload.unit ?? '');
+      if (numericValue && unit) {
+        const hasCurrency = payload.currency !== undefined || payload.currency_code !== undefined;
+        return hasCurrency ? `${numericValue}/${unit}` : `${numericValue} ${unit}`;
+      }
+      return numericValue || unit;
+    }
+
+    if ('first' in payload || 'second' in payload) {
+      const first = stringifyMaterialCellValue(payload.first ?? '');
+      const second = stringifyMaterialCellValue(payload.second ?? '');
+      if (first && second) {
+        return `${first}/${second}`;
+      }
+      return first || second;
+    }
+
+    if ('width' in payload || 'height' in payload) {
+      const width = stringifyMaterialCellValue(payload.width ?? '');
+      const height = stringifyMaterialCellValue(payload.height ?? '');
+      const unit = stringifyMaterialCellValue(payload.unit ?? '');
+      const sizeText = [width, height].filter(Boolean).join(' x ');
+      if (!sizeText) {
+        return unit;
+      }
+      return unit ? `${sizeText} ${unit}` : sizeText;
+    }
+  }
+
+  return '';
+}
+
+function getMaterialFieldText(material: MaterialItem, fieldKey: string): string {
+  const attributes = material.attributes as Record<string, unknown> | undefined;
+  const topLevelValue = (material as unknown as Record<string, unknown>)[fieldKey];
+  const attributeValue = attributes?.[fieldKey];
+  return stringifyMaterialCellValue(attributeValue ?? topLevelValue);
+}
+
+function selectPreferredMaterial(cardId: string, materials: MaterialItem[]): MaterialItem | null {
+  if (materials.length === 0) {
+    return null;
+  }
+
+  const preferredCategories = MODULE_PREFERRED_MATERIAL_CATEGORIES[cardId] ?? [];
+  for (const category of preferredCategories) {
+    const matched = materials.find((material) => material.category === category);
+    if (matched) {
+      return matched;
+    }
+  }
+
+  return materials[0] ?? null;
+}
+
+function buildFallbackElementRowValues(cardId: string, item: WorksheetElementItem): string[] {
   if (cardId === 'fabric-info') {
     return [item.name, '', '', '', '', ''];
   }
@@ -70,6 +199,29 @@ function buildWorkspaceElementRowValues(cardId: string, item: WorksheetElementIt
   }
 
   return [];
+}
+
+function buildMaterialElementRowValues(
+  cardId: string,
+  item: WorksheetElementItem,
+  material: MaterialItem | null,
+): string[] {
+  const fallback = buildFallbackElementRowValues(cardId, item);
+  const candidateMatrix = MODULE_ROW_FIELD_CANDIDATES[cardId];
+  if (!material || !candidateMatrix) {
+    return fallback;
+  }
+
+  return candidateMatrix.map((candidates, index) => {
+    for (const fieldKey of candidates) {
+      const text = getMaterialFieldText(material, fieldKey);
+      if (text) {
+        return text;
+      }
+    }
+
+    return fallback[index] ?? '';
+  });
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -442,6 +594,22 @@ function SizeSpecUnitSelector() {
   );
 }
 
+function FabricLengthUnitSelector() {
+  const fabricLengthUnit = useWorksheetStore((s) => s.fabricLengthUnit);
+  const setFabricLengthUnit = useWorksheetStore((s) => s.setFabricLengthUnit);
+
+  return (
+    <div className='min-w-[72px]'>
+      <DropdownButton
+        options={FABRIC_LENGTH_UNIT_OPTIONS}
+        value={fabricLengthUnit}
+        size='compact'
+        onChange={(next: string) => setFabricLengthUnit(next === 'm' ? 'm' : 'yd')}
+      />
+    </div>
+  );
+}
+
 function CardBodyRenderer({
   card,
   customCardContent,
@@ -485,6 +653,13 @@ function CardBodyRenderer({
 }) {
   const cardId = card.id;
   const sizeSpecUnit = useWorksheetStore((s) => s.sizeSpecUnit);
+  const fabricLengthUnit = useWorksheetStore((s) => s.fabricLengthUnit);
+  const fabricHeaderLabelOverrides = {
+    2: '패턴 총 면적 (m²)',
+    3: '마커 효율 (%)',
+    4: `요척 (${fabricLengthUnit})`,
+    5: `총 필요 원단량 (${fabricLengthUnit})`,
+  };
 
   switch (cardId) {
     case 'diagram-view':
@@ -518,6 +693,7 @@ function CardBodyRenderer({
           showRowHeader={false}
           enableUnitConversion={false}
           showRowDeleteButton
+          lockedColumnCount={LABEL_SHEET_STATE.headers.length}
           fillWidth
           initialState={moduleSheetStates['label-sheet'] ?? LABEL_SHEET_STATE}
           onStateChange={(nextState) => onSheetStateChange('label-sheet', nextState)}
@@ -542,6 +718,7 @@ function CardBodyRenderer({
           showRowHeader={false}
           enableUnitConversion={false}
           showRowDeleteButton
+          lockedColumnCount={TRIM_SHEET_STATE.headers.length}
           fillWidth
           initialState={moduleSheetStates['trim-sheet'] ?? TRIM_SHEET_STATE}
           onStateChange={(nextState) => onSheetStateChange('trim-sheet', nextState)}
@@ -576,6 +753,9 @@ function CardBodyRenderer({
           showRowHeader={false}
           enableUnitConversion={false}
           showRowDeleteButton
+          lockedColumnCount={FABRIC_INFO_STATE.headers.length}
+          headerLabelOverrides={fabricHeaderLabelOverrides}
+          readOnlyHeaderColumns={[2, 3, 4, 5]}
           fillWidth
           initialState={moduleSheetStates['fabric-info'] ?? FABRIC_INFO_STATE}
           onStateChange={(nextState) => onSheetStateChange('fabric-info', nextState)}
@@ -600,6 +780,9 @@ function CardBodyRenderer({
           showRowHeader={false}
           enableUnitConversion={false}
           showRowDeleteButton
+          lockedColumnCount={RIB_FABRIC_INFO_STATE.headers.length}
+          headerLabelOverrides={fabricHeaderLabelOverrides}
+          readOnlyHeaderColumns={[2, 3, 4, 5]}
           fillWidth
           initialState={moduleSheetStates['rib-fabric-info'] ?? RIB_FABRIC_INFO_STATE}
           onStateChange={(nextState) => onSheetStateChange('rib-fabric-info', nextState)}
@@ -618,8 +801,6 @@ function CardBodyRenderer({
           }}
         />
       );
-    case 'cost-calc':
-      return <WorksheetCostView />;
     default:
       if (!card.isDefault && cardId.startsWith('custom-')) {
         return (
@@ -691,11 +872,16 @@ export default function WorksheetGridContent({
   const [moduleRowValuePatches, setModuleRowValuePatches] = useState<
     Record<string, Record<number, string[]>>
   >({});
+  const moduleRowValuesCacheRef = useRef<Record<string, string[]>>({});
 
   useEffect(() => {
     setWorksheetElementFolderId(null);
     setModulePhotoUploading(null);
   }, [rootFolderId, worksheetId]);
+
+  useEffect(() => {
+    moduleRowValuesCacheRef.current = {};
+  }, [userId]);
   const interactionStartLayoutRef = useRef<LayoutItem[] | null>(null);
 
   const diagramSheets = useMemo<DiagramSheetItem[]>(() => {
@@ -851,6 +1037,47 @@ export default function WorksheetGridContent({
       }));
     },
     [],
+  );
+
+  const resolveElementRowValues = useCallback(
+    async (cardId: string, item: WorksheetElementItem) => {
+      const cacheKey = `${cardId}:${item.id}`;
+      const cached = moduleRowValuesCacheRef.current[cacheKey];
+      if (cached) {
+        return cached;
+      }
+
+      const fallbackRowValues = buildFallbackElementRowValues(cardId, item);
+      if (!userId) {
+        moduleRowValuesCacheRef.current[cacheKey] = fallbackRowValues;
+        return fallbackRowValues;
+      }
+
+      try {
+        const materials = await getMaterialsByFileSystem(item.id, userId);
+        const preferredMaterial = selectPreferredMaterial(cardId, materials);
+        const resolvedRowValues = buildMaterialElementRowValues(cardId, item, preferredMaterial);
+        moduleRowValuesCacheRef.current[cacheKey] = resolvedRowValues;
+        return resolvedRowValues;
+      } catch {
+        moduleRowValuesCacheRef.current[cacheKey] = fallbackRowValues;
+        return fallbackRowValues;
+      }
+    },
+    [userId],
+  );
+
+  const queueElementMaterialRowPatch = useCallback(
+    (cardId: string, rowIndex: number, item: WorksheetElementItem) => {
+      void resolveElementRowValues(cardId, item).then((rowValues) => {
+        if (rowValues.length === 0) {
+          return;
+        }
+
+        queueModuleRowValuePatch(cardId, rowIndex, rowValues);
+      });
+    },
+    [queueModuleRowValuePatch, resolveElementRowValues],
   );
 
   const consumeModuleRowValuePatch = useCallback((cardId: string, rowIndex: number) => {
@@ -1096,13 +1323,7 @@ export default function WorksheetGridContent({
 
               event.preventDefault();
 
-              if (draggedElement.source === 'workspace') {
-                queueModuleRowValuePatch(
-                  card.id,
-                  rowIndex,
-                  buildWorkspaceElementRowValues(card.id, draggedElement),
-                );
-              }
+              queueElementMaterialRowPatch(card.id, rowIndex, draggedElement);
 
               setElementAtModuleRow(card.id, rowIndex, draggedElement);
               setDraggingElement(null);
@@ -1135,7 +1356,13 @@ export default function WorksheetGridContent({
               <WorksheetGridCard
                 cardId={card.id}
                 title={card.title}
-                headerExtra={card.id === 'size-spec' ? <SizeSpecUnitSelector /> : undefined}
+                headerExtra={
+                  card.id === 'size-spec' ? (
+                    <SizeSpecUnitSelector />
+                  ) : card.id === 'fabric-info' || card.id === 'rib-fabric-info' ? (
+                    <FabricLengthUnitSelector />
+                  ) : undefined
+                }
                 headerActions={
                   card.id === 'diagram-view' ? (
                     <button
@@ -1202,13 +1429,7 @@ export default function WorksheetGridContent({
                     event.preventDefault();
 
                     const nextRowIndex = (moduleElements[card.id] ?? []).length;
-                    if (draggedElement.source === 'workspace') {
-                      queueModuleRowValuePatch(
-                        card.id,
-                        nextRowIndex,
-                        buildWorkspaceElementRowValues(card.id, draggedElement),
-                      );
-                    }
+                    queueElementMaterialRowPatch(card.id, nextRowIndex, draggedElement);
 
                     addElementToModule(card.id, draggedElement);
                     setDraggingElement(null);
@@ -1263,7 +1484,7 @@ export default function WorksheetGridContent({
       removeElementAtModuleRow,
       moveElementModuleRow,
       uploadModulePhotoFile,
-      queueModuleRowValuePatch,
+      queueElementMaterialRowPatch,
       consumeModuleRowValuePatch,
       getDraggedElement,
       navigate,
