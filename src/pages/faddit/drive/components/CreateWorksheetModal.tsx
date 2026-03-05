@@ -1,6 +1,12 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { DragEvent, FormEvent, useEffect, useMemo, useState } from 'react';
 import Transition from '../../../../utils/Transition';
 import ChildClothImage from '../../../../images/faddit/childcloth.png';
+import {
+  RecommendResponse,
+  RecommendRow,
+  requestTemplateRecommendations,
+  resolveRecommendAssetUrl,
+} from '../../../../lib/api/services/recommendationApi';
 
 type WorksheetFormValue = {
   title: string;
@@ -14,17 +20,19 @@ type Props = {
   onSubmit: (value: WorksheetFormValue) => Promise<void> | void;
 };
 
-type TemplateCategory = '셔츠' | '바지' | '치마';
+type TemplateCategory = '상의' | '하의' | '아우터' | '원피스' | '기타';
+type ResultSource = 'primary' | 'keyword_priority' | 'image_priority';
 
 type TemplateItem = {
   id: string;
   name: string;
   category: TemplateCategory;
   subtitle: string;
-  tags: string[];
   technicalDrawingVersion: string;
   details: Array<{ label: string; value: string }>;
   previewImages: Array<{ id: string; label: string; src: string }>;
+  recommendation: RecommendRow;
+  source: ResultSource;
 };
 
 type BasicInfoFormValue = {
@@ -39,13 +47,22 @@ type BasicInfoFormValue = {
   measurementUnit: 'cm' | 'inch';
 };
 
-const RECOMMENDED_KEYWORDS = ['오버사이즈 티', '리넨 블레이저', '데님 자켓', '카고 팬츠'] as const;
+const RECOMMENDED_KEYWORDS = [
+  '여름에 입을 옷 추천해줘',
+  '여성 코트 추천',
+  '오피스룩 자켓',
+  '롱스커트 도식화',
+] as const;
 
 const GENDER_OPTIONS = ['남성', '여성', '유니섹스'] as const;
 const CATEGORY_OPTIONS = ['상의', '하의', '아우터', '원피스'] as const;
 const GARMENT_OPTIONS = ['티셔츠', '셔츠', '후디', '팬츠', '스커트', '자켓'] as const;
 const SEASON_OPTIONS = ['SS', 'FW'] as const;
-const SEARCH_EFFECT_DELAY_MS = 3000;
+
+const RECOMMEND_TOP_K = 5;
+const RECOMMEND_MIN_SCORE = 0.05;
+const RECOMMEND_DIVERSITY_LIMIT = 2;
+const AI_SEARCH_EFFECT_MIN_MS = 4000;
 
 const createInitialBasicInfo = (): BasicInfoFormValue => ({
   fileName: '',
@@ -59,100 +76,68 @@ const createInitialBasicInfo = (): BasicInfoFormValue => ({
   measurementUnit: 'cm',
 });
 
-const TEMPLATE_ITEMS: TemplateItem[] = [
-  {
-    id: 't-shirt-basic-fit',
-    name: 'T-Shirt - Basic Fit',
-    category: '셔츠',
-    subtitle: 'Standard tubular construction',
-    tags: ['Cotton Jersey', 'Unisex'],
-    technicalDrawingVersion: 'v2.1',
-    details: [
-      { label: 'Category', value: 'Tops' },
-      { label: 'Code', value: 'TS-001-BF' },
-      { label: 'Fabric Consumption', value: '0.85 m / unit' },
-      { label: 'Construction Time', value: '18 min (SMV)' },
-      { label: 'Complexity', value: 'Low' },
-    ],
-    previewImages: [
-      { id: 'drawing-1', label: '도식화', src: ChildClothImage },
-      { id: 'pattern-1', label: '패턴', src: ChildClothImage },
-    ],
-  },
-  {
-    id: 'cargo-pants-straight',
-    name: 'Cargo Pants - Straight',
-    category: '바지',
-    subtitle: '6-pocket utility construction',
-    tags: ['Twill', 'Menswear'],
-    technicalDrawingVersion: 'v1.8',
-    details: [
-      { label: 'Category', value: 'Bottoms' },
-      { label: 'Code', value: 'PT-014-CG' },
-      { label: 'Fabric Consumption', value: '1.42 m / unit' },
-      { label: 'Construction Time', value: '34 min (SMV)' },
-      { label: 'Complexity', value: 'Medium' },
-    ],
-    previewImages: [
-      { id: 'drawing-2', label: '도식화', src: ChildClothImage },
-      { id: 'pattern-2', label: '패턴', src: ChildClothImage },
-    ],
-  },
-  {
-    id: 'flare-skirt-midi',
-    name: 'Flare Skirt - Midi',
-    category: '치마',
-    subtitle: 'Bias cut with concealed waistband',
-    tags: ['Poly Blend', 'Womenswear'],
-    technicalDrawingVersion: 'v3.0',
-    details: [
-      { label: 'Category', value: 'Skirts' },
-      { label: 'Code', value: 'SK-030-FL' },
-      { label: 'Fabric Consumption', value: '1.15 m / unit' },
-      { label: 'Construction Time', value: '26 min (SMV)' },
-      { label: 'Complexity', value: 'Medium' },
-    ],
-    previewImages: [
-      { id: 'drawing-3', label: '도식화', src: ChildClothImage },
-      { id: 'pattern-3', label: '패턴', src: ChildClothImage },
-    ],
-  },
-  {
-    id: 'hoodie-oversized',
-    name: 'Hoodie - Oversized',
-    category: '셔츠',
-    subtitle: 'Drop shoulder and kangaroo pocket',
-    tags: ['French Terry', 'Unisex'],
-    technicalDrawingVersion: 'v2.4',
-    details: [
-      { label: 'Category', value: 'Tops' },
-      { label: 'Code', value: 'HD-011-OV' },
-      { label: 'Fabric Consumption', value: '1.90 m / unit' },
-      { label: 'Construction Time', value: '42 min (SMV)' },
-      { label: 'Complexity', value: 'High' },
-    ],
-    previewImages: [
-      { id: 'drawing-4', label: '도식화', src: ChildClothImage },
-      { id: 'pattern-4', label: '패턴', src: ChildClothImage },
-    ],
-  },
-];
+const toPercent = (value?: number) => {
+  const numeric = typeof value === 'number' ? value : 0;
+  return `${Math.max(0, Math.min(100, Math.round(numeric * 100)))}%`;
+};
 
-const categoryMatches = (template: TemplateItem, query: string) => {
-  if (query.includes('셔츠') || query.includes('티') || query.includes('자켓')) {
-    return template.category === '셔츠';
+const mapTemplateCategory = (row: RecommendRow): TemplateCategory => {
+  const detail = String(row.metadata?.information?.category_detail || '').toLowerCase();
+  if (detail.includes('top') || row.class_base.includes('_top_')) {
+    return '상의';
   }
-  if (query.includes('바지') || query.includes('팬츠') || query.includes('카고')) {
-    return template.category === '바지';
+  if (detail.includes('bottom') || row.class_base.includes('_bottom_')) {
+    return '하의';
   }
-  if (query.includes('치마') || query.includes('스커트')) {
-    return template.category === '치마';
+  if (detail.includes('outer') || row.class_base.includes('_outer_')) {
+    return '아우터';
   }
-  return false;
+  if (detail.includes('one-piece') || row.class_base.includes('_one-piece_')) {
+    return '원피스';
+  }
+  return '기타';
+};
+
+const getModeLabel = (mode?: RecommendResponse['mode']) => {
+  if (mode === 'hybrid') return '키워드 + 이미지';
+  if (mode === 'image_only') return '이미지 전용';
+  if (mode === 'keyword_only') return '키워드 전용';
+  return '-';
+};
+
+const getSourceLabel = (source: ResultSource) => {
+  if (source === 'keyword_priority') return '키워드 우선';
+  if (source === 'image_priority') return '이미지 우선';
+  return '기본 결과';
+};
+
+const getConflictReasonLabel = (reason: string) => {
+  if (reason === 'gender_mismatch') return '성별 불일치';
+  if (reason === 'category_mismatch') return '카테고리 불일치';
+  if (reason === 'item_mismatch') return '아이템 불일치';
+  return reason;
+};
+
+const buildPatternPreviewPlaceholder = (templateId: string) => {
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 640 420'>
+<defs>
+<linearGradient id='g' x1='0' x2='1'>
+<stop offset='0' stop-color='#f3f4f6'/>
+<stop offset='1' stop-color='#e5e7eb'/>
+</linearGradient>
+</defs>
+<rect width='640' height='420' fill='url(#g)'/>
+<rect x='36' y='36' width='568' height='348' rx='16' fill='#ffffff' stroke='#d1d5db' stroke-width='2'/>
+<path d='M140 104v212M196 104v212M252 104v212M308 104v212M364 104v212M420 104v212M476 104v212' stroke='#9ca3af' stroke-width='1.5' stroke-dasharray='6 6'/>
+<path d='M112 132h416M112 188h416M112 244h416M112 300h416' stroke='#9ca3af' stroke-width='1.5' stroke-dasharray='6 6'/>
+<text x='320' y='88' text-anchor='middle' font-family='Arial, sans-serif' font-size='24' fill='#374151'>PATTERN PREVIEW</text>
+<text x='320' y='344' text-anchor='middle' font-family='Arial, sans-serif' font-size='16' fill='#6b7280'>${templateId}</text>
+</svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 };
 
 const renderCategoryIcon = (category: TemplateCategory) => {
-  if (category === '바지') {
+  if (category === '하의') {
     return (
       <svg className='h-4 w-4 fill-current' viewBox='0 0 20 20' aria-hidden='true'>
         <path d='M6 2h8l1 7-2.3 9H9.7L10 11h0l.3 7H7.3L5 9l1-7Zm2 2-.5 3h5L12 4H8Z' />
@@ -160,7 +145,7 @@ const renderCategoryIcon = (category: TemplateCategory) => {
     );
   }
 
-  if (category === '치마') {
+  if (category === '원피스') {
     return (
       <svg className='h-4 w-4 fill-current' viewBox='0 0 20 20' aria-hidden='true'>
         <path d='M6 3h8l.8 3.5L13 17H7L5.2 6.5 6 3Zm1.5 2-.2.8L8.6 15h2.8l1.3-9.2-.2-.8H7.5Z' />
@@ -168,11 +153,79 @@ const renderCategoryIcon = (category: TemplateCategory) => {
     );
   }
 
+  if (category === '아우터') {
+    return (
+      <svg className='h-4 w-4 fill-current' viewBox='0 0 20 20' aria-hidden='true'>
+        <path d='M7.2 3h5.6l2 2.1-1.5 2V17H6.7V7.1l-1.5-2L7.2 3Zm.8 2.2-.4.5.9 1.2v8h3V6.9l.9-1.2-.4-.5H8Z' />
+      </svg>
+    );
+  }
+
   return (
     <svg className='h-4 w-4 fill-current' viewBox='0 0 20 20' aria-hidden='true'>
-      <path d='M7.2 3h5.6l2 2.1-1.5 2V17H6.7V7.1l-1.5-2L7.2 3Zm.8 2.2-.4.5.9 1.2v8h3V6.9l.9-1.2-.4-.5H8Z' />
+      <path d='M6 3h8l.8 3.5L13 17H7L5.2 6.5 6 3Zm1.5 2-.2.8L8.6 15h2.8l1.3-9.2-.2-.8H7.5Z' />
     </svg>
   );
+};
+
+const mapToTemplateItem = (row: RecommendRow, source: ResultSource): TemplateItem => {
+  const category = mapTemplateCategory(row);
+  const score = typeof row.score === 'number' ? row.score : 0;
+  const information = row.metadata?.information;
+  const sketch = row.metadata?.sketch;
+
+  const title =
+    String(information?.category_kr || '').trim() ||
+    String(information?.category_en || '').trim() ||
+    row.class_base;
+
+  const subtitle =
+    String(sketch?.sketch_caption || '').trim() ||
+    String(information?.category_detail || '').trim() ||
+    row.class_base;
+
+  const scoreBreakdown = row.score_breakdown || {};
+  const consistency = row.consistency || {};
+
+  const sketchUrl = resolveRecommendAssetUrl(row.asset_urls?.sketch);
+  const patternPreview = buildPatternPreviewPlaceholder(row.template_id);
+  const patternUrl = resolveRecommendAssetUrl(row.asset_urls?.pattern);
+  const previewImages = [
+    {
+      id: `${row.template_id}-sketch`,
+      label: '도식화',
+      src: sketchUrl || ChildClothImage,
+    },
+    {
+      id: `${row.template_id}-pattern`,
+      label: '패턴',
+      src: patternUrl || patternPreview,
+    },
+  ];
+
+  const details = [
+    { label: 'Template ID', value: row.template_id },
+    { label: 'Class', value: row.class_base },
+    { label: 'Source', value: getSourceLabel(source) },
+    {
+      label: 'Consistency',
+      value: `K:${consistency.keyword ? 'Y' : 'N'} / I:${consistency.image ? 'Y' : 'N'}`,
+    },
+    { label: 'Keyword Score', value: toPercent(scoreBreakdown.keyword) },
+    { label: 'Image Score', value: toPercent(scoreBreakdown.image) },
+  ];
+
+  return {
+    id: row.template_id,
+    name: title,
+    category,
+    subtitle,
+    technicalDrawingVersion: `score ${score.toFixed(3)}`,
+    details,
+    previewImages,
+    recommendation: row,
+    source,
+  };
 };
 
 const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit }: Props) => {
@@ -191,25 +244,31 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
   const [useTemplateFlow, setUseTemplateFlow] = useState(true);
   const [isSearchPending, setIsSearchPending] = useState(false);
   const [basicInfo, setBasicInfo] = useState<BasicInfoFormValue>(createInitialBasicInfo);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [recommendResponse, setRecommendResponse] = useState<RecommendResponse | null>(null);
+  const [resultSource, setResultSource] = useState<ResultSource>('primary');
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [uploadedFilePreview, setUploadedFilePreview] = useState<string>('');
+  const [isComposerDragActive, setIsComposerDragActive] = useState(false);
+
+  const hasConflict = Boolean(recommendResponse?.conflict?.detected);
+  const conflictReasons = recommendResponse?.conflict?.reasons || [];
+
+  const sourceRows = useMemo(() => {
+    if (!recommendResponse) {
+      return [] as RecommendRow[];
+    }
+
+    if (resultSource === 'primary') {
+      return recommendResponse.recommendations || [];
+    }
+
+    return recommendResponse.alternative_recommendations?.[resultSource] || [];
+  }, [recommendResponse, resultSource]);
 
   const searchResults = useMemo(() => {
-    if (!hasSearched) {
-      return [] as TemplateItem[];
-    }
-
-    const normalized = submittedQuery.trim().toLowerCase();
-    if (!normalized) {
-      return TEMPLATE_ITEMS;
-    }
-
-    return TEMPLATE_ITEMS.filter((item) => {
-      const textMatches =
-        item.name.toLowerCase().includes(normalized) ||
-        item.subtitle.toLowerCase().includes(normalized) ||
-        item.tags.some((tag) => tag.toLowerCase().includes(normalized));
-      return textMatches || categoryMatches(item, normalized);
-    });
-  }, [hasSearched, submittedQuery]);
+    return sourceRows.map((row) => mapToTemplateItem(row, resultSource));
+  }, [sourceRows, resultSource]);
 
   const selectedTemplate = useMemo(() => {
     if (!useTemplateFlow) {
@@ -231,6 +290,22 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
   }, []);
 
   useEffect(() => {
+    if (!uploadedFile) {
+      setUploadedFilePreview('');
+      return;
+    }
+
+    if (!uploadedFile.type.startsWith('image/')) {
+      setUploadedFilePreview('');
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(uploadedFile);
+    setUploadedFilePreview(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [uploadedFile]);
+
+  useEffect(() => {
     if (!modalOpen) {
       return;
     }
@@ -245,6 +320,12 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
     setUseTemplateFlow(true);
     setIsSearchPending(false);
     setBasicInfo(createInitialBasicInfo());
+    setSearchError(null);
+    setRecommendResponse(null);
+    setResultSource('primary');
+    setUploadedFile(null);
+    setUploadedFilePreview('');
+    setIsComposerDragActive(false);
   }, [modalOpen]);
 
   useEffect(() => {
@@ -299,19 +380,61 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
     }
 
     const targetQuery = nextQuery ?? query;
+    const normalized = targetQuery.trim();
 
-    if (!hasSearched) {
-      setIsSearchPending(true);
-      await new Promise((resolve) => setTimeout(resolve, SEARCH_EFFECT_DELAY_MS));
-      setIsSearchPending(false);
+    if (!normalized && !uploadedFile) {
+      setSearchError('키워드 또는 이미지를 입력해 주세요.');
+      return;
     }
 
-    setQuery(targetQuery);
-    setSubmittedQuery(targetQuery);
-    setHasSearched(true);
-    setMobileSearchStep('list');
-    setCurrentStep('selection');
-    setUseTemplateFlow(true);
+    const effectStartedAt = Date.now();
+    setIsSearchPending(true);
+    setSearchError(null);
+
+    let response: RecommendResponse | null = null;
+
+    try {
+      response = await requestTemplateRecommendations({
+        keyword: normalized || undefined,
+        file: uploadedFile,
+        topK: RECOMMEND_TOP_K,
+        minScore: RECOMMEND_MIN_SCORE,
+        diversityClassLimit: RECOMMEND_DIVERSITY_LIMIT,
+      });
+    } catch (error) {
+      console.error('Failed to request recommendations', error);
+      setSearchError('추천 서버 호출에 실패했습니다. 추천 서버 포트/상태를 확인해 주세요.');
+    } finally {
+      if (response) {
+        const elapsedMs = Date.now() - effectStartedAt;
+        const remainingMs = Math.max(0, AI_SEARCH_EFFECT_MIN_MS - elapsedMs);
+        if (remainingMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, remainingMs));
+        }
+
+        setRecommendResponse(response);
+        setQuery(targetQuery);
+        setSubmittedQuery(targetQuery);
+        setHasSearched(true);
+        setMobileSearchStep('list');
+        setCurrentStep('selection');
+        setUseTemplateFlow(true);
+
+        if (response.conflict?.detected) {
+          const hasKeywordPriority =
+            (response.alternative_recommendations?.keyword_priority || []).length > 0;
+          if (hasKeywordPriority) {
+            setResultSource('keyword_priority');
+          } else {
+            setResultSource('primary');
+          }
+        } else {
+          setResultSource('primary');
+        }
+      }
+
+      setIsSearchPending(false);
+    }
   };
 
   const handleSearchSubmit = (event: FormEvent) => {
@@ -320,7 +443,29 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
   };
 
   const handleRecommendedKeywordClick = (keyword: string) => {
+    setQuery(keyword);
     void runSearch(keyword);
+  };
+
+  const handleAttachFile = (file: File | null) => {
+    if (!file) {
+      setUploadedFile(null);
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setSearchError('이미지 파일만 업로드할 수 있습니다.');
+      return;
+    }
+
+    setUploadedFile(file);
+    setSearchError(null);
+  };
+
+  const handleComposerDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsComposerDragActive(false);
+    handleAttachFile(event.dataTransfer.files?.[0] ?? null);
   };
 
   const handleTemplateSelect = (templateId: string) => {
@@ -347,6 +492,7 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
     setBasicInfo((prev) => ({
       ...prev,
       fileName: prev.fileName || selectedTemplate.name,
+      category: prev.category || selectedTemplate.category,
     }));
     setUseTemplateFlow(true);
     setCurrentStep('basic-info');
@@ -376,6 +522,19 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
       `측정단위:${basicInfo.measurementUnit}`,
     ];
 
+    if (useTemplateFlow && selectedTemplate) {
+      const row = selectedTemplate.recommendation;
+      descriptionParts.push(`추천모드:${getModeLabel(recommendResponse?.mode)}`);
+      descriptionParts.push(`추천경로:${getSourceLabel(selectedTemplate.source)}`);
+      descriptionParts.push(`template_id:${row.template_id}`);
+      descriptionParts.push(`class_base:${row.class_base}`);
+      descriptionParts.push(`score:${typeof row.score === 'number' ? row.score.toFixed(4) : '-'}`);
+    }
+
+    if (hasConflict && conflictReasons.length > 0) {
+      descriptionParts.push(`충돌:${conflictReasons.join(',')}`);
+    }
+
     await onSubmit({
       title: fileName,
       description: descriptionParts.join(' | '),
@@ -384,6 +543,166 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
   };
 
   const carouselImage = activePreviewImages[carouselIndex];
+
+  const renderUnifiedComposer = ({
+    inputId,
+    submitLabel,
+    compact = false,
+  }: {
+    inputId: string;
+    submitLabel: string;
+    compact?: boolean;
+  }) => (
+    <>
+      <div
+        onDragEnter={(event) => {
+          event.preventDefault();
+          setIsComposerDragActive(true);
+        }}
+        onDragOver={(event) => {
+          event.preventDefault();
+          setIsComposerDragActive(true);
+        }}
+        onDragLeave={(event) => {
+          event.preventDefault();
+          const related = event.relatedTarget as Node | null;
+          if (!event.currentTarget.contains(related)) {
+            setIsComposerDragActive(false);
+          }
+        }}
+        onDrop={handleComposerDrop}
+        className={`ai-search-composer-shell relative rounded-[24px] p-[3px] shadow-[0_14px_36px_rgba(15,23,42,0.08)] transition ${
+          isSearchPending ? 'ai-search-composer-shell--loading' : ''
+        } ${isComposerDragActive ? 'ring-faddit/20 ring-4' : ''}`}
+      >
+        <span className='ai-search-border-line ai-search-border-line--top' aria-hidden='true' />
+        <span className='ai-search-border-line ai-search-border-line--right' aria-hidden='true' />
+        <span className='ai-search-border-line ai-search-border-line--bottom' aria-hidden='true' />
+        <span className='ai-search-border-line ai-search-border-line--left' aria-hidden='true' />
+
+        <div
+          className={`ai-search-composer-inner relative overflow-hidden rounded-[21px] bg-white p-3 transition dark:bg-gray-900 ${
+            isSearchPending
+              ? 'border border-transparent'
+              : isComposerDragActive
+                ? 'border-faddit/70 border'
+                : 'border border-gray-200/80 dark:border-gray-700/60'
+          }`}
+        >
+          <input
+            id={inputId}
+            type='file'
+            accept='image/*'
+            className='hidden'
+            onChange={(event) => handleAttachFile(event.target.files?.[0] ?? null)}
+          />
+
+          <div className='space-y-3'>
+            {uploadedFile && (
+              <div className='inline-flex max-w-full items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-2.5 py-2 dark:border-gray-700/60 dark:bg-gray-800'>
+                <img
+                  src={uploadedFilePreview || ChildClothImage}
+                  alt='첨부 이미지 미리보기'
+                  className='h-11 w-11 rounded-lg border border-gray-200 object-cover dark:border-gray-700/60'
+                />
+                <div className='min-w-0'>
+                  <div className='truncate text-sm font-semibold text-gray-800 dark:text-gray-100'>
+                    {uploadedFile.name}
+                  </div>
+                  <div className='text-xs text-gray-500 dark:text-gray-400'>
+                    {Math.round(uploadedFile.size / 1024)} KB
+                  </div>
+                </div>
+                <button
+                  type='button'
+                  className='inline-flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 text-gray-400 hover:text-gray-600 dark:border-gray-700/60 dark:text-gray-300'
+                  onClick={() => setUploadedFile(null)}
+                  aria-label='첨부 이미지 제거'
+                  title='첨부 이미지 제거'
+                >
+                  <svg className='h-3.5 w-3.5 fill-current' viewBox='0 0 16 16'>
+                    <path d='M3.28 3.22a.75.75 0 0 1 1.06 0L8 6.88l3.66-3.66a.75.75 0 1 1 1.06 1.06L9.06 7.94l3.66 3.66a.75.75 0 0 1-1.06 1.06L8 9 4.34 12.66a.75.75 0 0 1-1.06-1.06l3.66-3.66-3.66-3.66a.75.75 0 0 1 0-1.06Z' />
+                  </svg>
+                </button>
+              </div>
+            )}
+
+            <textarea
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              disabled={isSearchPending}
+              rows={compact ? 2 : 3}
+              placeholder='키워드를 입력하세요 (예: 여자 코트 추천해줘)'
+              className='focus:ring-faddit/20 w-full resize-none rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-[15px] text-gray-800 outline-none focus:ring-3 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-100'
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  void runSearch();
+                }
+              }}
+            />
+
+            <div className='flex items-center justify-between gap-2'>
+              <div className='flex items-center gap-2'>
+                <button
+                  type='button'
+                  className='inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-600 transition hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700/60 dark:text-gray-200 dark:hover:bg-gray-800'
+                  onClick={() => {
+                    const input = document.getElementById(inputId) as HTMLInputElement | null;
+                    input?.click();
+                  }}
+                  title='이미지 첨부'
+                  aria-label='이미지 첨부'
+                >
+                  <svg className='h-4 w-4 fill-current' viewBox='0 0 16 16'>
+                    <path d='M8 1a.75.75 0 0 1 .75.75v5.5h5.5a.75.75 0 0 1 0 1.5h-5.5v5.5a.75.75 0 0 1-1.5 0v-5.5h-5.5a.75.75 0 0 1 0-1.5h5.5v-5.5A.75.75 0 0 1 8 1Z' />
+                  </svg>
+                </button>
+                <span className='text-xs font-semibold text-gray-500 dark:text-gray-400'>
+                  이미지 첨부
+                </span>
+              </div>
+
+              <div className='flex items-center gap-2'>
+                <span className='text-xs font-semibold text-gray-500 dark:text-gray-400'>
+                  {uploadedFile ? '하이브리드 모드' : '키워드 모드'}
+                </span>
+                <button
+                  type='submit'
+                  disabled={isSearchPending || (!query.trim() && !uploadedFile)}
+                  className='bg-faddit inline-flex h-9 w-9 items-center justify-center rounded-full text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60'
+                  aria-label={submitLabel}
+                  title={submitLabel}
+                >
+                  {isSearchPending ? (
+                    <svg className='h-4 w-4 animate-spin fill-current' viewBox='0 0 20 20'>
+                      <path d='M10 2a8 8 0 1 0 8 8h-2a6 6 0 1 1-6-6V2Z' />
+                    </svg>
+                  ) : (
+                    <svg className='h-4 w-4 fill-current' viewBox='0 0 16 16'>
+                      <path d='M2.2 2.2a.75.75 0 0 1 .78-.17l10.5 4.5a.75.75 0 0 1 0 1.38l-10.5 4.5A.75.75 0 0 1 2 11.75V9.12l5.57-1.12L2 6.88V4.25a.75.75 0 0 1 .2-.53Z' />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {isComposerDragActive ? (
+            <div className='bg-faddit/10 text-faddit pointer-events-none absolute inset-0 flex items-center justify-center text-sm font-semibold'>
+              여기에 이미지를 놓아 업로드
+            </div>
+          ) : null}
+        </div>
+      </div>
+      {isSearchPending ? (
+        <div className='mt-2 text-center text-sm font-semibold text-[var(--color-faddit)]'>
+          ai가 검색중이에요
+        </div>
+      ) : null}
+    </>
+  );
+
   const footerActions = hasSearched ? (
     <div className='border-t border-gray-200 bg-white px-4 py-4 sm:px-5 dark:border-gray-700/60 dark:bg-gray-800'>
       <div className='flex items-center justify-between gap-3'>
@@ -452,6 +771,11 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
       </div>
     </div>
   ) : null;
+
+  const hasImagePriority =
+    (recommendResponse?.alternative_recommendations?.image_priority || []).length > 0;
+  const hasKeywordPriority =
+    (recommendResponse?.alternative_recommendations?.keyword_priority || []).length > 0;
 
   return (
     <>
@@ -560,60 +884,31 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
                         >
                           <path d='M11.5 2.5h-3l-.7 2.1-2.1.7v3l2.1.7.7 2.1h3l.7-2.1 2.1-.7v-3l-2.1-.7-.7-2.1Zm-6 8h2l.4 1.3 1.3.4v2l-1.3.4L7.5 16h-2l-.4-1.3-1.3-.4v-2l1.3-.4.4-1.4Zm10 1h1.8l.3.9.9.3v1.8l-.9.3-.3.9h-1.8l-.3-.9-.9-.3v-1.8l.9-.3.3-.9Z' />
                         </svg>
-                        Keyword Template Suggest
+                        AI Recommendation
                       </div>
 
                       <h2 className='mt-4 text-center text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100'>
                         What would you like to create?
                       </h2>
                       <p className='mx-auto mt-2 max-w-2xl text-center text-base text-gray-500 dark:text-gray-300'>
-                        키워드를 입력하면 맞는 작업지시서 템플릿을 추천해드립니다.
+                        키워드, 이미지 또는 둘 다 입력하면 추천 템플릿을 찾아드립니다.
                       </p>
 
-                      <form onSubmit={handleSearchSubmit} className='mx-auto mt-7 max-w-4xl'>
-                        <div className='rounded-2xl border border-gray-200/80 bg-white p-2.5 shadow-[0_14px_36px_rgba(15,23,42,0.08)] dark:border-gray-700/60 dark:bg-gray-900'>
-                          <div className='flex flex-col gap-2 sm:flex-row sm:items-center'>
-                            <div className='relative flex-1'>
-                              <svg
-                                className='text-faddit pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 fill-current'
-                                viewBox='0 0 16 16'
-                                aria-hidden='true'
-                              >
-                                <path d='M7 14c-3.86 0-7-3.14-7-7s3.14-7 7-7 7 3.14 7 7-3.14 7-7 7ZM7 2C4.243 2 2 4.243 2 7s2.243 5 5 5 5-2.243 5-5-2.243-5-5-5Z' />
-                                <path d='m13.314 11.9 2.393 2.393a.999.999 0 1 1-1.414 1.414L11.9 13.314a8.019 8.019 0 0 0 1.414-1.414Z' />
-                              </svg>
-                              <input
-                                type='search'
-                                value={query}
-                                onChange={(event) => setQuery(event.target.value)}
-                                disabled={isSearchPending}
-                                className='focus:border-faddit/40 focus:ring-faddit/20 h-12 w-full rounded-xl border border-gray-200 bg-gray-50 pr-3 pl-10 text-[15px] text-gray-800 transition outline-none placeholder:text-gray-400 focus:ring-3 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-100'
-                                placeholder='키워드를 입력해 템플릿을 추천받아 보세요 (예: 오버사이즈 티, 카고 팬츠)'
-                              />
-                            </div>
-                            <button
-                              type='submit'
-                              disabled={isSearchPending}
-                              className='btn bg-faddit h-12 px-5 text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70'
-                            >
-                              {isSearchPending ? '추천 템플릿 찾는 중...' : '템플릿 추천받기'}
-                            </button>
-                          </div>
-                        </div>
-                      </form>
+                      <form
+                        onSubmit={handleSearchSubmit}
+                        className='mx-auto mt-7 max-w-4xl space-y-3'
+                      >
+                        {renderUnifiedComposer({
+                          inputId: 'faddit-worksheet-recommend-file-initial',
+                          submitLabel: isSearchPending ? '추천중' : '추천 실행',
+                        })}
 
-                      {isSearchPending ? (
-                        <div className='text-faddit border-faddit/20 bg-faddit/5 mx-auto mt-3 flex max-w-4xl items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold'>
-                          <svg
-                            className='h-4 w-4 animate-spin fill-current'
-                            viewBox='0 0 20 20'
-                            aria-hidden='true'
-                          >
-                            <path d='M10 2a8 8 0 1 0 8 8h-2a6 6 0 1 1-6-6V2Z' />
-                          </svg>
-                          AI가 키워드를 분석해 템플릿을 추천하고 있습니다...
-                        </div>
-                      ) : null}
+                        {searchError ? (
+                          <div className='rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-600 dark:border-rose-800/70 dark:bg-rose-900/20 dark:text-rose-200'>
+                            {searchError}
+                          </div>
+                        ) : null}
+                      </form>
 
                       <div className='mt-5 flex flex-wrap items-center justify-center gap-2 text-sm'>
                         {RECOMMENDED_KEYWORDS.map((keyword) => (
@@ -624,7 +919,7 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
                             disabled={isSearchPending}
                             className='hover:border-faddit/40 hover:bg-faddit/5 inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3.5 py-2 text-gray-700 transition disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700/70'
                           >
-                            <span className='text-faddit'>{renderCategoryIcon('셔츠')}</span>
+                            <span className='text-faddit'>{renderCategoryIcon('상의')}</span>
                             <span>{keyword}</span>
                           </button>
                         ))}
@@ -661,27 +956,82 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
               ) : currentStep === 'selection' ? (
                 <div className='flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xs dark:border-gray-700/60 dark:bg-gray-800'>
                   <div className='shrink-0 border-b border-gray-200 p-4 dark:border-gray-700/60'>
-                    <form onSubmit={handleSearchSubmit} className='flex items-center gap-2'>
-                      <div className='relative flex-1'>
-                        <input
-                          type='search'
-                          value={query}
-                          onChange={(event) => setQuery(event.target.value)}
-                          className='form-input h-11 w-full pl-10'
-                          placeholder='Describe your garment'
-                        />
-                        <svg
-                          className='pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 fill-current text-gray-400'
-                          viewBox='0 0 16 16'
-                          aria-hidden='true'
-                        >
-                          <path d='M7 14c-3.86 0-7-3.14-7-7s3.14-7 7-7 7 3.14 7 7-3.14 7-7 7ZM7 2C4.243 2 2 4.243 2 7s2.243 5 5 5 5-2.243 5-5-2.243-5-5-5Z' />
-                          <path d='m13.314 11.9 2.393 2.393a.999.999 0 1 1-1.414 1.414L11.9 13.314a8.019 8.019 0 0 0 1.414-1.414Z' />
-                        </svg>
-                      </div>
-                      <button type='submit' className='btn bg-faddit text-white hover:opacity-90'>
-                        검색
-                      </button>
+                    <form onSubmit={handleSearchSubmit} className='space-y-3'>
+                      {renderUnifiedComposer({
+                        inputId: 'faddit-worksheet-recommend-file-inline',
+                        submitLabel: isSearchPending ? '검색중' : '검색 실행',
+                        compact: true,
+                      })}
+
+                      {searchError ? (
+                        <div className='rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-600 dark:border-rose-800/70 dark:bg-rose-900/20 dark:text-rose-200'>
+                          {searchError}
+                        </div>
+                      ) : null}
+
+                      {(recommendResponse?.warnings || []).length > 0 ? (
+                        <div className='space-y-2'>
+                          {(recommendResponse?.warnings || []).map((warning) => (
+                            <div
+                              key={`${warning.code}-${warning.message}`}
+                              className='rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800/70 dark:bg-amber-900/20 dark:text-amber-100'
+                            >
+                              <span className='font-semibold'>{warning.code}</span> ·{' '}
+                              {warning.message}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {hasConflict ? (
+                        <div className='rounded-xl border border-indigo-200 bg-indigo-50 p-3 dark:border-indigo-800/70 dark:bg-indigo-900/20'>
+                          <div className='text-xs font-semibold text-indigo-700 dark:text-indigo-200'>
+                            키워드와 이미지 신호가 충돌했습니다.
+                            {conflictReasons.length > 0
+                              ? ` (${conflictReasons.map(getConflictReasonLabel).join(', ')})`
+                              : ''}
+                          </div>
+                          <div className='mt-2 flex flex-wrap gap-2'>
+                            {hasKeywordPriority ? (
+                              <button
+                                type='button'
+                                onClick={() => setResultSource('keyword_priority')}
+                                className={`btn h-8 px-3 text-xs ${
+                                  resultSource === 'keyword_priority'
+                                    ? 'bg-faddit text-white'
+                                    : 'border-gray-200 text-gray-700 dark:border-gray-700/60 dark:text-gray-200'
+                                }`}
+                              >
+                                키워드 우선
+                              </button>
+                            ) : null}
+                            {hasImagePriority ? (
+                              <button
+                                type='button'
+                                onClick={() => setResultSource('image_priority')}
+                                className={`btn h-8 px-3 text-xs ${
+                                  resultSource === 'image_priority'
+                                    ? 'bg-faddit text-white'
+                                    : 'border-gray-200 text-gray-700 dark:border-gray-700/60 dark:text-gray-200'
+                                }`}
+                              >
+                                이미지 우선
+                              </button>
+                            ) : null}
+                            <button
+                              type='button'
+                              onClick={() => setResultSource('primary')}
+                              className={`btn h-8 px-3 text-xs ${
+                                resultSource === 'primary'
+                                  ? 'bg-faddit text-white'
+                                  : 'border-gray-200 text-gray-700 dark:border-gray-700/60 dark:text-gray-200'
+                              }`}
+                            >
+                              기본 결과
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
                     </form>
                   </div>
 
@@ -695,23 +1045,26 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
                         }`}
                       >
                         <div className='shrink-0 border-b border-gray-200 px-4 py-3 text-xs font-bold tracking-wide text-gray-500 dark:border-gray-700/60 dark:text-gray-400'>
-                          검색 결과
+                          {isSearchPending
+                            ? '검색 결과 생성 중...'
+                            : `검색 결과 (${searchResults.length}) · ${getSourceLabel(resultSource)}`}
                         </div>
                         <div className='min-h-0 flex-1 overflow-y-auto bg-gray-100/70 p-3 dark:bg-gray-900'>
                           {searchResults.length ? (
-                            <div className='space-y-2'>
+                            <div className={`space-y-2 ${isSearchPending ? 'opacity-80' : ''}`}>
                               {searchResults.map((item) => {
                                 const active = selectedTemplate?.id === item.id;
                                 return (
                                   <button
                                     key={item.id}
                                     type='button'
+                                    disabled={isSearchPending}
                                     onClick={() => handleTemplateSelect(item.id)}
                                     className={`w-full rounded-xl border px-3 py-3 text-left transition ${
                                       active
                                         ? 'border-faddit bg-faddit/5 dark:bg-faddit/10 shadow-[0_0_0_1px_rgba(43,117,255,0.35)]'
                                         : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700/60 dark:bg-gray-800 dark:hover:bg-gray-700/50'
-                                    }`}
+                                    } ${isSearchPending ? 'cursor-not-allowed' : ''}`}
                                   >
                                     <div className='flex items-start gap-3'>
                                       <div className='text-faddit mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gray-100 dark:bg-gray-700/60'>
@@ -750,7 +1103,9 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
                             </div>
                           ) : (
                             <div className='rounded-xl border border-dashed border-gray-300 p-6 text-sm text-gray-500 dark:border-gray-700/60 dark:text-gray-400'>
-                              검색 결과가 없습니다. 다른 키워드로 검색해 보세요.
+                              {isSearchPending
+                                ? 'AI가 검색중이에요.'
+                                : '검색 결과가 없습니다. 키워드/이미지를 바꿔 다시 검색해 보세요.'}
                             </div>
                           )}
                         </div>
@@ -759,9 +1114,7 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
 
                     {(!isCompactLayout || mobileSearchStep === 'detail') && (
                       <div
-                        className={`min-h-0 overflow-y-auto ${
-                          isCompactLayout ? 'w-full' : 'w-0 min-w-0 flex-1'
-                        }`}
+                        className={`min-h-0 overflow-y-auto ${isCompactLayout ? 'w-full' : 'w-0 min-w-0 flex-1'}`}
                       >
                         {selectedTemplate ? (
                           <div className='flex min-h-full flex-col'>
@@ -787,6 +1140,15 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
                                       src={carouselImage.src}
                                       alt={carouselImage.label}
                                       className='mx-auto h-[220px] w-full max-w-[520px] object-contain'
+                                      onError={(event) => {
+                                        const fallbackSrc =
+                                          carouselImage.label === '패턴'
+                                            ? buildPatternPreviewPlaceholder(selectedTemplate.id)
+                                            : ChildClothImage;
+                                        if (event.currentTarget.src !== fallbackSrc) {
+                                          event.currentTarget.src = fallbackSrc;
+                                        }
+                                      }}
                                     />
                                   ) : null}
                                 </div>
@@ -820,22 +1182,75 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
                                     다음
                                   </button>
                                 </div>
+
+                                <div className='mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3'>
+                                  {[
+                                    {
+                                      key: 'json',
+                                      label: 'JSON',
+                                      href: resolveRecommendAssetUrl(
+                                        selectedTemplate.recommendation.asset_urls?.json,
+                                      ),
+                                      value:
+                                        selectedTemplate.recommendation.assets?.label_json_path ||
+                                        '정보 없음',
+                                    },
+                                    {
+                                      key: 'pattern',
+                                      label: 'PATTERN',
+                                      href: resolveRecommendAssetUrl(
+                                        selectedTemplate.recommendation.asset_urls?.pattern,
+                                      ),
+                                      value:
+                                        selectedTemplate.recommendation.assets?.pattern_file ||
+                                        '정보 없음',
+                                    },
+                                    {
+                                      key: 'vector',
+                                      label: 'VECTOR',
+                                      href: resolveRecommendAssetUrl(
+                                        selectedTemplate.recommendation.asset_urls?.vector,
+                                      ),
+                                      value:
+                                        selectedTemplate.recommendation.assets?.vector_file ||
+                                        '정보 없음',
+                                    },
+                                  ].map((asset) =>
+                                    asset.href ? (
+                                      <a
+                                        key={asset.key}
+                                        href={asset.href}
+                                        target='_blank'
+                                        rel='noreferrer'
+                                        className='rounded-lg border border-gray-200 bg-white px-3 py-2 text-left transition hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700/60 dark:bg-gray-800 dark:hover:bg-gray-700/60'
+                                      >
+                                        <div className='text-[11px] font-semibold tracking-wide text-gray-500 dark:text-gray-400'>
+                                          {asset.label}
+                                        </div>
+                                        <div className='mt-1 truncate text-xs font-semibold text-gray-800 dark:text-gray-100'>
+                                          {asset.value}
+                                        </div>
+                                      </a>
+                                    ) : (
+                                      <div
+                                        key={asset.key}
+                                        className='rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700/60 dark:bg-gray-900'
+                                      >
+                                        <div className='text-[11px] font-semibold tracking-wide text-gray-500 dark:text-gray-400'>
+                                          {asset.label}
+                                        </div>
+                                        <div className='mt-1 text-xs font-semibold text-gray-500 dark:text-gray-400'>
+                                          정보 없음
+                                        </div>
+                                      </div>
+                                    ),
+                                  )}
+                                </div>
                               </div>
                             </div>
 
                             <div className='mt-5 px-5 pb-5'>
-                              <div className='flex flex-wrap items-center gap-2'>
-                                {selectedTemplate.tags.map((tag) => (
-                                  <span
-                                    key={tag}
-                                    className='bg-faddit/10 text-faddit rounded-full px-3 py-1 text-xs font-semibold'
-                                  >
-                                    {tag}
-                                  </span>
-                                ))}
-                              </div>
-
-                              <h3 className='mt-3 text-3xl font-bold text-gray-900 dark:text-gray-100'>
+                              <h3 className='text-3xl font-bold text-gray-900 dark:text-gray-100'>
                                 {selectedTemplate.name}
                               </h3>
 
@@ -1075,6 +1490,9 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
                                     src={image.src}
                                     alt={image.label}
                                     className='h-[180px] w-full object-contain'
+                                    onError={(event) => {
+                                      event.currentTarget.src = ChildClothImage;
+                                    }}
                                   />
                                 </div>
                               ))}
@@ -1085,17 +1503,7 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
                             <h3 className='mb-3 text-lg font-bold text-gray-900 dark:text-gray-100'>
                               템플릿 기본 정보
                             </h3>
-                            <div className='flex flex-wrap items-center gap-2'>
-                              {selectedTemplate.tags.map((tag) => (
-                                <span
-                                  key={tag}
-                                  className='bg-faddit/10 text-faddit rounded-full px-3 py-1 text-xs font-semibold'
-                                >
-                                  {tag}
-                                </span>
-                              ))}
-                            </div>
-                            <div className='mt-3 text-2xl font-bold text-gray-900 dark:text-gray-100'>
+                            <div className='text-2xl font-bold text-gray-900 dark:text-gray-100'>
                               {selectedTemplate.name}
                             </div>
                             <div className='mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2'>
