@@ -28,9 +28,7 @@ type TemplateItem = {
   name: string;
   category: TemplateCategory;
   subtitle: string;
-  technicalDrawingVersion: string;
-  details: Array<{ label: string; value: string }>;
-  previewImages: Array<{ id: string; label: string; src: string }>;
+  sketchImage: string;
   recommendation: RecommendRow;
   source: ResultSource;
 };
@@ -76,11 +74,6 @@ const createInitialBasicInfo = (): BasicInfoFormValue => ({
   measurementUnit: 'cm',
 });
 
-const toPercent = (value?: number) => {
-  const numeric = typeof value === 'number' ? value : 0;
-  return `${Math.max(0, Math.min(100, Math.round(numeric * 100)))}%`;
-};
-
 const mapTemplateCategory = (row: RecommendRow): TemplateCategory => {
   const detail = String(row.metadata?.information?.category_detail || '').toLowerCase();
   if (detail.includes('top') || row.class_base.includes('_top_')) {
@@ -118,24 +111,6 @@ const getConflictReasonLabel = (reason: string) => {
   return reason;
 };
 
-const buildPatternPreviewPlaceholder = (templateId: string) => {
-  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 640 420'>
-<defs>
-<linearGradient id='g' x1='0' x2='1'>
-<stop offset='0' stop-color='#f3f4f6'/>
-<stop offset='1' stop-color='#e5e7eb'/>
-</linearGradient>
-</defs>
-<rect width='640' height='420' fill='url(#g)'/>
-<rect x='36' y='36' width='568' height='348' rx='16' fill='#ffffff' stroke='#d1d5db' stroke-width='2'/>
-<path d='M140 104v212M196 104v212M252 104v212M308 104v212M364 104v212M420 104v212M476 104v212' stroke='#9ca3af' stroke-width='1.5' stroke-dasharray='6 6'/>
-<path d='M112 132h416M112 188h416M112 244h416M112 300h416' stroke='#9ca3af' stroke-width='1.5' stroke-dasharray='6 6'/>
-<text x='320' y='88' text-anchor='middle' font-family='Arial, sans-serif' font-size='24' fill='#374151'>PATTERN PREVIEW</text>
-<text x='320' y='344' text-anchor='middle' font-family='Arial, sans-serif' font-size='16' fill='#6b7280'>${templateId}</text>
-</svg>`;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-};
-
 const renderCategoryIcon = (category: TemplateCategory) => {
   if (category === '하의') {
     return (
@@ -170,7 +145,6 @@ const renderCategoryIcon = (category: TemplateCategory) => {
 
 const mapToTemplateItem = (row: RecommendRow, source: ResultSource): TemplateItem => {
   const category = mapTemplateCategory(row);
-  const score = typeof row.score === 'number' ? row.score : 0;
   const information = row.metadata?.information;
   const sketch = row.metadata?.sketch;
 
@@ -184,45 +158,14 @@ const mapToTemplateItem = (row: RecommendRow, source: ResultSource): TemplateIte
     String(information?.category_detail || '').trim() ||
     row.class_base;
 
-  const scoreBreakdown = row.score_breakdown || {};
-  const consistency = row.consistency || {};
-
   const sketchUrl = resolveRecommendAssetUrl(row.asset_urls?.sketch);
-  const patternPreview = buildPatternPreviewPlaceholder(row.template_id);
-  const patternUrl = resolveRecommendAssetUrl(row.asset_urls?.pattern);
-  const previewImages = [
-    {
-      id: `${row.template_id}-sketch`,
-      label: '도식화',
-      src: sketchUrl || ChildClothImage,
-    },
-    {
-      id: `${row.template_id}-pattern`,
-      label: '패턴',
-      src: patternUrl || patternPreview,
-    },
-  ];
-
-  const details = [
-    { label: 'Template ID', value: row.template_id },
-    { label: 'Class', value: row.class_base },
-    { label: 'Source', value: getSourceLabel(source) },
-    {
-      label: 'Consistency',
-      value: `K:${consistency.keyword ? 'Y' : 'N'} / I:${consistency.image ? 'Y' : 'N'}`,
-    },
-    { label: 'Keyword Score', value: toPercent(scoreBreakdown.keyword) },
-    { label: 'Image Score', value: toPercent(scoreBreakdown.image) },
-  ];
 
   return {
     id: row.template_id,
     name: title,
     category,
     subtitle,
-    technicalDrawingVersion: `score ${score.toFixed(3)}`,
-    details,
-    previewImages,
+    sketchImage: sketchUrl || ChildClothImage,
     recommendation: row,
     source,
   };
@@ -233,7 +176,6 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
   const [submittedQuery, setSubmittedQuery] = useState('');
   const [hasSearched, setHasSearched] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
-  const [carouselIndex, setCarouselIndex] = useState(0);
   const [isCompactLayout, setIsCompactLayout] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth < 1024 : false,
   );
@@ -278,8 +220,6 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
     return searchResults.find((item) => item.id === selectedTemplateId) || searchResults[0] || null;
   }, [searchResults, selectedTemplateId, useTemplateFlow]);
 
-  const activePreviewImages = selectedTemplate?.previewImages || [];
-
   useEffect(() => {
     const handleResize = () => {
       setIsCompactLayout(window.innerWidth < 1024);
@@ -314,7 +254,6 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
     setSubmittedQuery('');
     setHasSearched(false);
     setSelectedTemplateId('');
-    setCarouselIndex(0);
     setMobileSearchStep('list');
     setCurrentStep('selection');
     setUseTemplateFlow(true);
@@ -346,33 +285,19 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
   useEffect(() => {
     if (!useTemplateFlow) {
       setSelectedTemplateId('');
-      setCarouselIndex(0);
       return;
     }
 
     if (!searchResults.length) {
       setSelectedTemplateId('');
-      setCarouselIndex(0);
       return;
     }
 
     const hasCurrent = searchResults.some((item) => item.id === selectedTemplateId);
     if (!hasCurrent) {
       setSelectedTemplateId(searchResults[0].id);
-      setCarouselIndex(0);
     }
   }, [searchResults, selectedTemplateId, useTemplateFlow]);
-
-  useEffect(() => {
-    if (!activePreviewImages.length) {
-      setCarouselIndex(0);
-      return;
-    }
-
-    if (carouselIndex > activePreviewImages.length - 1) {
-      setCarouselIndex(0);
-    }
-  }, [activePreviewImages, carouselIndex]);
 
   const runSearch = async (nextQuery?: string) => {
     if (isSearchPending) {
@@ -470,7 +395,6 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
 
   const handleTemplateSelect = (templateId: string) => {
     setSelectedTemplateId(templateId);
-    setCarouselIndex(0);
     if (isCompactLayout) {
       setMobileSearchStep('detail');
     }
@@ -481,7 +405,6 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
     setHasSearched(true);
     setCurrentStep('basic-info');
     setSelectedTemplateId('');
-    setCarouselIndex(0);
   };
 
   const handleNextFromTemplate = () => {
@@ -541,8 +464,6 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
     });
     setModalOpen(false);
   };
-
-  const carouselImage = activePreviewImages[carouselIndex];
 
   const renderUnifiedComposer = ({
     inputId,
@@ -661,7 +582,11 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
               <div className='flex min-w-0 items-center justify-center'>
                 {isSearchPending ? (
                   <div className='text-faddit inline-flex items-center gap-1.5 text-xs font-semibold'>
-                    <svg className='h-3.5 w-3.5 animate-spin fill-current' viewBox='0 0 20 20' aria-hidden='true'>
+                    <svg
+                      className='h-3.5 w-3.5 animate-spin fill-current'
+                      viewBox='0 0 20 20'
+                      aria-hidden='true'
+                    >
                       <path d='M10 2a8 8 0 1 0 8 8h-2a6 6 0 1 1-6-6V2Z' />
                     </svg>
                     <span className='truncate'>ai가 검색중입니다</span>
@@ -1117,142 +1042,27 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
                               </div>
                             </div>
 
-                            <div className='px-5 pt-5'>
+                            <div className='px-5 pt-5 pb-5'>
                               <div className='rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700/60 dark:bg-gray-900'>
-                                <div className='relative overflow-hidden rounded-lg bg-white p-5 dark:bg-gray-800'>
-                                  {carouselImage ? (
-                                    <img
-                                      src={carouselImage.src}
-                                      alt={carouselImage.label}
-                                      className='mx-auto h-[220px] w-full max-w-[520px] object-contain'
-                                      onError={(event) => {
-                                        const fallbackSrc =
-                                          carouselImage.label === '패턴'
-                                            ? buildPatternPreviewPlaceholder(selectedTemplate.id)
-                                            : ChildClothImage;
-                                        if (event.currentTarget.src !== fallbackSrc) {
-                                          event.currentTarget.src = fallbackSrc;
-                                        }
-                                      }}
-                                    />
-                                  ) : null}
+                                <div>
+                                  <h3 className='text-2xl font-bold text-gray-900 dark:text-gray-100'>
+                                    {selectedTemplate.name}
+                                  </h3>
+                                  <p className='mt-2 text-sm font-semibold text-gray-600 dark:text-gray-300'>
+                                    {selectedTemplate.category} * {selectedTemplate.subtitle}
+                                  </p>
                                 </div>
 
-                                <div className='mt-3 flex items-center justify-between'>
-                                  <button
-                                    type='button'
-                                    className='btn border-gray-200 text-gray-700 hover:border-gray-300 dark:border-gray-700/60 dark:text-gray-300'
-                                    onClick={() =>
-                                      setCarouselIndex((prev) =>
-                                        prev === 0 ? activePreviewImages.length - 1 : prev - 1,
-                                      )
-                                    }
-                                    disabled={activePreviewImages.length <= 1}
-                                  >
-                                    이전
-                                  </button>
-                                  <span className='text-xs font-semibold text-gray-500 dark:text-gray-400'>
-                                    {carouselImage?.label || '-'}
-                                  </span>
-                                  <button
-                                    type='button'
-                                    className='btn border-gray-200 text-gray-700 hover:border-gray-300 dark:border-gray-700/60 dark:text-gray-300'
-                                    onClick={() =>
-                                      setCarouselIndex((prev) =>
-                                        prev === activePreviewImages.length - 1 ? 0 : prev + 1,
-                                      )
-                                    }
-                                    disabled={activePreviewImages.length <= 1}
-                                  >
-                                    다음
-                                  </button>
+                                <div className='relative mt-5 overflow-hidden rounded-lg bg-white p-5 dark:bg-gray-800'>
+                                  <img
+                                    src={selectedTemplate.sketchImage}
+                                    alt={`${selectedTemplate.name} 도식화`}
+                                    className='mx-auto h-[280px] w-full max-w-[560px] object-contain'
+                                    onError={(event) => {
+                                      event.currentTarget.src = ChildClothImage;
+                                    }}
+                                  />
                                 </div>
-
-                                <div className='mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3'>
-                                  {[
-                                    {
-                                      key: 'json',
-                                      label: 'JSON',
-                                      href: resolveRecommendAssetUrl(
-                                        selectedTemplate.recommendation.asset_urls?.json,
-                                      ),
-                                      value:
-                                        selectedTemplate.recommendation.assets?.label_json_path ||
-                                        '정보 없음',
-                                    },
-                                    {
-                                      key: 'pattern',
-                                      label: 'PATTERN',
-                                      href: resolveRecommendAssetUrl(
-                                        selectedTemplate.recommendation.asset_urls?.pattern,
-                                      ),
-                                      value:
-                                        selectedTemplate.recommendation.assets?.pattern_file ||
-                                        '정보 없음',
-                                    },
-                                    {
-                                      key: 'vector',
-                                      label: 'VECTOR',
-                                      href: resolveRecommendAssetUrl(
-                                        selectedTemplate.recommendation.asset_urls?.vector,
-                                      ),
-                                      value:
-                                        selectedTemplate.recommendation.assets?.vector_file ||
-                                        '정보 없음',
-                                    },
-                                  ].map((asset) =>
-                                    asset.href ? (
-                                      <a
-                                        key={asset.key}
-                                        href={asset.href}
-                                        target='_blank'
-                                        rel='noreferrer'
-                                        className='rounded-lg border border-gray-200 bg-white px-3 py-2 text-left transition hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700/60 dark:bg-gray-800 dark:hover:bg-gray-700/60'
-                                      >
-                                        <div className='text-[11px] font-semibold tracking-wide text-gray-500 dark:text-gray-400'>
-                                          {asset.label}
-                                        </div>
-                                        <div className='mt-1 truncate text-xs font-semibold text-gray-800 dark:text-gray-100'>
-                                          {asset.value}
-                                        </div>
-                                      </a>
-                                    ) : (
-                                      <div
-                                        key={asset.key}
-                                        className='rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700/60 dark:bg-gray-900'
-                                      >
-                                        <div className='text-[11px] font-semibold tracking-wide text-gray-500 dark:text-gray-400'>
-                                          {asset.label}
-                                        </div>
-                                        <div className='mt-1 text-xs font-semibold text-gray-500 dark:text-gray-400'>
-                                          정보 없음
-                                        </div>
-                                      </div>
-                                    ),
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className='mt-5 px-5 pb-5'>
-                              <h3 className='text-3xl font-bold text-gray-900 dark:text-gray-100'>
-                                {selectedTemplate.name}
-                              </h3>
-
-                              <div className='mt-4 grid grid-cols-2 gap-3'>
-                                {selectedTemplate.details.map((detail) => (
-                                  <div
-                                    key={detail.label}
-                                    className='rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-700/60 dark:bg-gray-900'
-                                  >
-                                    <div className='text-xs font-semibold tracking-wide text-gray-500 dark:text-gray-400'>
-                                      {detail.label}
-                                    </div>
-                                    <div className='mt-1 text-sm font-semibold text-gray-800 dark:text-gray-100'>
-                                      {detail.value}
-                                    </div>
-                                  </div>
-                                ))}
                               </div>
                             </div>
                           </div>
@@ -1454,57 +1264,24 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
                       {useTemplateFlow && selectedTemplate ? (
                         <>
                           <div className='rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700/60 dark:bg-gray-900'>
-                            <div className='mb-3 flex items-center justify-between'>
-                              <h3 className='text-lg font-bold text-gray-900 dark:text-gray-100'>
-                                도식화/패턴 미리보기
-                              </h3>
-                              <span className='text-xs font-semibold text-gray-500 dark:text-gray-400'>
-                                {selectedTemplate.technicalDrawingVersion}
-                              </span>
-                            </div>
-                            <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
-                              {activePreviewImages.map((image) => (
-                                <div
-                                  key={image.id}
-                                  className='rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700/60 dark:bg-gray-800'
-                                >
-                                  <div className='mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400'>
-                                    {image.label}
-                                  </div>
-                                  <img
-                                    src={image.src}
-                                    alt={image.label}
-                                    className='h-[180px] w-full object-contain'
-                                    onError={(event) => {
-                                      event.currentTarget.src = ChildClothImage;
-                                    }}
-                                  />
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div className='rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700/60 dark:bg-gray-900'>
                             <h3 className='mb-3 text-lg font-bold text-gray-900 dark:text-gray-100'>
-                              템플릿 기본 정보
+                              템플릿 미리보기
                             </h3>
-                            <div className='text-2xl font-bold text-gray-900 dark:text-gray-100'>
+                            <div className='text-xl font-bold text-gray-900 dark:text-gray-100'>
                               {selectedTemplate.name}
                             </div>
-                            <div className='mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2'>
-                              {selectedTemplate.details.map((detail) => (
-                                <div
-                                  key={detail.label}
-                                  className='rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700/60 dark:bg-gray-800'
-                                >
-                                  <div className='text-xs font-semibold tracking-wide text-gray-500 dark:text-gray-400'>
-                                    {detail.label}
-                                  </div>
-                                  <div className='mt-1 text-sm font-semibold text-gray-800 dark:text-gray-100'>
-                                    {detail.value}
-                                  </div>
-                                </div>
-                              ))}
+                            <p className='mt-2 text-sm font-semibold text-gray-600 dark:text-gray-300'>
+                              {selectedTemplate.category} * {selectedTemplate.subtitle}
+                            </p>
+                            <div className='mt-3 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700/60 dark:bg-gray-800'>
+                              <img
+                                src={selectedTemplate.sketchImage}
+                                alt={`${selectedTemplate.name} 도식화`}
+                                className='h-[220px] w-full object-contain'
+                                onError={(event) => {
+                                  event.currentTarget.src = ChildClothImage;
+                                }}
+                              />
                             </div>
                           </div>
                         </>
