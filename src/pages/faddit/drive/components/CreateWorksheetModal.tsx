@@ -571,17 +571,12 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
           }
         }}
         onDrop={handleComposerDrop}
-        className={`ai-search-composer-shell relative rounded-[24px] p-[3px] shadow-[0_14px_36px_rgba(15,23,42,0.08)] transition ${
+        className={`ai-search-composer-shell relative rounded-[24px] shadow-none transition-shadow duration-300 ${
           isSearchPending ? 'ai-search-composer-shell--loading' : ''
         } ${isComposerDragActive ? 'ring-faddit/20 ring-4' : ''}`}
       >
-        <span className='ai-search-border-line ai-search-border-line--top' aria-hidden='true' />
-        <span className='ai-search-border-line ai-search-border-line--right' aria-hidden='true' />
-        <span className='ai-search-border-line ai-search-border-line--bottom' aria-hidden='true' />
-        <span className='ai-search-border-line ai-search-border-line--left' aria-hidden='true' />
-
         <div
-          className={`ai-search-composer-inner relative overflow-hidden rounded-[21px] bg-white p-3 transition dark:bg-gray-900 ${
+          className={`ai-search-composer-inner relative overflow-hidden rounded-[24px] bg-white p-3 transition dark:bg-gray-900 ${
             isSearchPending
               ? 'border border-transparent'
               : isComposerDragActive
@@ -642,7 +637,7 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
               }}
             />
 
-            <div className='flex items-center justify-between gap-2'>
+            <div className='grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2'>
               <div className='flex items-center gap-2'>
                 <button
                   type='button'
@@ -663,7 +658,18 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
                 </span>
               </div>
 
-              <div className='flex items-center gap-2'>
+              <div className='flex min-w-0 items-center justify-center'>
+                {isSearchPending ? (
+                  <div className='text-faddit inline-flex items-center gap-1.5 text-xs font-semibold'>
+                    <svg className='h-3.5 w-3.5 animate-spin fill-current' viewBox='0 0 20 20' aria-hidden='true'>
+                      <path d='M10 2a8 8 0 1 0 8 8h-2a6 6 0 1 1-6-6V2Z' />
+                    </svg>
+                    <span className='truncate'>ai가 검색중입니다</span>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className='flex items-center gap-2 justify-self-end'>
                 <span className='text-xs font-semibold text-gray-500 dark:text-gray-400'>
                   {uploadedFile ? '하이브리드 모드' : '키워드 모드'}
                 </span>
@@ -695,11 +701,6 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
           ) : null}
         </div>
       </div>
-      {isSearchPending ? (
-        <div className='mt-2 text-center text-sm font-semibold text-[var(--color-faddit)]'>
-          ai가 검색중이에요
-        </div>
-      ) : null}
     </>
   );
 
@@ -954,88 +955,72 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
                   </div>
                 </div>
               ) : currentStep === 'selection' ? (
-                <div className='flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xs dark:border-gray-700/60 dark:bg-gray-800'>
-                  <div className='shrink-0 border-b border-gray-200 p-4 dark:border-gray-700/60'>
-                    <form onSubmit={handleSearchSubmit} className='space-y-3'>
-                      {renderUnifiedComposer({
-                        inputId: 'faddit-worksheet-recommend-file-inline',
-                        submitLabel: isSearchPending ? '검색중' : '검색 실행',
-                        compact: true,
-                      })}
+                <div className='flex min-h-0 flex-1 flex-col gap-6'>
+                  <form onSubmit={handleSearchSubmit} className='shrink-0 space-y-3'>
+                    {renderUnifiedComposer({
+                      inputId: 'faddit-worksheet-recommend-file-inline',
+                      submitLabel: isSearchPending ? '검색중' : '검색 실행',
+                      compact: true,
+                    })}
 
-                      {searchError ? (
-                        <div className='rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-600 dark:border-rose-800/70 dark:bg-rose-900/20 dark:text-rose-200'>
-                          {searchError}
+                    {searchError ? (
+                      <div className='rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-600 dark:border-rose-800/70 dark:bg-rose-900/20 dark:text-rose-200'>
+                        {searchError}
+                      </div>
+                    ) : null}
+
+                    {hasConflict ? (
+                      <div className='rounded-xl border border-indigo-200 bg-indigo-50 p-3 dark:border-indigo-800/70 dark:bg-indigo-900/20'>
+                        <div className='text-xs font-semibold text-indigo-700 dark:text-indigo-200'>
+                          키워드와 이미지 신호가 충돌했습니다.
+                          {conflictReasons.length > 0
+                            ? ` (${conflictReasons.map(getConflictReasonLabel).join(', ')})`
+                            : ''}
                         </div>
-                      ) : null}
-
-                      {(recommendResponse?.warnings || []).length > 0 ? (
-                        <div className='space-y-2'>
-                          {(recommendResponse?.warnings || []).map((warning) => (
-                            <div
-                              key={`${warning.code}-${warning.message}`}
-                              className='rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800/70 dark:bg-amber-900/20 dark:text-amber-100'
-                            >
-                              <span className='font-semibold'>{warning.code}</span> ·{' '}
-                              {warning.message}
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-
-                      {hasConflict ? (
-                        <div className='rounded-xl border border-indigo-200 bg-indigo-50 p-3 dark:border-indigo-800/70 dark:bg-indigo-900/20'>
-                          <div className='text-xs font-semibold text-indigo-700 dark:text-indigo-200'>
-                            키워드와 이미지 신호가 충돌했습니다.
-                            {conflictReasons.length > 0
-                              ? ` (${conflictReasons.map(getConflictReasonLabel).join(', ')})`
-                              : ''}
-                          </div>
-                          <div className='mt-2 flex flex-wrap gap-2'>
-                            {hasKeywordPriority ? (
-                              <button
-                                type='button'
-                                onClick={() => setResultSource('keyword_priority')}
-                                className={`btn h-8 px-3 text-xs ${
-                                  resultSource === 'keyword_priority'
-                                    ? 'bg-faddit text-white'
-                                    : 'border-gray-200 text-gray-700 dark:border-gray-700/60 dark:text-gray-200'
-                                }`}
-                              >
-                                키워드 우선
-                              </button>
-                            ) : null}
-                            {hasImagePriority ? (
-                              <button
-                                type='button'
-                                onClick={() => setResultSource('image_priority')}
-                                className={`btn h-8 px-3 text-xs ${
-                                  resultSource === 'image_priority'
-                                    ? 'bg-faddit text-white'
-                                    : 'border-gray-200 text-gray-700 dark:border-gray-700/60 dark:text-gray-200'
-                                }`}
-                              >
-                                이미지 우선
-                              </button>
-                            ) : null}
+                        <div className='mt-2 flex flex-wrap gap-2'>
+                          {hasKeywordPriority ? (
                             <button
                               type='button'
-                              onClick={() => setResultSource('primary')}
+                              onClick={() => setResultSource('keyword_priority')}
                               className={`btn h-8 px-3 text-xs ${
-                                resultSource === 'primary'
+                                resultSource === 'keyword_priority'
                                   ? 'bg-faddit text-white'
                                   : 'border-gray-200 text-gray-700 dark:border-gray-700/60 dark:text-gray-200'
                               }`}
                             >
-                              기본 결과
+                              키워드 우선
                             </button>
-                          </div>
+                          ) : null}
+                          {hasImagePriority ? (
+                            <button
+                              type='button'
+                              onClick={() => setResultSource('image_priority')}
+                              className={`btn h-8 px-3 text-xs ${
+                                resultSource === 'image_priority'
+                                  ? 'bg-faddit text-white'
+                                  : 'border-gray-200 text-gray-700 dark:border-gray-700/60 dark:text-gray-200'
+                              }`}
+                            >
+                              이미지 우선
+                            </button>
+                          ) : null}
+                          <button
+                            type='button'
+                            onClick={() => setResultSource('primary')}
+                            className={`btn h-8 px-3 text-xs ${
+                              resultSource === 'primary'
+                                ? 'bg-faddit text-white'
+                                : 'border-gray-200 text-gray-700 dark:border-gray-700/60 dark:text-gray-200'
+                            }`}
+                          >
+                            기본 결과
+                          </button>
                         </div>
-                      ) : null}
-                    </form>
-                  </div>
+                      </div>
+                    ) : null}
+                  </form>
 
-                  <div className='flex min-h-0 flex-1 overflow-hidden'>
+                  <div className='flex min-h-0 flex-1 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xs dark:border-gray-700/60 dark:bg-gray-800'>
                     {(!isCompactLayout || mobileSearchStep === 'list') && (
                       <div
                         className={`flex min-h-0 flex-col border-gray-200 bg-gray-50 dark:border-gray-700/60 dark:bg-gray-900 ${
