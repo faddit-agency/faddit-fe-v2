@@ -1,4 +1,4 @@
-import { DragEvent, FormEvent, useEffect, useMemo, useState } from 'react';
+import { DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import Transition from '../../../../utils/Transition';
 import ChildClothImage from '../../../../images/faddit/childcloth.png';
 import {
@@ -176,10 +176,6 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
   const [submittedQuery, setSubmittedQuery] = useState('');
   const [hasSearched, setHasSearched] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
-  const [isCompactLayout, setIsCompactLayout] = useState(() =>
-    typeof window !== 'undefined' ? window.innerWidth < 1024 : false,
-  );
-  const [mobileSearchStep, setMobileSearchStep] = useState<'list' | 'detail'>('list');
   const [currentStep, setCurrentStep] = useState<'selection' | 'basic-info' | 'preview'>(
     'selection',
   );
@@ -192,6 +188,7 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [uploadedFilePreview, setUploadedFilePreview] = useState<string>('');
   const [isComposerDragActive, setIsComposerDragActive] = useState(false);
+  const resultCardRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const hasConflict = Boolean(recommendResponse?.conflict?.detected);
   const conflictReasons = recommendResponse?.conflict?.reasons || [];
@@ -220,14 +217,12 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
     return searchResults.find((item) => item.id === selectedTemplateId) || searchResults[0] || null;
   }, [searchResults, selectedTemplateId, useTemplateFlow]);
 
-  useEffect(() => {
-    const handleResize = () => {
-      setIsCompactLayout(window.innerWidth < 1024);
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  const selectedTemplateIndex = useMemo(() => {
+    if (!selectedTemplate) {
+      return -1;
+    }
+    return searchResults.findIndex((item) => item.id === selectedTemplate.id);
+  }, [searchResults, selectedTemplate]);
 
   useEffect(() => {
     if (!uploadedFile) {
@@ -254,7 +249,6 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
     setSubmittedQuery('');
     setHasSearched(false);
     setSelectedTemplateId('');
-    setMobileSearchStep('list');
     setCurrentStep('selection');
     setUseTemplateFlow(true);
     setIsSearchPending(false);
@@ -299,6 +293,27 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
     }
   }, [searchResults, selectedTemplateId, useTemplateFlow]);
 
+  useEffect(() => {
+    if (!selectedTemplate?.id) {
+      return;
+    }
+
+    const activeCard = resultCardRefs.current[selectedTemplate.id];
+    if (!activeCard) {
+      return;
+    }
+
+    const rafId = window.requestAnimationFrame(() => {
+      activeCard.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'center',
+      });
+    });
+
+    return () => window.cancelAnimationFrame(rafId);
+  }, [selectedTemplate?.id, searchResults.length]);
+
   const runSearch = async (nextQuery?: string) => {
     if (isSearchPending) {
       return;
@@ -341,7 +356,6 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
         setQuery(targetQuery);
         setSubmittedQuery(targetQuery);
         setHasSearched(true);
-        setMobileSearchStep('list');
         setCurrentStep('selection');
         setUseTemplateFlow(true);
 
@@ -395,9 +409,16 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
 
   const handleTemplateSelect = (templateId: string) => {
     setSelectedTemplateId(templateId);
-    if (isCompactLayout) {
-      setMobileSearchStep('detail');
+  };
+
+  const handleSwitchTemplateByChevron = (direction: -1 | 1) => {
+    if (!searchResults.length) {
+      return;
     }
+
+    const currentIndex = selectedTemplateIndex >= 0 ? selectedTemplateIndex : 0;
+    const nextIndex = (currentIndex + direction + searchResults.length) % searchResults.length;
+    setSelectedTemplateId(searchResults[nextIndex].id);
   };
 
   const handleStartWithoutTemplate = () => {
@@ -733,7 +754,7 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
         leaveEnd='opacity-0 translate-y-4'
       >
         <div
-          style={{ maxWidth: hasSearched ? '78rem' : '52rem' }}
+          style={{ maxWidth: hasSearched ? '50rem' : '52rem' }}
           className='mx-auto my-auto flex h-[calc(100vh-1rem)] max-h-[calc(100vh-1rem)] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-lg sm:h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-2rem)] lg:h-[85vh] lg:max-h-[85vh] dark:bg-gray-800'
         >
           <div className='flex shrink-0 items-center justify-between border-b border-gray-200 px-4 py-3 sm:px-5 dark:border-gray-700/60'>
@@ -945,134 +966,133 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
                     ) : null}
                   </form>
 
-                  <div className='flex min-h-0 flex-1 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xs dark:border-gray-700/60 dark:bg-gray-800'>
-                    {(!isCompactLayout || mobileSearchStep === 'list') && (
-                      <div
-                        className={`flex min-h-0 flex-col border-gray-200 bg-gray-50 dark:border-gray-700/60 dark:bg-gray-900 ${
-                          isCompactLayout
-                            ? 'w-full border-0'
-                            : 'w-[30%] shrink-0 border-r border-b-0'
-                        }`}
-                      >
-                        <div className='shrink-0 border-b border-gray-200 px-4 py-3 text-xs font-bold tracking-wide text-gray-500 dark:border-gray-700/60 dark:text-gray-400'>
+                  <div className='mt-4 flex min-h-0 flex-1 justify-center overflow-y-auto px-0'>
+                    <div className='w-full max-w-[100vw] lg:max-w-[50rem]'>
+                      <div className='rounded-2xl border border-gray-200 bg-white p-4 shadow-xs dark:border-gray-700/60 dark:bg-gray-800'>
+                        <div className='text-xs font-bold tracking-wide text-gray-500 dark:text-gray-400'>
                           {isSearchPending
                             ? '검색 결과 생성 중...'
                             : `검색 결과 (${searchResults.length}) · ${getSourceLabel(resultSource)}`}
                         </div>
-                        <div className='min-h-0 flex-1 overflow-y-auto bg-gray-100/70 p-3 dark:bg-gray-900'>
-                          {searchResults.length ? (
-                            <div className={`space-y-2 ${isSearchPending ? 'opacity-80' : ''}`}>
-                              {searchResults.map((item) => {
-                                const active = selectedTemplate?.id === item.id;
-                                return (
-                                  <button
-                                    key={item.id}
-                                    type='button'
-                                    disabled={isSearchPending}
-                                    onClick={() => handleTemplateSelect(item.id)}
-                                    className={`w-full rounded-xl border px-3 py-3 text-left transition ${
-                                      active
-                                        ? 'border-faddit bg-faddit/5 dark:bg-faddit/10 shadow-[0_0_0_1px_rgba(43,117,255,0.35)]'
-                                        : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700/60 dark:bg-gray-800 dark:hover:bg-gray-700/50'
-                                    } ${isSearchPending ? 'cursor-not-allowed' : ''}`}
-                                  >
-                                    <div className='flex items-start gap-3'>
-                                      <div className='text-faddit mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gray-100 dark:bg-gray-700/60'>
-                                        {renderCategoryIcon(item.category)}
-                                      </div>
-                                      <div className='min-w-0 flex-1'>
-                                        <div className='truncate text-sm font-semibold text-gray-800 dark:text-gray-100'>
-                                          {item.name}
-                                        </div>
-                                        <div className='mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400'>
-                                          {item.category} · {item.subtitle}
-                                        </div>
-                                      </div>
-                                      <svg
-                                        className={`mt-1 h-4 w-4 shrink-0 ${
-                                          active
-                                            ? 'text-faddit'
-                                            : 'text-gray-300 dark:text-gray-500'
-                                        }`}
-                                        viewBox='0 0 16 16'
-                                        fill='none'
-                                        aria-hidden='true'
-                                      >
-                                        <path
-                                          d='M6 3.5 10 8l-4 4.5'
-                                          stroke='currentColor'
-                                          strokeWidth='1.8'
-                                          strokeLinecap='round'
-                                          strokeLinejoin='round'
-                                        />
-                                      </svg>
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <div className='rounded-xl border border-dashed border-gray-300 p-6 text-sm text-gray-500 dark:border-gray-700/60 dark:text-gray-400'>
-                              {isSearchPending
-                                ? 'AI가 검색중이에요.'
-                                : '검색 결과가 없습니다. 키워드/이미지를 바꿔 다시 검색해 보세요.'}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
 
-                    {(!isCompactLayout || mobileSearchStep === 'detail') && (
-                      <div
-                        className={`min-h-0 overflow-y-auto ${isCompactLayout ? 'w-full' : 'w-0 min-w-0 flex-1'}`}
-                      >
                         {selectedTemplate ? (
-                          <div className='flex min-h-full flex-col'>
-                            <div className='flex items-center justify-between border-b border-gray-200 px-5 py-3 lg:hidden dark:border-gray-700/60'>
-                              <div className='flex items-center gap-2'>
-                                {isCompactLayout ? (
-                                  <button
-                                    type='button'
-                                    className='btn hidden h-8 border-gray-200 px-3 text-xs text-gray-700 hover:border-gray-300 sm:inline-flex dark:border-gray-700/60 dark:text-gray-300'
-                                    onClick={() => setMobileSearchStep('list')}
-                                  >
-                                    뒤로
-                                  </button>
-                                ) : null}
-                              </div>
+                          <div className='mt-4'>
+                            <div className='min-w-0'>
+                              <h3 className='text-2xl font-bold text-gray-900 dark:text-gray-100'>
+                                {selectedTemplate.name}
+                              </h3>
+                              <p className='mt-2 text-sm font-semibold text-gray-600 dark:text-gray-300'>
+                                {selectedTemplate.category} * {selectedTemplate.subtitle}
+                              </p>
                             </div>
 
-                            <div className='px-5 pt-5 pb-5'>
-                              <div className='rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700/60 dark:bg-gray-900'>
-                                <div>
-                                  <h3 className='text-2xl font-bold text-gray-900 dark:text-gray-100'>
-                                    {selectedTemplate.name}
-                                  </h3>
-                                  <p className='mt-2 text-sm font-semibold text-gray-600 dark:text-gray-300'>
-                                    {selectedTemplate.category} * {selectedTemplate.subtitle}
-                                  </p>
+                            <div className='relative mt-4 overflow-hidden rounded-lg border border-gray-200 bg-gray-50 p-5 dark:border-gray-700/60 dark:bg-gray-900'>
+                              <img
+                                src={selectedTemplate.sketchImage}
+                                alt={`${selectedTemplate.name} 도식화`}
+                                className='mx-auto h-[300px] w-full object-contain'
+                                onError={(event) => {
+                                  event.currentTarget.src = ChildClothImage;
+                                }}
+                              />
+                            </div>
+
+                            <div className='mt-4'>
+                              <div className='mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400'>
+                                다른 검색 결과
+                              </div>
+                              <div className='flex items-center gap-2'>
+                                <button
+                                  type='button'
+                                  disabled={isSearchPending || searchResults.length <= 1}
+                                  onClick={() => handleSwitchTemplateByChevron(-1)}
+                                  className='hidden h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-600 transition hover:border-gray-300 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 lg:inline-flex dark:border-gray-700/60 dark:text-gray-300 dark:hover:bg-gray-700'
+                                  aria-label='이전 결과'
+                                  title='이전 결과'
+                                >
+                                  <svg className='h-4 w-4' viewBox='0 0 16 16' fill='none'>
+                                    <path
+                                      d='M9.8 3.5 5.8 8l4 4.5'
+                                      stroke='currentColor'
+                                      strokeWidth='1.8'
+                                      strokeLinecap='round'
+                                      strokeLinejoin='round'
+                                    />
+                                  </svg>
+                                </button>
+
+                                <div className='no-scrollbar min-w-0 flex-1 overflow-x-auto scroll-smooth pb-1'>
+                                  <div className='flex gap-2'>
+                                    {searchResults.map((item) => {
+                                      const active = selectedTemplate.id === item.id;
+                                      return (
+                                        <button
+                                          key={item.id}
+                                          data-template-id={item.id}
+                                          ref={(element) => {
+                                            resultCardRefs.current[item.id] = element;
+                                          }}
+                                          type='button'
+                                          disabled={isSearchPending}
+                                          onClick={() => handleTemplateSelect(item.id)}
+                                          className={`group flex max-w-[220px] min-w-[220px] shrink-0 items-center gap-3 rounded-xl border px-3 py-2 text-left transition ${
+                                            active
+                                              ? 'border-faddit bg-faddit/5 dark:bg-faddit/10 shadow-[0_0_0_1px_rgba(43,117,255,0.35)]'
+                                              : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700/60 dark:bg-gray-800 dark:hover:bg-gray-700/50'
+                                          } ${isSearchPending ? 'cursor-not-allowed opacity-70' : ''}`}
+                                        >
+                                          <img
+                                            src={item.sketchImage}
+                                            alt={`${item.name} 썸네일`}
+                                            className='h-12 w-12 shrink-0 rounded-md border border-gray-200 object-contain dark:border-gray-700/60'
+                                            onError={(event) => {
+                                              event.currentTarget.src = ChildClothImage;
+                                            }}
+                                          />
+                                          <div className='min-w-0'>
+                                            <div className='truncate text-sm font-semibold text-gray-800 dark:text-gray-100'>
+                                              {item.name}
+                                            </div>
+                                            <div className='truncate text-xs text-gray-500 dark:text-gray-400'>
+                                              {item.category} * {item.subtitle}
+                                            </div>
+                                          </div>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
                                 </div>
 
-                                <div className='relative mt-5 overflow-hidden rounded-lg bg-white p-5 dark:bg-gray-800'>
-                                  <img
-                                    src={selectedTemplate.sketchImage}
-                                    alt={`${selectedTemplate.name} 도식화`}
-                                    className='mx-auto h-[280px] w-full max-w-[560px] object-contain'
-                                    onError={(event) => {
-                                      event.currentTarget.src = ChildClothImage;
-                                    }}
-                                  />
-                                </div>
+                                <button
+                                  type='button'
+                                  disabled={isSearchPending || searchResults.length <= 1}
+                                  onClick={() => handleSwitchTemplateByChevron(1)}
+                                  className='hidden h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-600 transition hover:border-gray-300 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 lg:inline-flex dark:border-gray-700/60 dark:text-gray-300 dark:hover:bg-gray-700'
+                                  aria-label='다음 결과'
+                                  title='다음 결과'
+                                >
+                                  <svg className='h-4 w-4' viewBox='0 0 16 16' fill='none'>
+                                    <path
+                                      d='m6.2 3.5 4 4.5-4 4.5'
+                                      stroke='currentColor'
+                                      strokeWidth='1.8'
+                                      strokeLinecap='round'
+                                      strokeLinejoin='round'
+                                    />
+                                  </svg>
+                                </button>
                               </div>
                             </div>
                           </div>
                         ) : (
-                          <div className='flex h-full items-center justify-center p-8 text-sm text-gray-500 dark:text-gray-400'>
-                            표시할 템플릿이 없습니다.
+                          <div className='mt-4 rounded-xl border border-dashed border-gray-300 p-6 text-sm text-gray-500 dark:border-gray-700/60 dark:text-gray-400'>
+                            {isSearchPending
+                              ? 'ai가 검색중이에요.'
+                              : '검색 결과가 없습니다. 키워드/이미지를 바꿔 다시 검색해 보세요.'}
                           </div>
                         )}
                       </div>
-                    )}
+                    </div>
                   </div>
                 </div>
               ) : currentStep === 'basic-info' ? (
