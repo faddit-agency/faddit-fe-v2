@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pipette } from 'lucide-react';
+import { Pipette, Star } from 'lucide-react';
 
 interface HSB {
   h: number;
@@ -24,6 +24,12 @@ interface PantoneSwatch {
   code: string;
   name: string;
   hex: string;
+}
+
+interface PantoneIndexed extends PantoneSwatch {
+  token: string;
+  searchToken: string;
+  lab: Lab;
 }
 
 const PANTONE_SWATCHES: PantoneSwatch[] = [
@@ -79,6 +85,16 @@ const PANTONE_SWATCHES: PantoneSwatch[] = [
   { code: 'PANTONE 18-1750 TCX', name: 'Viva Magenta', hex: '#BB2649' },
   { code: 'PANTONE 15-1264 TCX', name: 'Peach Fuzz', hex: '#FFBE98' },
 ];
+
+const STORAGE_KEYS = {
+  colorFavorites: 'faddit_sketch_color_favorites_v1',
+  colorRecent: 'faddit_sketch_color_recent_v1',
+  pantoneFavorites: 'faddit_sketch_pantone_favorites_v1',
+  pantoneRecent: 'faddit_sketch_pantone_recent_v1',
+} as const;
+
+const MAX_COLOR_ITEMS = 12;
+const MAX_PANTONE_ITEMS = 12;
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
@@ -194,23 +210,152 @@ const deltaE76 = (left: Lab, right: Lab) => {
   return Math.sqrt(dl * dl + da * da + db * db);
 };
 
-const PANTONE_INDEX = PANTONE_SWATCHES.map((swatch) => ({
-  ...swatch,
-  hex: normalizeHexColor(swatch.hex),
-  token: normalizePantoneToken(swatch.code),
-  searchToken: normalizePantoneToken(`${swatch.code} ${swatch.name}`),
-  lab: hexToLab(swatch.hex),
-}));
+const hexToCmyk = (hex: string): CMYK => {
+  const clean = normalizeHexColor(hex).replace('#', '');
+  const r = parseInt(clean.slice(0, 2), 16) / 255;
+  const g = parseInt(clean.slice(2, 4), 16) / 255;
+  const b = parseInt(clean.slice(4, 6), 16) / 255;
+
+  const k = 1 - Math.max(r, g, b);
+  if (k >= 1) {
+    return { c: 0, m: 0, y: 0, k: 100 };
+  }
+
+  const c = (1 - r - k) / (1 - k);
+  const m = (1 - g - k) / (1 - k);
+  const y = (1 - b - k) / (1 - k);
+
+  return {
+    c: Math.round(clamp(c, 0, 1) * 100),
+    m: Math.round(clamp(m, 0, 1) * 100),
+    y: Math.round(clamp(y, 0, 1) * 100),
+    k: Math.round(clamp(k, 0, 1) * 100),
+  };
+};
+
+const cmykToHex = (c: number, m: number, y: number, k: number): string => {
+  const cc = clamp(c, 0, 100) / 100;
+  const mm = clamp(m, 0, 100) / 100;
+  const yy = clamp(y, 0, 100) / 100;
+  const kk = clamp(k, 0, 100) / 100;
+
+  const r = 255 * (1 - cc) * (1 - kk);
+  const g = 255 * (1 - mm) * (1 - kk);
+  const b = 255 * (1 - yy) * (1 - kk);
+  return rgbToHex(r, g, b);
+};
+
+const hexToHsb = (hex: string): HSB => {
+  const clean = normalizeHexColor(hex).replace('#', '');
+  const r = parseInt(clean.slice(0, 2), 16) / 255;
+  const g = parseInt(clean.slice(2, 4), 16) / 255;
+  const b = parseInt(clean.slice(4, 6), 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+
+  let h = 0;
+  if (delta !== 0) {
+    if (max === r) h = ((g - b) / delta) % 6;
+    else if (max === g) h = (b - r) / delta + 2;
+    else h = (r - g) / delta + 4;
+    h = Math.round(h * 60);
+    if (h < 0) h += 360;
+  }
+
+  const s = max === 0 ? 0 : Math.round((delta / max) * 100);
+  const brightness = Math.round(max * 100);
+
+  return { h, s, b: brightness };
+};
+
+const hsbToHex = (h: number, s: number, b: number): string => {
+  const ss = clamp(s, 0, 100) / 100;
+  const bb = clamp(b, 0, 100) / 100;
+  const k = (n: number) => (n + h / 60) % 6;
+  const f = (n: number) => bb * (1 - ss * Math.max(0, Math.min(k(n), 4 - k(n), 1)));
+  const r = Math.round(f(5) * 255);
+  const g = Math.round(f(3) * 255);
+  const bv = Math.round(f(1) * 255);
+  return rgbToHex(r, g, bv);
+};
+
+const normalizeColorList = (values: string[]) => {
+  const seen = new Set<string>();
+  return values
+    .map((value) => normalizeHexColor(value))
+    .filter((value) => {
+      if (!value || seen.has(value)) {
+        return false;
+      }
+      seen.add(value);
+      return true;
+    })
+    .slice(0, MAX_COLOR_ITEMS);
+};
+
+const normalizePantoneList = (values: PantoneSwatch[]) => {
+  const seen = new Set<string>();
+  return values
+    .map((value) => ({
+      code: String(value.code ?? '').trim(),
+      name: String(value.name ?? '').trim(),
+      hex: normalizeHexColor(String(value.hex ?? '#000000')),
+    }))
+    .filter((value) => {
+      const token = normalizePantoneToken(value.code);
+      if (!token || seen.has(token)) {
+        return false;
+      }
+      seen.add(token);
+      return true;
+    })
+    .slice(0, MAX_PANTONE_ITEMS);
+};
+
+const readStoredList = <T,>(key: string, fallback: T): T => {
+  if (typeof window === 'undefined') {
+    return fallback;
+  }
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) {
+      return fallback;
+    }
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+};
+
+const persistStoredList = <T,>(key: string, value: T) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore localStorage failures
+  }
+};
+
+const PANTONE_INDEX: PantoneIndexed[] = PANTONE_SWATCHES.map((swatch) => {
+  const hex = normalizeHexColor(swatch.hex);
+  return {
+    ...swatch,
+    hex,
+    token: normalizePantoneToken(swatch.code),
+    searchToken: normalizePantoneToken(`${swatch.code} ${swatch.name}`),
+    lab: hexToLab(hex),
+  };
+});
 
 const findPantoneByCode = (value: string) => {
   const token = normalizePantoneToken(value);
   if (!token) {
     return null;
   }
-
-  return (
-    PANTONE_INDEX.find((swatch) => swatch.token === token || swatch.token.endsWith(token)) ?? null
-  );
+  return PANTONE_INDEX.find((swatch) => swatch.token === token || swatch.token.endsWith(token)) ?? null;
 };
 
 const findNearestPantone = (hex: string) => {
@@ -229,71 +374,15 @@ const findNearestPantone = (hex: string) => {
   return { swatch: nearest, distance: minDistance };
 };
 
-function hsbToHex(h: number, s: number, b: number): string {
-  const ss = clamp(s, 0, 100) / 100;
-  const bb = clamp(b, 0, 100) / 100;
-  const k = (n: number) => (n + h / 60) % 6;
-  const f = (n: number) => bb * (1 - ss * Math.max(0, Math.min(k(n), 4 - k(n), 1)));
-  const r = Math.round(f(5) * 255);
-  const g = Math.round(f(3) * 255);
-  const bv = Math.round(f(1) * 255);
-  return rgbToHex(r, g, bv);
-}
+const formatRgbLabel = (hex: string) => {
+  const rgb = hexToRgb(hex);
+  return `RGB ${rgb.r}, ${rgb.g}, ${rgb.b}`;
+};
 
-function hexToHsb(hex: string): HSB {
-  const clean = normalizeHexColor(hex).replace('#', '');
-  const r = parseInt(clean.slice(0, 2), 16) / 255;
-  const g = parseInt(clean.slice(2, 4), 16) / 255;
-  const b = parseInt(clean.slice(4, 6), 16) / 255;
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const delta = max - min;
-  let h = 0;
-  if (delta !== 0) {
-    if (max === r) h = ((g - b) / delta) % 6;
-    else if (max === g) h = (b - r) / delta + 2;
-    else h = (r - g) / delta + 4;
-    h = Math.round(h * 60);
-    if (h < 0) h += 360;
-  }
-  const s = max === 0 ? 0 : Math.round((delta / max) * 100);
-  const bv = Math.round(max * 100);
-  return { h, s, b: bv };
-}
-
-function hexToCmyk(hex: string): CMYK {
-  const clean = normalizeHexColor(hex).replace('#', '');
-  const r = parseInt(clean.slice(0, 2), 16) / 255;
-  const g = parseInt(clean.slice(2, 4), 16) / 255;
-  const b = parseInt(clean.slice(4, 6), 16) / 255;
-
-  const k = 1 - Math.max(r, g, b);
-  if (k >= 1) {
-    return { c: 0, m: 0, y: 0, k: 100 };
-  }
-
-  const c = (1 - r - k) / (1 - k);
-  const m = (1 - g - k) / (1 - k);
-  const y = (1 - b - k) / (1 - k);
-  return {
-    c: Math.round(clamp(c, 0, 1) * 100),
-    m: Math.round(clamp(m, 0, 1) * 100),
-    y: Math.round(clamp(y, 0, 1) * 100),
-    k: Math.round(clamp(k, 0, 1) * 100),
-  };
-}
-
-function cmykToHex(c: number, m: number, y: number, k: number): string {
-  const cc = clamp(c, 0, 100) / 100;
-  const mm = clamp(m, 0, 100) / 100;
-  const yy = clamp(y, 0, 100) / 100;
-  const kk = clamp(k, 0, 100) / 100;
-
-  const r = 255 * (1 - cc) * (1 - kk);
-  const g = 255 * (1 - mm) * (1 - kk);
-  const b = 255 * (1 - yy) * (1 - kk);
-  return rgbToHex(r, g, b);
-}
+const formatCmykLabel = (hex: string) => {
+  const cmyk = hexToCmyk(hex);
+  return `CMYK ${cmyk.c}/${cmyk.m}/${cmyk.y}/${cmyk.k}`;
+};
 
 interface SketchColorPickerProps {
   color: string;
@@ -315,27 +404,81 @@ export default function SketchColorPicker({
   const [pantoneQuery, setPantoneQuery] = useState('');
   const [pantoneInputError, setPantoneInputError] = useState('');
   const [eyedropperError, setEyedropperError] = useState('');
+  const [activeTab, setActiveTab] = useState<'color' | 'pantone'>('color');
+  const [colorFavorites, setColorFavorites] = useState<string[]>(() =>
+    normalizeColorList(readStoredList<string[]>(STORAGE_KEYS.colorFavorites, [])),
+  );
+  const [colorRecent, setColorRecent] = useState<string[]>(() =>
+    normalizeColorList(readStoredList<string[]>(STORAGE_KEYS.colorRecent, [])),
+  );
+  const [pantoneFavorites, setPantoneFavorites] = useState<PantoneSwatch[]>(() =>
+    normalizePantoneList(readStoredList<PantoneSwatch[]>(STORAGE_KEYS.pantoneFavorites, [])),
+  );
+  const [pantoneRecent, setPantoneRecent] = useState<PantoneSwatch[]>(() =>
+    normalizePantoneList(readStoredList<PantoneSwatch[]>(STORAGE_KEYS.pantoneRecent, [])),
+  );
+
   const sbRef = useRef<HTMLDivElement>(null);
   const hueRef = useRef<HTMLDivElement>(null);
   const draggingSB = useRef(false);
   const draggingHue = useRef(false);
 
+  useEffect(() => {
+    persistStoredList(STORAGE_KEYS.colorFavorites, colorFavorites);
+  }, [colorFavorites]);
+
+  useEffect(() => {
+    persistStoredList(STORAGE_KEYS.colorRecent, colorRecent);
+  }, [colorRecent]);
+
+  useEffect(() => {
+    persistStoredList(STORAGE_KEYS.pantoneFavorites, pantoneFavorites);
+  }, [pantoneFavorites]);
+
+  useEffect(() => {
+    persistStoredList(STORAGE_KEYS.pantoneRecent, pantoneRecent);
+  }, [pantoneRecent]);
+
+  const pushRecentColor = useCallback((hex: string) => {
+    const normalized = normalizeHexColor(hex);
+    setColorRecent((prev) => normalizeColorList([normalized, ...prev]));
+  }, []);
+
+  const pushRecentPantone = useCallback((swatch: PantoneSwatch) => {
+    setPantoneRecent((prev) => normalizePantoneList([swatch, ...prev]));
+  }, []);
+
   const applyHexColor = useCallback(
-    (rawHex: string, options?: { pantoneCode?: string | null }) => {
+    (
+      rawHex: string,
+      options: {
+        pantoneCode?: string | null;
+        trackRecentColor?: boolean;
+        recentPantone?: PantoneSwatch | null;
+      } = {},
+    ) => {
       const normalized = normalizeHexColor(rawHex);
       const parsed = hexToHsb(normalized);
       setHsb(parsed);
       setHexInput(normalized);
       onChange(normalized);
+
       if (onPantoneCodeChange) {
-        if (options && Object.prototype.hasOwnProperty.call(options, 'pantoneCode')) {
+        if (Object.prototype.hasOwnProperty.call(options, 'pantoneCode')) {
           onPantoneCodeChange(options.pantoneCode ?? null);
         } else {
           onPantoneCodeChange(null);
         }
       }
+
+      if (options.trackRecentColor) {
+        pushRecentColor(normalized);
+      }
+      if (options.recentPantone) {
+        pushRecentPantone(options.recentPantone);
+      }
     },
-    [onChange, onPantoneCodeChange],
+    [onChange, onPantoneCodeChange, pushRecentColor, pushRecentPantone],
   );
 
   useEffect(() => {
@@ -349,7 +492,9 @@ export default function SketchColorPicker({
   useEffect(() => {
     if (selectedPantoneCode) {
       setPantoneQuery(selectedPantoneCode);
+      return;
     }
+    setPantoneQuery('');
   }, [selectedPantoneCode]);
 
   const emitColor = useCallback(
@@ -386,9 +531,13 @@ export default function SketchColorPicker({
   );
 
   const stopDrag = useCallback(() => {
+    const wasDragging = draggingSB.current || draggingHue.current;
     draggingSB.current = false;
     draggingHue.current = false;
-  }, []);
+    if (wasDragging) {
+      pushRecentColor(hsbToHex(hsb.h, hsb.s, hsb.b));
+    }
+  }, [hsb, pushRecentColor]);
 
   useEffect(() => {
     window.addEventListener('mousemove', handleSBMouseMove);
@@ -417,24 +566,32 @@ export default function SketchColorPicker({
     if (/^#[0-9A-F]{6}$/.test(val)) {
       setPantoneInputError('');
       setEyedropperError('');
-      applyHexColor(val);
+      applyHexColor(val, { trackRecentColor: true });
     }
   };
 
   const currentHex = useMemo(() => hsbToHex(hsb.h, hsb.s, hsb.b), [hsb]);
+  const currentCmyk = useMemo(() => hexToCmyk(currentHex), [currentHex]);
 
-  const cmyk = useMemo(() => hexToCmyk(currentHex), [currentHex]);
+  const selectedPantone = useMemo(() => {
+    if (!selectedPantoneCode) {
+      return null;
+    }
 
-  const selectedPantone = useMemo(
-    () => findPantoneByCode(selectedPantoneCode ?? ''),
-    [selectedPantoneCode],
-  );
+    const token = normalizePantoneToken(selectedPantoneCode);
+    return (
+      PANTONE_INDEX.find((swatch) => swatch.token === token || swatch.token.endsWith(token)) ??
+      pantoneFavorites.find((swatch) => normalizePantoneToken(swatch.code) === token) ??
+      pantoneRecent.find((swatch) => normalizePantoneToken(swatch.code) === token) ??
+      null
+    );
+  }, [selectedPantoneCode, pantoneFavorites, pantoneRecent]);
 
   const recommendedPantone = useMemo(() => findNearestPantone(currentHex), [currentHex]);
 
   const pantoneCandidates = useMemo(() => {
     const token = normalizePantoneToken(pantoneQuery);
-    const currentLab = hexToLab(currentHex);
+    const targetLab = hexToLab(currentHex);
 
     return PANTONE_INDEX
       .filter((swatch) => {
@@ -444,8 +601,8 @@ export default function SketchColorPicker({
         return swatch.searchToken.includes(token) || swatch.token.endsWith(token);
       })
       .map((swatch) => ({
-        ...swatch,
-        distance: deltaE76(currentLab, swatch.lab),
+        swatch,
+        distance: deltaE76(targetLab, swatch.lab),
       }))
       .sort((left, right) => left.distance - right.distance)
       .slice(0, 8);
@@ -458,11 +615,11 @@ export default function SketchColorPicker({
     }
 
     const next = {
-      ...cmyk,
+      ...currentCmyk,
       [channel]: clamp(Math.round(parsed), 0, 100),
     };
-    applyHexColor(cmykToHex(next.c, next.m, next.y, next.k));
     setPantoneInputError('');
+    applyHexColor(cmykToHex(next.c, next.m, next.y, next.k), { trackRecentColor: true });
   };
 
   const applyPantone = useCallback(
@@ -470,7 +627,11 @@ export default function SketchColorPicker({
       setPantoneInputError('');
       setEyedropperError('');
       setPantoneQuery(swatch.code);
-      applyHexColor(swatch.hex, { pantoneCode: swatch.code });
+      applyHexColor(swatch.hex, {
+        pantoneCode: swatch.code,
+        trackRecentColor: true,
+        recentPantone: swatch,
+      });
     },
     [applyHexColor],
   );
@@ -509,8 +670,8 @@ export default function SketchColorPicker({
       if (!result?.sRGBHex) {
         return;
       }
-      applyHexColor(result.sRGBHex);
       setPantoneInputError('');
+      applyHexColor(result.sRGBHex, { trackRecentColor: true });
     } catch (error) {
       const domError = error as DOMException;
       if (domError?.name === 'AbortError') {
@@ -519,6 +680,39 @@ export default function SketchColorPicker({
       setEyedropperError('스포이드 실행에 실패했습니다.');
     }
   };
+
+  const toggleColorFavorite = () => {
+    const normalized = normalizeHexColor(currentHex);
+    setColorFavorites((prev) => {
+      if (prev.includes(normalized)) {
+        return prev.filter((item) => item !== normalized);
+      }
+      return normalizeColorList([normalized, ...prev]);
+    });
+  };
+
+  const colorFavoriteSet = useMemo(() => new Set(colorFavorites), [colorFavorites]);
+  const isCurrentColorFavorite = colorFavoriteSet.has(normalizeHexColor(currentHex));
+
+  const togglePantoneFavorite = () => {
+    const target = selectedPantone ?? recommendedPantone.swatch;
+    const token = normalizePantoneToken(target.code);
+
+    setPantoneFavorites((prev) => {
+      const exists = prev.some((item) => normalizePantoneToken(item.code) === token);
+      if (exists) {
+        return prev.filter((item) => normalizePantoneToken(item.code) !== token);
+      }
+      return normalizePantoneList([target, ...prev]);
+    });
+  };
+
+  const pantoneFavoriteSet = useMemo(
+    () => new Set(pantoneFavorites.map((item) => normalizePantoneToken(item.code))),
+    [pantoneFavorites],
+  );
+  const pantoneFavoriteTargetToken = normalizePantoneToken((selectedPantone ?? recommendedPantone.swatch).code);
+  const isPantoneFavorite = pantoneFavoriteSet.has(pantoneFavoriteTargetToken);
 
   const supportsEyedropper =
     typeof window !== 'undefined' &&
@@ -529,180 +723,365 @@ export default function SketchColorPicker({
   const hueThumbX = `${(hsb.h / 360) * 100}%`;
 
   return (
-    <div className='flex flex-col gap-2.5 p-2.5'>
+    <div className='flex h-full min-h-0 w-full min-w-0 flex-col gap-2.5 overflow-x-hidden p-2.5'>
       <p className='text-[11px] font-medium text-gray-500'>{label}</p>
 
-      <div
-        ref={sbRef}
-        className='relative h-32 w-full cursor-crosshair rounded-md'
-        style={{
-          background: `
-            linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,1)),
-            linear-gradient(to right, #fff, hsl(${hsb.h}, 100%, 50%))
-          `,
-        }}
-        onMouseDown={handleSBDown}
-      >
-        <div
-          className='pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow'
-          style={{ left: sbThumbX, top: sbThumbY }}
-        />
-      </div>
-
-      <div
-        ref={hueRef}
-        className='relative h-3 w-full cursor-pointer rounded-full'
-        style={{
-          background:
-            'linear-gradient(to right, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)',
-        }}
-        onMouseDown={handleHueDown}
-      >
-        <div
-          className='pointer-events-none absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow'
-          style={{ left: hueThumbX }}
-        />
-      </div>
-
-      <div className='flex items-center gap-2'>
-        <div
-          className='h-6 w-6 shrink-0 rounded border border-gray-200'
-          style={{ background: currentHex }}
-        />
-        <input
-          type='text'
-          value={hexInput}
-          onChange={handleHexChange}
-          className='flex-1 rounded border border-gray-200 px-2 py-0.5 font-mono text-xs uppercase focus:ring-1 focus:ring-gray-400 focus:outline-none'
-          maxLength={7}
-          spellCheck={false}
-        />
+      <div className='grid grid-cols-2 items-center rounded-md border border-gray-200 bg-gray-50 p-0.5'>
         <button
           type='button'
-          onClick={() => void handleEyedropperPick()}
-          disabled={!supportsEyedropper}
-          title={supportsEyedropper ? '스포이드' : '스포이드 미지원 브라우저'}
-          className='inline-flex h-6 w-6 items-center justify-center rounded border border-gray-200 text-gray-600 transition-colors hover:border-gray-300 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50'
+          onClick={() => setActiveTab('color')}
+          className={`h-7 w-full rounded text-[10px] font-medium transition-colors ${
+            activeTab === 'color' ? 'bg-white text-gray-800 shadow-xs' : 'text-gray-500 hover:text-gray-700'
+          }`}
         >
-          <Pipette size={13} />
+          색상
+        </button>
+        <button
+          type='button'
+          onClick={() => setActiveTab('pantone')}
+          className={`h-7 w-full rounded text-[10px] font-medium transition-colors ${
+            activeTab === 'pantone' ? 'bg-white text-gray-800 shadow-xs' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          팬톤
         </button>
       </div>
 
-      <div className='rounded-md border border-gray-200/90 bg-gray-50/70 p-2'>
-        <div className='mb-1 flex items-center justify-between'>
-          <p className='text-[10px] font-semibold tracking-wide text-gray-500'>CMYK</p>
-          <span className='text-[10px] text-gray-400'>%</span>
-        </div>
-        <div className='grid grid-cols-4 gap-1.5'>
-          {(['c', 'm', 'y', 'k'] as (keyof CMYK)[]).map((channel) => (
-            <label key={channel} className='flex flex-col gap-1'>
-              <span className='text-[10px] font-medium uppercase text-gray-500'>{channel}</span>
-              <input
-                type='number'
-                min={0}
-                max={100}
-                step={1}
-                value={cmyk[channel]}
-                onChange={(event) => handleCmykChange(channel, event.target.value)}
-                className='h-6 rounded border border-gray-200 bg-white px-1.5 text-[11px] text-gray-700 outline-none focus:border-gray-300 focus:ring-1 focus:ring-gray-300'
-              />
-            </label>
-          ))}
-        </div>
-      </div>
-
-      <div className='rounded-md border border-gray-200/90 bg-gray-50/70 p-2'>
-        <div className='mb-1 flex items-center justify-between'>
-          <label className='text-[10px] font-semibold tracking-wide text-gray-500'>PANTONE</label>
-          {selectedPantone ? (
-            <span className='text-[10px] font-medium text-emerald-600'>선택됨</span>
-          ) : null}
-        </div>
-
-        <div className='flex items-center gap-1.5'>
-          <input
-            type='text'
-            value={pantoneQuery}
-            onChange={(event) => {
-              setPantoneQuery(event.target.value);
-              setPantoneInputError('');
+      {activeTab === 'color' ? (
+        <div className='flex min-h-0 flex-1 flex-col gap-2.5'>
+          <div
+            ref={sbRef}
+            className='relative h-32 w-full cursor-crosshair rounded-md'
+            style={{
+              background: `
+                linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,1)),
+                linear-gradient(to right, #fff, hsl(${hsb.h}, 100%, 50%))
+              `,
             }}
-            onKeyDown={handlePantoneInputKeyDown}
-            placeholder='예: 186 C, 19-4052 TCX'
-            className='h-7 flex-1 rounded border border-gray-200 bg-white px-2 text-[11px] text-gray-700 outline-none focus:border-gray-300 focus:ring-1 focus:ring-gray-300'
-          />
-          <button
-            type='button'
-            onClick={applyPantoneByQuery}
-            className='h-7 shrink-0 rounded border border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-100'
+            onMouseDown={handleSBDown}
           >
-            적용
-          </button>
-        </div>
+            <div
+              className='pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow'
+              style={{ left: sbThumbX, top: sbThumbY }}
+            />
+          </div>
 
-        <div className='mt-1.5 rounded border border-gray-200 bg-white p-1.5'>
-          <div className='mb-1 flex items-center justify-between'>
-            <p className='text-[10px] font-medium text-gray-500'>최근접 추천</p>
+          <div
+            ref={hueRef}
+            className='relative h-3 w-full cursor-pointer rounded-full'
+            style={{
+              background:
+                'linear-gradient(to right, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)',
+            }}
+            onMouseDown={handleHueDown}
+          >
+            <div
+              className='pointer-events-none absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow'
+              style={{ left: hueThumbX }}
+            />
+          </div>
+
+          <div className='flex min-w-0 items-center gap-2'>
+            <div className='h-6 w-6 shrink-0 rounded border border-gray-200' style={{ background: currentHex }} />
+            <input
+              type='text'
+              value={hexInput}
+              onChange={handleHexChange}
+              className='min-w-0 flex-1 rounded border border-gray-200 px-2 py-0.5 font-mono text-xs uppercase focus:ring-1 focus:ring-gray-400 focus:outline-none'
+              maxLength={7}
+              spellCheck={false}
+            />
             <button
               type='button'
-              onClick={() => applyPantone(recommendedPantone.swatch)}
-              className='text-[10px] font-medium text-gray-700 underline-offset-2 hover:underline'
+              onClick={toggleColorFavorite}
+              title={isCurrentColorFavorite ? '색상 즐겨찾기 해제' : '색상 즐겨찾기'}
+              className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border transition-colors ${
+                isCurrentColorFavorite
+                  ? 'border-amber-300 bg-amber-50 text-amber-600'
+                  : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:text-gray-800'
+              }`}
             >
-              추천 적용
+              <Star size={13} fill={isCurrentColorFavorite ? 'currentColor' : 'none'} />
+            </button>
+            <button
+              type='button'
+              onClick={() => void handleEyedropperPick()}
+              disabled={!supportsEyedropper}
+              title={supportsEyedropper ? '스포이드' : '스포이드 미지원 브라우저'}
+              className='inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-gray-200 text-gray-600 transition-colors hover:border-gray-300 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50'
+            >
+              <Pipette size={13} />
             </button>
           </div>
-          <div className='flex items-center gap-1.5'>
-            <span
-              className='inline-block h-3 w-3 shrink-0 rounded border border-gray-200'
-              style={{ background: recommendedPantone.swatch.hex }}
-            />
-            <div className='min-w-0 text-[10px] text-gray-600'>
-              <p className='truncate font-medium text-gray-700'>{recommendedPantone.swatch.code}</p>
-              <p className='truncate'>
-                {recommendedPantone.swatch.name} · ΔE {recommendedPantone.distance.toFixed(1)}
-              </p>
+
+          <div className='rounded-md border border-gray-200/90 bg-gray-50/70 p-2'>
+            <div className='mb-1 flex items-center justify-between'>
+              <p className='text-[10px] font-semibold tracking-wide text-gray-500'>CMYK</p>
+              <span className='text-[10px] text-gray-400'>%</span>
+            </div>
+            <div className='grid grid-cols-4 gap-1.5'>
+              {(['c', 'm', 'y', 'k'] as (keyof CMYK)[]).map((channel) => (
+                <label key={channel} className='flex min-w-0 flex-col gap-1'>
+                  <span className='text-[10px] font-medium uppercase text-gray-500'>{channel}</span>
+                  <input
+                    type='number'
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={currentCmyk[channel]}
+                    onChange={(event) => handleCmykChange(channel, event.target.value)}
+                    className='h-6 w-full rounded border border-gray-200 bg-white px-1.5 text-[11px] text-gray-700 outline-none focus:border-gray-300 focus:ring-1 focus:ring-gray-300'
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className='flex min-h-0 flex-1 flex-col rounded-md border border-gray-200/90 bg-gray-50/70 p-2'>
+            <p className='mb-1 text-[10px] font-semibold tracking-wide text-gray-500'>색상 히스토리</p>
+            <div className='flex min-h-0 flex-1 flex-col gap-2'>
+              <div className='flex min-h-0 flex-1 flex-col'>
+                <p className='mb-1 text-[10px] font-medium text-gray-500'>즐겨찾는 색상</p>
+                <div className='min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden pr-0.5'>
+                  {colorFavorites.length > 0 ? (
+                    colorFavorites.map((hex) => (
+                      <button
+                        key={`fav-${hex}`}
+                        type='button'
+                        onClick={() => applyHexColor(hex, { trackRecentColor: true })}
+                        className='flex w-full min-w-0 items-center gap-2 rounded border border-gray-200 bg-white px-2 py-1 text-left hover:bg-gray-50'
+                      >
+                        <span
+                          className='h-4 w-4 shrink-0 rounded border border-gray-200'
+                          style={{ background: hex }}
+                        />
+                        <span className='min-w-0 text-[10px] text-gray-600'>
+                          <span className='block truncate font-mono text-gray-700'>{hex}</span>
+                          <span className='block truncate'>{formatRgbLabel(hex)}</span>
+                          <span className='block truncate'>{formatCmykLabel(hex)}</span>
+                        </span>
+                      </button>
+                    ))
+                  ) : (
+                    <p className='rounded border border-dashed border-gray-200 bg-white px-2 py-2 text-[10px] text-gray-500'>
+                      저장된 즐겨찾기 색상이 없습니다.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className='flex min-h-0 flex-1 flex-col'>
+                <p className='mb-1 text-[10px] font-medium text-gray-500'>최근 사용 색상</p>
+                <div className='min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden pr-0.5'>
+                  {colorRecent.length > 0 ? (
+                    colorRecent.map((hex) => (
+                      <button
+                        key={`recent-${hex}`}
+                        type='button'
+                        onClick={() => applyHexColor(hex, { trackRecentColor: true })}
+                        className='flex w-full min-w-0 items-center gap-2 rounded border border-gray-200 bg-white px-2 py-1 text-left hover:bg-gray-50'
+                      >
+                        <span
+                          className='h-4 w-4 shrink-0 rounded border border-gray-200'
+                          style={{ background: hex }}
+                        />
+                        <span className='min-w-0 text-[10px] text-gray-600'>
+                          <span className='block truncate font-mono text-gray-700'>{hex}</span>
+                          <span className='block truncate'>{formatRgbLabel(hex)}</span>
+                          <span className='block truncate'>{formatCmykLabel(hex)}</span>
+                        </span>
+                      </button>
+                    ))
+                  ) : (
+                    <p className='rounded border border-dashed border-gray-200 bg-white px-2 py-2 text-[10px] text-gray-500'>
+                      최근 사용 색상이 없습니다.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {eyedropperError ? <p className='text-[10px] text-red-500'>{eyedropperError}</p> : null}
+        </div>
+      ) : (
+        <div className='flex min-h-0 flex-1 flex-col gap-2.5'>
+          <div className='rounded-md border border-gray-200/90 bg-gray-50/70 p-2'>
+            <p className='mb-1 text-[10px] font-semibold tracking-wide text-gray-500'>현재 색상</p>
+            <div className='flex min-w-0 items-center gap-2'>
+              <span className='inline-block h-5 w-5 shrink-0 rounded border border-gray-200' style={{ background: currentHex }} />
+              <div className='min-w-0 text-[10px] text-gray-600'>
+                <p className='truncate font-mono text-gray-700'>{currentHex}</p>
+                <p className='truncate'>{formatRgbLabel(currentHex)}</p>
+                <p className='truncate'>{formatCmykLabel(currentHex)}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className='rounded-md border border-gray-200/90 bg-gray-50/70 p-2'>
+            <div className='mb-1 flex items-center justify-between'>
+              <label className='text-[10px] font-semibold tracking-wide text-gray-500'>팬톤 코드 검색</label>
+              <button
+                type='button'
+                onClick={togglePantoneFavorite}
+                title={isPantoneFavorite ? '팬톤 즐겨찾기 해제' : '팬톤 즐겨찾기'}
+                className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border transition-colors ${
+                  isPantoneFavorite
+                    ? 'border-amber-300 bg-amber-50 text-amber-600'
+                    : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-800'
+                }`}
+              >
+                <Star size={13} fill={isPantoneFavorite ? 'currentColor' : 'none'} />
+              </button>
+            </div>
+
+            <div className='flex min-w-0 items-center gap-1.5'>
+              <input
+                type='text'
+                value={pantoneQuery}
+                onChange={(event) => {
+                  setPantoneQuery(event.target.value);
+                  setPantoneInputError('');
+                }}
+                onKeyDown={handlePantoneInputKeyDown}
+                placeholder='예: 186 C, 19-4052 TCX'
+                className='min-w-0 flex-1 rounded border border-gray-200 bg-white px-2 text-[11px] text-gray-700 outline-none focus:border-gray-300 focus:ring-1 focus:ring-gray-300'
+              />
+              <button
+                type='button'
+                onClick={applyPantoneByQuery}
+                className='h-7 shrink-0 rounded border border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-100'
+              >
+                적용
+              </button>
+            </div>
+
+            <div className='mt-1.5 rounded border border-gray-200 bg-white p-1.5'>
+              <div className='mb-1 flex items-center justify-between'>
+                <p className='text-[10px] font-medium text-gray-500'>현재 색상 최근접 추천</p>
+                <button
+                  type='button'
+                  onClick={() => applyPantone(recommendedPantone.swatch)}
+                  className='text-[10px] font-medium text-gray-700 underline-offset-2 hover:underline'
+                >
+                  추천 적용
+                </button>
+              </div>
+              <div className='flex min-w-0 items-center gap-2'>
+                <span
+                  className='inline-block h-4 w-4 shrink-0 rounded border border-gray-200'
+                  style={{ background: recommendedPantone.swatch.hex }}
+                />
+                <div className='min-w-0 text-[10px] text-gray-600'>
+                  <p className='truncate font-medium text-gray-700'>{recommendedPantone.swatch.code}</p>
+                  <p className='truncate'>{recommendedPantone.swatch.name}</p>
+                  <p className='truncate'>
+                    {recommendedPantone.swatch.hex} · ΔE {recommendedPantone.distance.toFixed(1)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className='mt-1.5 max-h-28 overflow-y-auto overflow-x-hidden rounded border border-gray-200 bg-white'>
+              {pantoneCandidates.length > 0 ? (
+                pantoneCandidates.map(({ swatch }) => (
+                  <button
+                    key={swatch.code}
+                    type='button'
+                    onClick={() => applyPantone(swatch)}
+                    className='flex w-full min-w-0 items-center gap-2 border-b border-gray-100 px-2 py-1 text-left last:border-b-0 hover:bg-gray-50'
+                  >
+                    <span
+                      className='inline-block h-3 w-3 shrink-0 rounded border border-gray-200'
+                      style={{ background: swatch.hex }}
+                    />
+                    <span className='min-w-0 text-[10px] text-gray-700'>
+                      <span className='block truncate font-medium'>{swatch.code}</span>
+                      <span className='block truncate text-gray-500'>{swatch.name}</span>
+                    </span>
+                  </button>
+                ))
+              ) : (
+                <p className='px-2 py-2 text-[10px] text-gray-500'>검색 결과가 없습니다.</p>
+              )}
+            </div>
+
+            {selectedPantone ? (
+              <div className='mt-1.5 flex min-w-0 items-center gap-1.5 rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] text-emerald-700'>
+                <span
+                  className='inline-block h-3 w-3 shrink-0 rounded border border-emerald-200'
+                  style={{ background: selectedPantone.hex }}
+                />
+                <span className='truncate'>{selectedPantone.code}</span>
+              </div>
+            ) : null}
+
+            {pantoneInputError ? <p className='mt-1 text-[10px] text-red-500'>{pantoneInputError}</p> : null}
+          </div>
+
+          <div className='flex min-h-0 flex-1 flex-col rounded-md border border-gray-200/90 bg-gray-50/70 p-2'>
+            <p className='mb-1 text-[10px] font-semibold tracking-wide text-gray-500'>팬톤 히스토리</p>
+            <div className='grid min-h-0 flex-1 gap-2'>
+              <div className='flex min-h-0 flex-col'>
+                <p className='mb-1 text-[10px] font-medium text-gray-500'>즐겨찾는 팬톤</p>
+                <div className='min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden pr-0.5'>
+                  {pantoneFavorites.length > 0 ? (
+                    pantoneFavorites.map((swatch) => (
+                      <button
+                        key={`pantone-fav-${swatch.code}`}
+                        type='button'
+                        onClick={() => applyPantone(swatch)}
+                        className='flex w-full min-w-0 items-center gap-2 rounded border border-gray-200 bg-white px-2 py-1 text-left hover:bg-gray-50'
+                      >
+                        <span
+                          className='inline-block h-3 w-3 shrink-0 rounded border border-gray-200'
+                          style={{ background: swatch.hex }}
+                        />
+                        <span className='min-w-0 text-[10px] text-gray-700'>
+                          <span className='block truncate font-medium'>{swatch.code}</span>
+                          <span className='block truncate text-gray-500'>{swatch.name}</span>
+                        </span>
+                      </button>
+                    ))
+                  ) : (
+                    <p className='rounded border border-dashed border-gray-200 bg-white px-2 py-2 text-[10px] text-gray-500'>
+                      저장된 팬톤 즐겨찾기가 없습니다.
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className='flex min-h-0 flex-col'>
+                <p className='mb-1 text-[10px] font-medium text-gray-500'>최근 사용 팬톤</p>
+                <div className='min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden pr-0.5'>
+                  {pantoneRecent.length > 0 ? (
+                    pantoneRecent.map((swatch) => (
+                      <button
+                        key={`pantone-recent-${swatch.code}`}
+                        type='button'
+                        onClick={() => applyPantone(swatch)}
+                        className='flex w-full min-w-0 items-center gap-2 rounded border border-gray-200 bg-white px-2 py-1 text-left hover:bg-gray-50'
+                      >
+                        <span
+                          className='inline-block h-3 w-3 shrink-0 rounded border border-gray-200'
+                          style={{ background: swatch.hex }}
+                        />
+                        <span className='min-w-0 text-[10px] text-gray-700'>
+                          <span className='block truncate font-medium'>{swatch.code}</span>
+                          <span className='block truncate text-gray-500'>{swatch.name}</span>
+                        </span>
+                      </button>
+                    ))
+                  ) : (
+                    <p className='rounded border border-dashed border-gray-200 bg-white px-2 py-2 text-[10px] text-gray-500'>
+                      최근 사용 팬톤이 없습니다.
+                    </p>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
-
-        {selectedPantone ? (
-          <div className='mt-1.5 flex items-center gap-1.5 rounded border border-emerald-200 bg-emerald-50 p-1.5 text-[10px] text-emerald-700'>
-            <span
-              className='inline-block h-3 w-3 shrink-0 rounded border border-emerald-200'
-              style={{ background: selectedPantone.hex }}
-            />
-            <span className='truncate'>{selectedPantone.code}</span>
-          </div>
-        ) : null}
-
-        <div className='mt-1.5 max-h-28 overflow-y-auto rounded border border-gray-200 bg-white'>
-          {pantoneCandidates.length > 0 ? (
-            pantoneCandidates.map((swatch) => (
-              <button
-                key={swatch.code}
-                type='button'
-                onClick={() => applyPantone(swatch)}
-                className='flex w-full items-center gap-1.5 border-b border-gray-100 px-2 py-1 text-left last:border-b-0 hover:bg-gray-50'
-              >
-                <span
-                  className='inline-block h-3 w-3 shrink-0 rounded border border-gray-200'
-                  style={{ background: swatch.hex }}
-                />
-                <span className='min-w-0 text-[10px] text-gray-700'>
-                  <span className='block truncate font-medium'>{swatch.code}</span>
-                  <span className='block truncate text-gray-500'>{swatch.name}</span>
-                </span>
-              </button>
-            ))
-          ) : (
-            <p className='px-2 py-2 text-[10px] text-gray-500'>검색 결과가 없습니다.</p>
-          )}
-        </div>
-
-        {pantoneInputError ? <p className='mt-1 text-[10px] text-red-500'>{pantoneInputError}</p> : null}
-      </div>
-
-      {eyedropperError ? <p className='text-[10px] text-red-500'>{eyedropperError}</p> : null}
+      )}
     </div>
   );
 }
