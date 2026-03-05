@@ -131,99 +131,55 @@ input[type='search']::-webkit-search-results-decoration {
   @apply bg-gray-400 dark:bg-gray-600;
 }
 
-/* Chrome, Safari and Opera */
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
+/* Global scrollbar tokens */
+:root {
+  --app-scrollbar-size: 8px;
+  --app-scrollbar-track: transparent;
+  --app-scrollbar-thumb: rgba(0, 0, 0, 0.22);
+  --app-scrollbar-thumb-hover: rgba(0, 0, 0, 0.32);
 }
 
-.no-scrollbar {
-  -ms-overflow-style: none; /* IE and Edge */
-  scrollbar-width: none; /* Firefox */
+.dark {
+  --app-scrollbar-thumb: rgba(255, 255, 255, 0.24);
+  --app-scrollbar-thumb-hover: rgba(255, 255, 255, 0.36);
 }
 
-/* Transparent scrollbar for all browsers */
-.transparent-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-  background-color: transparent;
-}
-
-.transparent-scrollbar::-webkit-scrollbar-track {
-  background-color: transparent;
-  border: none;
-}
-
-.transparent-scrollbar::-webkit-scrollbar-thumb {
-  background-color: transparent;
-  border: none;
-}
-
-.transparent-scrollbar::-webkit-scrollbar-corner {
-  background-color: transparent;
-}
-
-.transparent-scrollbar {
+/* Unified scrollbar style for the whole app */
+* {
   scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
+  scrollbar-color: var(--app-scrollbar-thumb) var(--app-scrollbar-track);
 }
 
-/* Custom scrollbar styles */
-.scrollbar-custom::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+*::-webkit-scrollbar {
+  width: var(--app-scrollbar-size);
+  height: var(--app-scrollbar-size);
 }
 
-.scrollbar-custom::-webkit-scrollbar-track {
-  background-color: transparent;
+*::-webkit-scrollbar-track {
+  background-color: var(--app-scrollbar-track);
   border: none;
 }
 
-.scrollbar-custom::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 0, 0, 0.2);
-  border-radius: 4px;
-}
-
-.scrollbar-custom::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(0, 0, 0, 0.3);
-}
-
-.dark .scrollbar-custom::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.2);
-}
-
-.dark .scrollbar-custom::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(255, 255, 255, 0.3);
-}
-
-.scrollbar-drive::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.scrollbar-drive::-webkit-scrollbar-track {
-  background-color: transparent;
-  border: none;
-}
-
-.scrollbar-drive::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 0, 0, 0.22);
+*::-webkit-scrollbar-thumb {
+  background-color: var(--app-scrollbar-thumb);
   border-radius: 4px;
   border: none;
 }
 
-.scrollbar-drive::-webkit-scrollbar-corner {
-  background-color: transparent;
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--app-scrollbar-thumb-hover);
 }
 
+*::-webkit-scrollbar-corner {
+  background-color: var(--app-scrollbar-track);
+}
+
+/* Keep legacy class names mapped to the global scrollbar style */
+.no-scrollbar,
+.transparent-scrollbar,
+.scrollbar-custom,
 .scrollbar-drive {
+  -ms-overflow-style: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.22) transparent;
-}
-
-.dark .scrollbar-drive::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.24);
-}
-
-.dark .scrollbar-drive {
-  scrollbar-color: rgba(255, 255, 255, 0.24) transparent;
+  scrollbar-color: var(--app-scrollbar-thumb) var(--app-scrollbar-track);
 }

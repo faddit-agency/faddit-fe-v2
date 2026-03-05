@@ -95,6 +95,13 @@ const STORAGE_KEYS = {
 
 const MAX_COLOR_ITEMS = 12;
 const MAX_PANTONE_ITEMS = 12;
+const SIDEPANEL_BUTTON_BASE =
+  'rounded-md border border-transparent transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1';
+const SIDEPANEL_BUTTON_IDLE = 'cursor-pointer text-gray-600 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700';
+const SIDEPANEL_BUTTON_ACTIVE =
+  'border-violet-500 bg-faddit text-white shadow-[0_4px_10px_rgba(118,59,255,0.22)] hover:border-violet-500 hover:bg-violet-600 hover:text-white';
+const SIDEPANEL_BUTTON_DISABLED =
+  'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-300 hover:border-gray-200 hover:bg-gray-50 hover:text-gray-300';
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
@@ -730,18 +737,22 @@ export default function SketchColorPicker({
         <button
           type='button'
           onClick={() => setActiveTab('color')}
-          className={`h-7 w-full rounded text-[10px] font-medium transition-colors ${
-            activeTab === 'color' ? 'bg-white text-gray-800 shadow-xs' : 'text-gray-500 hover:text-gray-700'
+          className={`h-7 w-full text-[10px] font-medium ${SIDEPANEL_BUTTON_BASE} ${
+            activeTab === 'color' ? SIDEPANEL_BUTTON_ACTIVE : SIDEPANEL_BUTTON_IDLE
           }`}
+          title='색상 탭'
+          aria-label='색상 탭'
         >
           색상
         </button>
         <button
           type='button'
           onClick={() => setActiveTab('pantone')}
-          className={`h-7 w-full rounded text-[10px] font-medium transition-colors ${
-            activeTab === 'pantone' ? 'bg-white text-gray-800 shadow-xs' : 'text-gray-500 hover:text-gray-700'
+          className={`h-7 w-full text-[10px] font-medium ${SIDEPANEL_BUTTON_BASE} ${
+            activeTab === 'pantone' ? SIDEPANEL_BUTTON_ACTIVE : SIDEPANEL_BUTTON_IDLE
           }`}
+          title='팬톤 탭'
+          aria-label='팬톤 탭'
         >
           팬톤
         </button>
@@ -795,10 +806,10 @@ export default function SketchColorPicker({
               type='button'
               onClick={toggleColorFavorite}
               title={isCurrentColorFavorite ? '색상 즐겨찾기 해제' : '색상 즐겨찾기'}
-              className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border transition-colors ${
+              className={`inline-flex h-6 w-6 shrink-0 items-center justify-center ${SIDEPANEL_BUTTON_BASE} ${
                 isCurrentColorFavorite
                   ? 'border-amber-300 bg-amber-50 text-amber-600'
-                  : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:text-gray-800'
+                  : SIDEPANEL_BUTTON_IDLE
               }`}
             >
               <Star size={13} fill={isCurrentColorFavorite ? 'currentColor' : 'none'} />
@@ -808,7 +819,9 @@ export default function SketchColorPicker({
               onClick={() => void handleEyedropperPick()}
               disabled={!supportsEyedropper}
               title={supportsEyedropper ? '스포이드' : '스포이드 미지원 브라우저'}
-              className='inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-gray-200 text-gray-600 transition-colors hover:border-gray-300 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50'
+              className={`inline-flex h-6 w-6 shrink-0 items-center justify-center ${SIDEPANEL_BUTTON_BASE} ${
+                supportsEyedropper ? SIDEPANEL_BUTTON_IDLE : SIDEPANEL_BUTTON_DISABLED
+              }`}
             >
               <Pipette size={13} />
             </button>
@@ -849,7 +862,9 @@ export default function SketchColorPicker({
                         key={`fav-${hex}`}
                         type='button'
                         onClick={() => applyHexColor(hex, { trackRecentColor: true })}
-                        className='flex w-full min-w-0 items-center gap-2 rounded border border-gray-200 bg-white px-2 py-1 text-left hover:bg-gray-50'
+                        className={`flex w-full min-w-0 items-center gap-2 bg-white px-2 py-1 text-left ${SIDEPANEL_BUTTON_BASE} ${SIDEPANEL_BUTTON_IDLE}`}
+                        title={`${hex} 적용`}
+                        aria-label={`${hex} 적용`}
                       >
                         <span
                           className='h-4 w-4 shrink-0 rounded border border-gray-200'
@@ -879,7 +894,9 @@ export default function SketchColorPicker({
                         key={`recent-${hex}`}
                         type='button'
                         onClick={() => applyHexColor(hex, { trackRecentColor: true })}
-                        className='flex w-full min-w-0 items-center gap-2 rounded border border-gray-200 bg-white px-2 py-1 text-left hover:bg-gray-50'
+                        className={`flex w-full min-w-0 items-center gap-2 bg-white px-2 py-1 text-left ${SIDEPANEL_BUTTON_BASE} ${SIDEPANEL_BUTTON_IDLE}`}
+                        title={`${hex} 적용`}
+                        aria-label={`${hex} 적용`}
                       >
                         <span
                           className='h-4 w-4 shrink-0 rounded border border-gray-200'
@@ -925,10 +942,10 @@ export default function SketchColorPicker({
                 type='button'
                 onClick={togglePantoneFavorite}
                 title={isPantoneFavorite ? '팬톤 즐겨찾기 해제' : '팬톤 즐겨찾기'}
-                className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border transition-colors ${
+                className={`inline-flex h-6 w-6 shrink-0 items-center justify-center ${SIDEPANEL_BUTTON_BASE} ${
                   isPantoneFavorite
                     ? 'border-amber-300 bg-amber-50 text-amber-600'
-                    : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-800'
+                    : `bg-white ${SIDEPANEL_BUTTON_IDLE}`
                 }`}
               >
                 <Star size={13} fill={isPantoneFavorite ? 'currentColor' : 'none'} />
@@ -950,7 +967,9 @@ export default function SketchColorPicker({
               <button
                 type='button'
                 onClick={applyPantoneByQuery}
-                className='h-7 shrink-0 rounded border border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-100'
+                className={`h-7 shrink-0 bg-white px-2 text-[11px] font-medium ${SIDEPANEL_BUTTON_BASE} ${SIDEPANEL_BUTTON_IDLE}`}
+                title='팬톤 적용'
+                aria-label='팬톤 적용'
               >
                 적용
               </button>
@@ -962,7 +981,9 @@ export default function SketchColorPicker({
                 <button
                   type='button'
                   onClick={() => applyPantone(recommendedPantone.swatch)}
-                  className='text-[10px] font-medium text-gray-700 underline-offset-2 hover:underline'
+                  className='rounded px-1.5 py-0.5 text-[10px] font-medium text-violet-700 transition-colors hover:bg-violet-50'
+                  title='추천 팬톤 적용'
+                  aria-label='추천 팬톤 적용'
                 >
                   추천 적용
                 </button>
@@ -989,7 +1010,9 @@ export default function SketchColorPicker({
                     key={swatch.code}
                     type='button'
                     onClick={() => applyPantone(swatch)}
-                    className='flex w-full min-w-0 items-center gap-2 border-b border-gray-100 px-2 py-1 text-left last:border-b-0 hover:bg-gray-50'
+                    className='flex w-full min-w-0 items-center gap-2 border-b border-gray-100 px-2 py-1 text-left last:border-b-0 hover:bg-violet-50'
+                    title={`${swatch.code} 적용`}
+                    aria-label={`${swatch.code} 적용`}
                   >
                     <span
                       className='inline-block h-3 w-3 shrink-0 rounded border border-gray-200'
@@ -1031,7 +1054,9 @@ export default function SketchColorPicker({
                         key={`pantone-fav-${swatch.code}`}
                         type='button'
                         onClick={() => applyPantone(swatch)}
-                        className='flex w-full min-w-0 items-center gap-2 rounded border border-gray-200 bg-white px-2 py-1 text-left hover:bg-gray-50'
+                        className={`flex w-full min-w-0 items-center gap-2 bg-white px-2 py-1 text-left ${SIDEPANEL_BUTTON_BASE} ${SIDEPANEL_BUTTON_IDLE}`}
+                        title={`${swatch.code} 적용`}
+                        aria-label={`${swatch.code} 적용`}
                       >
                         <span
                           className='inline-block h-3 w-3 shrink-0 rounded border border-gray-200'
@@ -1059,7 +1084,9 @@ export default function SketchColorPicker({
                         key={`pantone-recent-${swatch.code}`}
                         type='button'
                         onClick={() => applyPantone(swatch)}
-                        className='flex w-full min-w-0 items-center gap-2 rounded border border-gray-200 bg-white px-2 py-1 text-left hover:bg-gray-50'
+                        className={`flex w-full min-w-0 items-center gap-2 bg-white px-2 py-1 text-left ${SIDEPANEL_BUTTON_BASE} ${SIDEPANEL_BUTTON_IDLE}`}
+                        title={`${swatch.code} 적용`}
+                        aria-label={`${swatch.code} 적용`}
                       >
                         <span
                           className='inline-block h-3 w-3 shrink-0 rounded border border-gray-200'

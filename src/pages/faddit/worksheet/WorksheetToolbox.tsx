@@ -35,7 +35,6 @@ import {
   Type,
   Ungroup,
   Unlock,
-  Wrench,
 } from 'lucide-react';
 import {
   CgPathBack,
@@ -55,10 +54,17 @@ import SketchColorPicker from './SketchColorPicker';
 
 const CONTENT_PANEL_WIDTH = 230;
 const GAP_X = 12;
+const SIDEPANEL_BUTTON_BASE =
+  'rounded-md border border-transparent transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1';
+const SIDEPANEL_BUTTON_IDLE = 'cursor-pointer text-gray-600 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700';
+const SIDEPANEL_BUTTON_ACTIVE =
+  'border-violet-500 bg-faddit text-white shadow-[0_4px_10px_rgba(118,59,255,0.22)] hover:border-violet-500 hover:bg-violet-600 hover:text-white';
+const SIDEPANEL_BUTTON_DISABLED =
+  'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-300 hover:border-gray-200 hover:bg-gray-50 hover:text-gray-300';
 
 const TOOL_ITEMS = [
   { key: 'template', label: '템플릿', icon: LayoutGrid },
-  { key: 'tools', label: '도구', icon: Wrench },
+  { key: 'tools', label: '그리기', icon: PenTool },
   { key: 'text', label: '텍스트', icon: Type },
   { key: 'color', label: '색상', icon: Palette },
   { key: 'layer', label: '레이어', icon: Layers },
@@ -311,20 +317,30 @@ function IconGridTooltipButton({
   onClick,
   children,
   className,
+  active = false,
+  disabled = false,
+  size = 'full',
 }: {
   title: string;
   onClick: () => void;
   children: React.ReactNode;
   className?: string;
+  active?: boolean;
+  disabled?: boolean;
+  size?: 'full' | 'compact';
 }) {
+  const stateClass = disabled ? SIDEPANEL_BUTTON_DISABLED : active ? SIDEPANEL_BUTTON_ACTIVE : SIDEPANEL_BUTTON_IDLE;
+  const sizeClass = size === 'compact' ? 'h-7 w-7 shrink-0 p-0.5' : 'aspect-square w-full';
+
   return (
-    <SidePanelTooltip title={title} className='w-full'>
+    <SidePanelTooltip title={title} className={size === 'compact' ? undefined : 'w-full'}>
       <button
         type='button'
         onClick={onClick}
+        disabled={disabled}
         title={title}
         aria-label={title}
-        className={`flex aspect-square w-full cursor-pointer items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-700 ${className ?? ''}`}
+        className={`flex items-center justify-center ${SIDEPANEL_BUTTON_BASE} ${stateClass} ${sizeClass} ${className ?? ''}`}
       >
         {children}
       </button>
@@ -343,7 +359,6 @@ const SHAPE_ITEMS: { tool: ToolType; label: string; icon: React.ReactNode }[] = 
   { tool: 'arrow', label: '화살표', icon: <ArrowRight size={18} strokeWidth={1.5} /> },
   { tool: 'draw', label: '브러쉬 (B)', icon: <Paintbrush size={18} strokeWidth={1.5} /> },
   { tool: 'pen', label: '펜 (P)', icon: <PenTool size={18} strokeWidth={1.5} /> },
-  { tool: 'text', label: '텍스트 (T)', icon: <Type size={18} strokeWidth={1.5} /> },
 ];
 
 const TEXT_FONT_PRESETS: { label: string; family: string; preview: string }[] = [
@@ -588,7 +603,7 @@ export default function WorksheetToolbox() {
         <nav className='flex w-14 shrink-0 flex-col gap-y-2'>
           <Link
             to='/faddit/drive'
-            className='flex aspect-square cursor-pointer items-center justify-center rounded-md p-2 text-gray-600 transition-colors hover:bg-gray-200/60'
+            className='flex aspect-square items-center justify-center rounded-md border border-transparent p-2 text-gray-600 transition-all duration-150 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1'
             aria-label='패딧 홈으로 이동'
           >
             <img src={FadditLogoOnly} alt='Faddit' className='h-7 w-7' />
@@ -602,10 +617,10 @@ export default function WorksheetToolbox() {
                 onClick={() => runClickAction(() => handleToolTabClick(key))}
                 title={label}
                 aria-label={label}
-                className={`flex w-full touch-manipulation aspect-square cursor-pointer flex-col items-center justify-center gap-0.5 rounded-md p-2 text-[10px] transition-colors ${
+                className={`flex w-full touch-manipulation aspect-square cursor-pointer flex-col items-center justify-center gap-0.5 rounded-md border p-2 text-[10px] transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1 ${
                   activePanelKey === key
-                    ? 'bg-gray-100 text-gray-800'
-                    : 'text-gray-600 hover:bg-gray-200/60'
+                    ? 'border-violet-500 bg-faddit text-white shadow-[0_6px_14px_rgba(118,59,255,0.26)] hover:bg-violet-600'
+                    : 'border-transparent text-gray-600 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700'
                 }`}
               >
                 <Icon size={20} strokeWidth={1.5} />
@@ -621,7 +636,7 @@ export default function WorksheetToolbox() {
                   handleFastPress(event, () => setContentOpen((open) => !open))
                 }
                 onClick={() => runClickAction(() => setContentOpen((open) => !open))}
-                className='touch-manipulation cursor-pointer rounded p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-700'
+                className='touch-manipulation rounded-md border border-transparent p-1 text-gray-500 transition-all duration-150 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1'
                 title={contentOpen ? '도구모음 접기' : '도구모음 펼치기'}
                 aria-label={contentOpen ? '도구모음 접기' : '도구모음 펼치기'}
               >
@@ -646,7 +661,7 @@ export default function WorksheetToolbox() {
             {activePanelKey === 'tools' ? (
               <div className='flex min-h-0 flex-1 flex-col gap-y-3 overflow-y-auto'>
                 <p className='shrink-0 text-[11px] font-semibold tracking-wider text-gray-400 uppercase'>
-                  도구
+                  그리기
                 </p>
                 <div className='grid grid-cols-3 gap-2'>
                   {SHAPE_ITEMS.map(({ tool, label, icon }) => (
@@ -657,10 +672,8 @@ export default function WorksheetToolbox() {
                         onClick={() => runClickAction(() => setActiveTool(tool))}
                         title={label}
                         aria-label={label}
-                        className={`flex w-full touch-manipulation flex-col items-center gap-1 rounded-lg px-2 py-3 text-[10px] transition-colors ${
-                          activeTool === tool
-                            ? 'bg-gray-800 text-white'
-                            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'
+                        className={`flex w-full touch-manipulation flex-col items-center gap-1 rounded-lg px-2 py-3 text-[10px] ${SIDEPANEL_BUTTON_BASE} ${
+                          activeTool === tool ? SIDEPANEL_BUTTON_ACTIVE : SIDEPANEL_BUTTON_IDLE
                         }`}
                       >
                         {icon}
@@ -676,17 +689,17 @@ export default function WorksheetToolbox() {
                   <p className='text-[11px] font-semibold tracking-wider text-gray-400 uppercase'>
                     텍스트
                   </p>
-                  <button
-                    type='button'
-                    onClick={() => setActiveTool(activeTool === 'text' ? 'select' : 'text')}
-                    className={`h-6 shrink-0 rounded-md border px-2 text-[10px] font-medium transition-colors ${
-                      activeTool === 'text'
-                        ? 'border-gray-800 bg-gray-800 text-white'
-                        : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-100'
-                    }`}
-                  >
-                    {activeTool === 'text' ? '텍스트 모드' : '텍스트 추가'}
-                  </button>
+                  <SidePanelTooltip title={activeTool === 'text' ? '텍스트 모드' : '텍스트 추가'}>
+                    <button
+                      type='button'
+                      onClick={() => setActiveTool(activeTool === 'text' ? 'select' : 'text')}
+                      className={`h-6 shrink-0 px-2 text-[10px] font-medium ${SIDEPANEL_BUTTON_BASE} ${
+                        activeTool === 'text' ? SIDEPANEL_BUTTON_ACTIVE : SIDEPANEL_BUTTON_IDLE
+                      }`}
+                    >
+                      {activeTool === 'text' ? '텍스트 모드' : '텍스트 추가'}
+                    </button>
+                  </SidePanelTooltip>
                 </div>
 
                 <div className='rounded-md border border-gray-200/90 bg-gray-50/70 p-2'>
@@ -709,30 +722,30 @@ export default function WorksheetToolbox() {
                         className='h-7 min-w-0 flex-1 text-right text-[11px] text-gray-700 outline-none border-none focus:ring-0'
                       />
                     </label>
-                    <button
-                      type='button'
-                      onClick={() => setFontWeight(fontWeight === 'bold' ? 'normal' : 'bold')}
-                      className={`inline-flex h-7 w-7 items-center justify-center rounded-md border transition-colors ${
-                        fontWeight === 'bold'
-                          ? 'border-gray-800 bg-gray-800 text-white'
-                          : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-100'
-                      }`}
-                      title='굵게'
-                    >
-                      <Bold size={13} />
-                    </button>
-                    <button
-                      type='button'
-                      onClick={() => setFontStyle(fontStyle === 'italic' ? 'normal' : 'italic')}
-                      className={`inline-flex h-7 w-7 items-center justify-center rounded-md border transition-colors ${
-                        fontStyle === 'italic'
-                          ? 'border-gray-800 bg-gray-800 text-white'
-                          : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-100'
-                      }`}
-                      title='기울임'
-                    >
-                      <Italic size={13} />
-                    </button>
+                    <SidePanelTooltip title='굵게'>
+                      <button
+                        type='button'
+                        onClick={() => setFontWeight(fontWeight === 'bold' ? 'normal' : 'bold')}
+                        className={`inline-flex h-7 w-7 items-center justify-center ${SIDEPANEL_BUTTON_BASE} ${
+                          fontWeight === 'bold' ? SIDEPANEL_BUTTON_ACTIVE : SIDEPANEL_BUTTON_IDLE
+                        }`}
+                        title='굵게'
+                      >
+                        <Bold size={13} />
+                      </button>
+                    </SidePanelTooltip>
+                    <SidePanelTooltip title='기울임'>
+                      <button
+                        type='button'
+                        onClick={() => setFontStyle(fontStyle === 'italic' ? 'normal' : 'italic')}
+                        className={`inline-flex h-7 w-7 items-center justify-center ${SIDEPANEL_BUTTON_BASE} ${
+                          fontStyle === 'italic' ? SIDEPANEL_BUTTON_ACTIVE : SIDEPANEL_BUTTON_IDLE
+                        }`}
+                        title='기울임'
+                      >
+                        <Italic size={13} />
+                      </button>
+                    </SidePanelTooltip>
                   </div>
                 </div>
 
@@ -758,26 +771,26 @@ export default function WorksheetToolbox() {
                   >
                     {visibleFontPresets.length > 0 ? (
                       visibleFontPresets.map((font) => (
-                        <button
-                          key={font.family}
-                          type='button'
-                          onClick={() => setFontFamily(font.family)}
-                          className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${
-                            fontFamily === font.family
-                              ? 'border-gray-800 bg-gray-800 text-white'
-                              : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                          }`}
-                        >
-                          <span className='block truncate text-[11px] font-medium'>{font.label}</span>
-                          <span
-                            className={`mt-0.5 block truncate text-[12px] ${
-                              fontFamily === font.family ? 'text-gray-200' : 'text-gray-600'
+                        <SidePanelTooltip key={font.family} title={`${font.label} 적용`} className='w-full'>
+                          <button
+                            type='button'
+                            onClick={() => setFontFamily(font.family)}
+                            className={`w-full px-2 py-1.5 text-left ${SIDEPANEL_BUTTON_BASE} ${
+                              fontFamily === font.family ? SIDEPANEL_BUTTON_ACTIVE : SIDEPANEL_BUTTON_IDLE
                             }`}
-                            style={{ fontFamily: font.family }}
+                            title={`${font.label} 적용`}
                           >
-                            {font.preview}
-                          </span>
-                        </button>
+                            <span className='block truncate text-[11px] font-medium'>{font.label}</span>
+                            <span
+                              className={`mt-0.5 block truncate text-[12px] ${
+                                fontFamily === font.family ? 'text-violet-100' : 'text-gray-600'
+                              }`}
+                              style={{ fontFamily: font.family }}
+                            >
+                              {font.preview}
+                            </span>
+                          </button>
+                        </SidePanelTooltip>
                       ))
                     ) : (
                       <p className='rounded border border-dashed border-gray-200 bg-white px-2 py-2 text-[10px] text-gray-500'>
@@ -800,28 +813,30 @@ export default function WorksheetToolbox() {
                     색상
                   </p>
                   <div className='grid w-28 grid-cols-2 items-center rounded-md border border-gray-200 bg-gray-50 p-0.5'>
-                    <button
-                      type='button'
-                      onClick={() => setColorTarget('fill')}
-                      className={`h-6 w-full rounded text-[10px] font-medium transition-colors ${
-                        colorTarget === 'fill'
-                          ? 'bg-white text-gray-800 shadow-xs'
-                          : 'text-gray-500 hover:text-gray-700'
-                      }`}
-                    >
-                      채우기
-                    </button>
-                    <button
-                      type='button'
-                      onClick={() => setColorTarget('stroke')}
-                      className={`h-6 w-full rounded text-[10px] font-medium transition-colors ${
-                        colorTarget === 'stroke'
-                          ? 'bg-white text-gray-800 shadow-xs'
-                          : 'text-gray-500 hover:text-gray-700'
-                      }`}
-                    >
-                      선
-                    </button>
+                    <SidePanelTooltip title='채우기 색상'>
+                      <button
+                        type='button'
+                        onClick={() => setColorTarget('fill')}
+                        className={`h-6 w-full text-[10px] font-medium ${SIDEPANEL_BUTTON_BASE} ${
+                          colorTarget === 'fill' ? SIDEPANEL_BUTTON_ACTIVE : SIDEPANEL_BUTTON_IDLE
+                        }`}
+                        title='채우기 색상'
+                      >
+                        채우기
+                      </button>
+                    </SidePanelTooltip>
+                    <SidePanelTooltip title='선 색상'>
+                      <button
+                        type='button'
+                        onClick={() => setColorTarget('stroke')}
+                        className={`h-6 w-full text-[10px] font-medium ${SIDEPANEL_BUTTON_BASE} ${
+                          colorTarget === 'stroke' ? SIDEPANEL_BUTTON_ACTIVE : SIDEPANEL_BUTTON_IDLE
+                        }`}
+                        title='선 색상'
+                      >
+                        선
+                      </button>
+                    </SidePanelTooltip>
                   </div>
                 </div>
 
@@ -886,94 +901,53 @@ export default function WorksheetToolbox() {
                     <p className='flex-1 text-[11px] font-semibold text-gray-400'>
                       레이어
                     </p>
-                    <SidePanelTooltip title='그룹화 (Cmd/Ctrl+G)'>
-                      <button
-                        type='button'
-                        onClick={groupSelected}
-                        title='그룹화 (Cmd/Ctrl+G)'
-                        className='cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700'
-                      >
-                        <Layers size={13} strokeWidth={1.5} />
-                      </button>
-                    </SidePanelTooltip>
-                    <SidePanelTooltip title='그룹 해제 (Cmd/Ctrl+Alt+G)'>
-                      <button
-                        type='button'
-                        onClick={ungroupSelected}
-                        title='그룹 해제 (Cmd/Ctrl+Alt+G)'
-                        className='cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700'
-                      >
-                        <Ungroup size={13} strokeWidth={1.5} />
-                      </button>
-                    </SidePanelTooltip>
-                    <SidePanelTooltip title='삭제 (Delete)'>
-                      <button
-                        type='button'
-                        onClick={deleteSelected}
-                        title='삭제 (Delete)'
-                        className='cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700'
-                      >
-                        <Trash2 size={13} strokeWidth={1.5} />
-                      </button>
-                    </SidePanelTooltip>
+                    <IconGridTooltipButton title='그룹화' onClick={groupSelected} size='compact'>
+                      <Layers size={13} strokeWidth={1.5} />
+                    </IconGridTooltipButton>
+                    <IconGridTooltipButton title='그룹 해제' onClick={ungroupSelected} size='compact'>
+                      <Ungroup size={13} strokeWidth={1.5} />
+                    </IconGridTooltipButton>
+                    <IconGridTooltipButton title='삭제' onClick={deleteSelected} size='compact'>
+                      <Trash2 size={13} strokeWidth={1.5} />
+                    </IconGridTooltipButton>
                   </div>
-                  <div className='mb-2 grid shrink-0 gap-1'>
-                    <button
-                      type='button'
+                  <div className='mb-2 grid shrink-0 grid-cols-4 gap-1'>
+                    <IconGridTooltipButton
+                      title='맨 앞으로 가져오기'
                       onClick={() => {
                         if (activeLayerId) moveLayerToFront(activeLayerId);
                       }}
                       disabled={!canBringForward}
-                      className='flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-xs text-gray-700 transition-colors [&_svg]:text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300 disabled:[&_svg]:text-gray-300 disabled:hover:bg-transparent'
                     >
-                      <span className='inline-flex items-center gap-2'>
-                        <LayerBringToFrontGlyph />
-                        맨 앞으로 가져오기
-                      </span>
-                      <span className='text-[11px] text-gray-400'>⌘/Ctrl+Option/Alt+]</span>
-                    </button>
-                    <button
-                      type='button'
+                      <LayerBringToFrontGlyph />
+                    </IconGridTooltipButton>
+                    <IconGridTooltipButton
+                      title='앞으로 가져오기'
                       onClick={() => {
                         if (activeLayerId) moveLayerUp(activeLayerId);
                       }}
                       disabled={!canBringForward}
-                      className='flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-xs text-gray-700 transition-colors [&_svg]:text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300 disabled:[&_svg]:text-gray-300 disabled:hover:bg-transparent'
                     >
-                      <span className='inline-flex items-center gap-2'>
-                        <LayerBringForwardGlyph />
-                        앞으로 가져오기
-                      </span>
-                      <span className='text-[11px] text-gray-400'>⌘/Ctrl+]</span>
-                    </button>
-                    <button
-                      type='button'
+                      <LayerBringForwardGlyph />
+                    </IconGridTooltipButton>
+                    <IconGridTooltipButton
+                      title='뒤로 보내기'
                       onClick={() => {
                         if (activeLayerId) moveLayerDown(activeLayerId);
                       }}
                       disabled={!canSendBackward}
-                      className='flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-xs text-gray-700 transition-colors [&_svg]:text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300 disabled:[&_svg]:text-gray-300 disabled:hover:bg-transparent'
                     >
-                      <span className='inline-flex items-center gap-2'>
-                        <LayerSendBackwardGlyph />
-                        뒤로 보내기
-                      </span>
-                      <span className='text-[11px] text-gray-400'>⌘/Ctrl+[</span>
-                    </button>
-                    <button
-                      type='button'
+                      <LayerSendBackwardGlyph />
+                    </IconGridTooltipButton>
+                    <IconGridTooltipButton
+                      title='맨 뒤로 보내기'
                       onClick={() => {
                         if (activeLayerId) moveLayerToBack(activeLayerId);
                       }}
                       disabled={!canSendBackward}
-                      className='flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-xs text-gray-700 transition-colors [&_svg]:text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300 disabled:[&_svg]:text-gray-300 disabled:hover:bg-transparent'
                     >
-                      <span className='inline-flex items-center gap-2'>
-                        <LayerSendToBackGlyph />
-                        맨 뒤로 보내기
-                      </span>
-                      <span className='text-[11px] text-gray-400'>⌘/Ctrl+Option/Alt+[</span>
-                    </button>
+                      <LayerSendToBackGlyph />
+                    </IconGridTooltipButton>
                   </div>
                   <div className='flex min-h-0 flex-1 flex-col gap-y-0.5 overflow-y-auto'>
                     {layers.length === 0 && (
@@ -987,8 +961,8 @@ export default function WorksheetToolbox() {
                         onClick={() => selectLayer(layer.id)}
                         className={`flex cursor-pointer items-center gap-1 rounded-md py-1 pr-1 ${
                           activeLayerId === layer.id
-                            ? 'bg-blue-50 ring-1 ring-blue-200'
-                            : 'hover:bg-gray-50'
+                            ? 'bg-violet-50 ring-1 ring-violet-200'
+                            : 'hover:bg-violet-50/70'
                         }`}
                         style={{ paddingLeft: `${4 + layer.depth * 12}px` }}
                       >
@@ -1001,7 +975,7 @@ export default function WorksheetToolbox() {
                                 toggleLayerExpanded(layer.id);
                               }}
                               title={layer.isExpanded ? '그룹 접기' : '그룹 펼치기'}
-                              className='shrink-0 cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                              className={`shrink-0 p-0.5 ${SIDEPANEL_BUTTON_BASE} ${SIDEPANEL_BUTTON_IDLE}`}
                             >
                               {layer.isExpanded ? (
                                 <ChevronDown size={12} strokeWidth={1.5} />
@@ -1022,7 +996,7 @@ export default function WorksheetToolbox() {
                               toggleLayerVisibility(layer.id);
                             }}
                             title={layer.visible ? '숨기기' : '표시'}
-                            className='shrink-0 cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                            className={`shrink-0 p-0.5 ${SIDEPANEL_BUTTON_BASE} ${SIDEPANEL_BUTTON_IDLE}`}
                           >
                             {layer.visible ? (
                               <Eye size={13} strokeWidth={1.5} />
@@ -1081,7 +1055,7 @@ export default function WorksheetToolbox() {
                               beginLayerRename(layer.id, layer.name);
                             }}
                             title={editingLayerId === layer.id ? '수정 완료' : '이름 수정'}
-                            className='shrink-0 cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                            className={`shrink-0 p-0.5 ${SIDEPANEL_BUTTON_BASE} ${SIDEPANEL_BUTTON_IDLE}`}
                           >
                             {editingLayerId === layer.id ? (
                               <Check size={13} strokeWidth={1.7} />
@@ -1099,7 +1073,7 @@ export default function WorksheetToolbox() {
                               toggleLayerLock(layer.id);
                             }}
                             title={layer.locked ? '잠금 해제' : '잠금'}
-                            className='shrink-0 cursor-pointer rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                            className={`shrink-0 p-0.5 ${SIDEPANEL_BUTTON_BASE} ${SIDEPANEL_BUTTON_IDLE}`}
                           >
                             {layer.locked ? (
                               <Lock size={13} strokeWidth={1.5} />
@@ -1124,7 +1098,7 @@ export default function WorksheetToolbox() {
                     <SidePanelTooltip title='검색'>
                       <button
                         type='button'
-                        className='absolute right-2 bottom-2 flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full bg-gray-100 text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-700'
+                        className={`absolute right-2 bottom-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${SIDEPANEL_BUTTON_BASE} ${SIDEPANEL_BUTTON_IDLE}`}
                         title='검색'
                         aria-label='검색'
                       >

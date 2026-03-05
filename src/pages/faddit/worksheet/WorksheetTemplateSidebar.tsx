@@ -1931,7 +1931,7 @@ export default function WorksheetTemplateSidebar({
         <nav className='flex w-14 shrink-0 flex-col gap-y-2'>
           <Link
             to='/faddit/drive'
-            className='flex aspect-square cursor-pointer items-center justify-center rounded-md p-2 text-gray-600 transition-colors hover:bg-gray-200/60'
+            className='flex aspect-square items-center justify-center rounded-md border border-transparent p-2 text-gray-600 transition-all duration-150 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1'
             aria-label='패딧 홈으로 이동'
           >
             <img src={FadditLogoOnly} alt='Faddit' className='h-7 w-7' />
@@ -1942,10 +1942,10 @@ export default function WorksheetTemplateSidebar({
               key={key}
               type='button'
               onClick={() => handleToolTabClick(key)}
-              className={`flex aspect-square cursor-pointer flex-col items-center justify-center gap-0.5 rounded-md p-2 text-[10px] transition-colors ${
+              className={`flex aspect-square flex-col items-center justify-center gap-0.5 rounded-md border p-2 text-[10px] transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1 ${
                 activeTab === key
-                  ? 'bg-gray-100 text-gray-800'
-                  : 'text-gray-600 hover:bg-gray-200/60'
+                  ? 'border-violet-500 bg-faddit text-white shadow-[0_6px_14px_rgba(118,59,255,0.26)] hover:bg-violet-600'
+                  : 'border-transparent text-gray-600 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700'
               }`}
             >
               <Icon size={20} strokeWidth={1.5} />
@@ -1957,7 +1957,7 @@ export default function WorksheetTemplateSidebar({
               <button
                 type='button'
                 onClick={() => setContentOpen((open) => !open)}
-                className='cursor-pointer rounded p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-700'
+                className='rounded-md border border-transparent p-1 text-gray-500 transition-all duration-150 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1'
                 aria-label={contentOpen ? '도구모음 접기' : '도구모음 펼치기'}
               >
                 {contentOpen ? (

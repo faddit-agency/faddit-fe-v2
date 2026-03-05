@@ -434,7 +434,7 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
   const [strokePantoneCode, setStrokePantoneCodeState] = useState<string | null>(null);
   const [fillColor, setFillColorState] = useState('#ffffff');
   const [fillPantoneCode, setFillPantoneCodeState] = useState<string | null>(null);
-  const [strokeWidth, setStrokeWidthState] = useState(2);
+  const [strokeWidth, setStrokeWidthState] = useState(1);
   const [fontSize, setFontSizeState] = useState(20);
   const [fontFamily, setFontFamilyState] = useState('Arial');
   const [fontWeight, setFontWeightState] = useState('normal');
