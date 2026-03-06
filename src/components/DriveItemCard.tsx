@@ -235,6 +235,45 @@ const TAG_TONE_ORDER: TagTone[] = [
   'red',
 ];
 
+type CategoryChipTone = 'blue' | 'red' | 'purple' | 'green' | 'pink' | 'orange';
+
+const CATEGORY_CHIP_STYLES: Record<CategoryChipTone, string> = {
+  blue: 'border-[#4F8FF7]/40 bg-[#4F8FF7]/20 text-[#2F6FDF]',
+  red: 'border-[#F06A6A]/40 bg-[#F06A6A]/20 text-[#D44C4C]',
+  purple: 'border-faddit/30 bg-faddit/15 text-faddit',
+  green: 'border-[#3ec972]/40 bg-[#3ec972]/20 text-[#239F52]',
+  pink: 'border-[#E276B5]/40 bg-[#E276B5]/20 text-[#C8549D]',
+  orange: 'border-[#F29A4A]/40 bg-[#F29A4A]/20 text-[#D77A2A]',
+};
+
+const resolveCategoryChipTone = (label?: string): CategoryChipTone => {
+  const normalized = String(label || '')
+    .trim()
+    .toLowerCase();
+
+  if (normalized === '원단' || normalized === 'fabric') {
+    return 'green';
+  }
+
+  if (normalized === '시보리원단' || normalized === 'rib_fabric' || normalized === 'rib fabric') {
+    return 'blue';
+  }
+
+  if (normalized === '라벨' || normalized === 'label') {
+    return 'pink';
+  }
+
+  if (normalized === '부자재' || normalized === 'trim' || normalized === 'etc') {
+    return 'orange';
+  }
+
+  if (normalized === '파일' || normalized === 'faddit' || normalized === 'file') {
+    return 'purple';
+  }
+
+  return 'purple';
+};
+
 const reorderList = (list: EditableTag[], fromId: string, toId: string) => {
   const oldIndex = list.findIndex((item) => item.id === fromId);
   const newIndex = list.findIndex((item) => item.id === toId);
@@ -516,6 +555,9 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
       : undefined;
 
   const visibleChips = tags.filter((tag) => selectedTagIds.includes(tag.id)).slice(0, 3);
+  const displayCategoryLabel = categoryLabel || badge || '';
+  const categoryChipTone = resolveCategoryChipTone(displayCategoryLabel);
+  const categoryChipStyle = CATEGORY_CHIP_STYLES[categoryChipTone];
 
   const handleRowDragOver = (event: React.DragEvent<HTMLLIElement>) => {
     event.preventDefault();
@@ -708,7 +750,7 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
                         }
                       }}
                     >
-                      폴더 이동
+                      파일 이동
                     </button>
                     <button
                       type='button'
@@ -746,8 +788,10 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
           {/* Badge (이미지 아래) */}
           {(categoryLabel || badge) && (
             <div className=''>
-              <span className='inline-flex items-center rounded-full bg-[#3ec972]/20 px-2.5 pt-1 pb-0.5 text-center text-xs font-medium text-[#239F52] dark:bg-gray-700/80 dark:text-[#239F52]'>
-                {categoryLabel || badge}
+              <span
+                className={`inline-flex items-center rounded-full border px-2.5 pt-1 pb-0.5 text-center text-xs font-medium ${categoryChipStyle}`}
+              >
+                {displayCategoryLabel}
               </span>
             </div>
           )}
@@ -887,22 +931,10 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
 
               {materialCardMeta ? (
                 <div className='mt-3 space-y-1.5 text-[12px] text-gray-600 dark:text-gray-300'>
-                  <div className='flex items-center gap-1.5'>
-                    <CodeLineIcon className='h-3.5 w-3.5 shrink-0' />
-                    <span className='truncate'>{materialCardMeta.codeInternal || '-'}</span>
-                  </div>
-                  <div className='flex items-center gap-1.5'>
-                    <VendorLineIcon className='h-3.5 w-3.5 shrink-0' />
-                    <span className='truncate'>{materialCardMeta.vendorName || '-'}</span>
-                  </div>
-                  <div className='flex items-center gap-1.5'>
-                    <ItemLineIcon className='h-3.5 w-3.5 shrink-0' />
-                    <span className='truncate'>{materialCardMeta.itemName || '-'}</span>
-                  </div>
-                  <div className='flex items-center gap-1.5'>
-                    <OriginLineIcon className='h-3.5 w-3.5 shrink-0' />
-                    <span className='truncate'>{materialCardMeta.originCountry || '-'}</span>
-                  </div>
+                  <div className='truncate'>{materialCardMeta.codeInternal || '-'}</div>
+                  <div className='truncate'>{materialCardMeta.vendorName || '-'}</div>
+                  <div className='truncate'>{materialCardMeta.itemName || '-'}</div>
+                  <div className='truncate'>{materialCardMeta.originCountry || '-'}</div>
                 </div>
               ) : null}
 

@@ -16,6 +16,7 @@ interface LoginFormInputs {
 
 const Login: React.FC = () => {
   const [showPassword, setShowPassword] = React.useState(false);
+  const [isLoggingIn, setIsLoggingIn] = React.useState(false);
   const {
     register,
     handleSubmit,
@@ -39,25 +40,27 @@ const Login: React.FC = () => {
       return;
     }
 
+    setIsLoggingIn(true);
     try {
       await signIn({
         email: data.email,
         password: data.password,
       });
+
+      if (data.saveId) {
+        localStorage.setItem('savedEmail', data.email);
+      } else {
+        localStorage.removeItem('savedEmail');
+      }
+
+      navigate('/faddit/drive');
     } catch (error) {
       setError('password', {
         message: '로그인에 실패했습니다. 이메일 또는 비밀번호를 확인해주세요.',
       });
-      return;
+    } finally {
+      setIsLoggingIn(false);
     }
-
-    if (data.saveId) {
-      localStorage.setItem('savedEmail', data.email);
-    } else {
-      localStorage.removeItem('savedEmail');
-    }
-
-    navigate('/faddit/drive');
   };
 
   return (
@@ -83,6 +86,7 @@ const Login: React.FC = () => {
               id='email'
               className={`form-input w-full ${errors.email ? 'border-red-500' : ''}`}
               type='text'
+              disabled={isLoggingIn}
               {...register('email', {
                 required: '이메일을 입력해주세요.',
                 pattern: {
@@ -106,6 +110,7 @@ const Login: React.FC = () => {
                 className={`form-input w-full pr-10 ${errors.password ? 'border-red-500' : ''}`}
                 type={showPassword ? 'text' : 'password'}
                 autoComplete='on'
+                disabled={isLoggingIn}
                 {...register('password', { required: '비밀번호를 입력해주세요.' })}
               />
               <button
@@ -113,6 +118,7 @@ const Login: React.FC = () => {
                 className='absolute top-1/2 right-3 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
                 onClick={() => setShowPassword((prev) => !prev)}
                 aria-label={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
+                disabled={isLoggingIn}
               >
                 {showPassword ? <EyeOff className='h-4 w-4' /> : <Eye className='h-4 w-4' />}
               </button>
@@ -130,6 +136,7 @@ const Login: React.FC = () => {
               id='save-id'
               type='checkbox'
               className='form-checkbox cursor-pointer'
+              disabled={isLoggingIn}
               {...register('saveId')}
             />
             <label
@@ -150,10 +157,11 @@ const Login: React.FC = () => {
         {/* Login Button */}
         <div className='mt-6'>
           <button
-            className='btn w-full bg-gray-900 text-gray-100 hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-800 dark:hover:bg-white'
+            className='btn w-full bg-gray-900 text-gray-100 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-gray-100 dark:text-gray-800 dark:hover:bg-white'
             type='submit'
+            disabled={isLoggingIn}
           >
-            로그인
+            {isLoggingIn ? '로그인 중...' : '로그인'}
           </button>
         </div>
       </form>

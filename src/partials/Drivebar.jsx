@@ -12,13 +12,12 @@ import {
   House,
   Search,
   MessagesSquare,
-  FolderOpen,
-  FolderClosed,
-  FileText,
   Trash2,
   ChevronUp,
   ChevronDown,
 } from 'lucide-react';
+import { FcFolder, FcOpenedFolder } from 'react-icons/fc';
+import { PiFileFill } from 'react-icons/pi';
 
 // Helper component for droppable sections
 const DragDropSection = ({ id, title, children, className, droppable = true }) => {
@@ -31,9 +30,9 @@ const DragDropSection = ({ id, title, children, className, droppable = true }) =
   return (
     <div
       ref={setNodeRef}
-      className={`${className} ${isOver ? '-mx-2 rounded-lg bg-violet-100/50 px-2 transition-colors dark:bg-violet-900/20' : ''}`}
+      className={`${className} ${isOver ? '-mx-2 rounded-lg bg-faddit/10 px-2 transition-colors dark:bg-faddit/20' : ''}`}
     >
-      <span className='lg:sidebar-expanded:block my-5 font-extrabold text-gray-400 lg:hidden 2xl:block'>
+      <span className='lg:sidebar-expanded:block my-5 text-[14px] font-extrabold text-gray-400 lg:hidden 2xl:block'>
         {title}
       </span>
       {children}
@@ -59,6 +58,15 @@ const toDisplayStorage = (bytes) => {
   return `${value.toFixed(fixed)}${units[unitIndex]}`;
 };
 
+const ArcFolderIcon = ({ open, className = '' }) => (
+  <span
+    className={`arc-folder-icon ${open ? 'arc-folder-icon--open' : 'arc-folder-icon--closed'} ${className}`.trim()}
+    aria-hidden='true'
+  >
+    {open ? <FcOpenedFolder size={16} /> : <FcFolder size={16} />}
+  </span>
+);
+
 const SidebarTreeNode = ({
   item,
   depth,
@@ -70,6 +78,7 @@ const SidebarTreeNode = ({
   loadFolderChildren,
   onNavigateFolder,
   onOpenFile,
+  activeFileId,
 }) => {
   const [loadingChildren, setLoadingChildren] = useState(false);
   const [loadAttempted, setLoadAttempted] = useState(false);
@@ -101,6 +110,7 @@ const SidebarTreeNode = ({
 
   const isOpen = expandedFolders[item.id] ?? false;
   const isPointed = pointedFolderId === item.id;
+  const isActiveFile = item.type === 'file' && activeFileId === item.id;
 
   const toggleFolder = async () => {
     if (item.type !== 'folder') {
@@ -201,10 +211,16 @@ const SidebarTreeNode = ({
         className={`mb-0.5 rounded-md py-2 pr-3 transition duration-150 ${
           item.type === 'folder'
             ? 'cursor-pointer hover:bg-white/80 dark:hover:bg-gray-700/70'
-            : 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40'
-        } ${isPointed && item.type === 'folder' ? 'bg-violet-50 dark:bg-violet-500/15' : ''} ${
+            : 'cursor-pointer hover:bg-faddit/10 dark:hover:bg-faddit/20'
+        } ${
+          isPointed && item.type === 'folder' ? 'bg-faddit/10 dark:bg-faddit/20' : ''
+        } ${isActiveFile ? 'bg-faddit/10 dark:bg-faddit/20' : ''} ${
+          isOver && item.type === 'file'
+            ? 'bg-faddit/10 outline outline-1 outline-faddit/40 dark:bg-faddit/20 dark:outline-faddit/60'
+            : ''
+        } ${
           isOver && item.type === 'folder'
-            ? 'bg-violet-100/70 outline outline-1 outline-violet-300 dark:bg-violet-500/20 dark:outline-violet-500/60'
+            ? 'bg-faddit/10 outline outline-1 outline-faddit/40 dark:bg-faddit/20 dark:outline-faddit/60'
             : ''
         }`}
         onClick={handleFolderRowClick}
@@ -215,27 +231,11 @@ const SidebarTreeNode = ({
         >
           <div className='flex min-w-0 items-center'>
             {item.type === 'folder' ? (
-              isOpen ? (
-                <FolderOpen
-                  width={16}
-                  height={16}
-                  strokeWidth={3}
-                  className='text-faddit dark:text-faddit shrink-0'
-                />
-              ) : (
-                <FolderClosed
-                  width={16}
-                  height={16}
-                  strokeWidth={3}
-                  className='shrink-0 text-gray-400 dark:text-gray-500'
-                />
-              )
+              <ArcFolderIcon open={isOpen} className='shrink-0' />
             ) : (
-              <FileText
-                width={16}
-                height={16}
-                strokeWidth={2.5}
-                className='shrink-0 text-gray-400'
+              <PiFileFill
+                size={16}
+                className={`arc-file-icon shrink-0 ${isActiveFile ? 'arc-file-icon--active' : ''}`.trim()}
               />
             )}
 
@@ -246,7 +246,11 @@ const SidebarTreeNode = ({
             ) : (
               <button
                 type='button'
-                className='ml-4 truncate text-left text-sm font-medium text-gray-500/90 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                className={`ml-4 truncate text-left text-sm font-medium transition ${
+                  isActiveFile
+                    ? 'text-[#7d6289] dark:text-[#d2b7db]'
+                    : 'text-gray-500/90 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                }`}
                 onClick={(event) => {
                   event.stopPropagation();
                   onOpenFile(item.id, item.parentId ?? null);
@@ -299,6 +303,7 @@ const SidebarTreeNode = ({
               loadFolderChildren={loadFolderChildren}
               onNavigateFolder={onNavigateFolder}
               onOpenFile={onOpenFile}
+              activeFileId={activeFileId}
             />
           ))}
         </ul>
@@ -316,9 +321,14 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
     Boolean((sidebarQuery.get('q') || '').trim()) ||
     Boolean((sidebarQuery.get('categories') || '').trim()) ||
     sidebarQuery.get('mode') === 'search';
+  const activeFileId = sidebarQuery.get('file') || '';
   const isSearchActive = pathname.startsWith('/faddit/drive') && hasSearchQuery;
   const isHomeActive = pathname === '/faddit/drive' && !isSearchActive;
   const isDeletedActive = pathname === '/faddit/deleted';
+  const isMyRoute = pathname === '/faddit/my' || pathname.startsWith('/faddit/my/');
+  const isMyProfileActive = pathname === '/faddit/my' || pathname.startsWith('/faddit/my/profile');
+  const isMyPlanActive = pathname.startsWith('/faddit/my/plan');
+  const isMyBillingActive = pathname.startsWith('/faddit/my/billing');
   const {
     workspaces,
     favorites,
@@ -340,6 +350,10 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
   const storageUsed = useAuthStore((state) => state.user?.storageUsed ?? 0);
   const storageLimit = useAuthStore((state) => state.user?.storageLimit ?? 0);
   const rootFolderFromAuth = useAuthStore((state) => state.user?.rootFolder ?? null);
+  const normalizedPathname = pathname.replace(/\/+$/, '');
+  const workspaceRootId = rootFolderId || rootFolderFromAuth || '';
+  const isWorkspaceRootRoute =
+    Boolean(workspaceRootId) && normalizedPathname === `/faddit/drive/${workspaceRootId}`;
   const { setNodeRef: setMyWorkspaceDropRef, isOver: isMyWorkspaceOver } = useDroppable({
     id: 'my-workspace',
     data: { type: 'folder', id: 'my-workspace' },
@@ -441,6 +455,11 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
       return;
     }
 
+    if (isHomeActive) {
+      setPointedFolderId('my-workspace');
+      return;
+    }
+
     const folderIdsInPath = currentFolderIdPath
       .split('/')
       .map((segment) => segment.trim())
@@ -485,7 +504,7 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
     return () => {
       cancelled = true;
     };
-  }, [currentFolderIdPath, loadFolderChildren, pathname]);
+  }, [currentFolderIdPath, isHomeActive, loadFolderChildren, pathname]);
 
   const navigateToFolder = (folderId) => {
     navigate(`/faddit/drive/${folderId}`);
@@ -579,10 +598,8 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
           </h3>
           <ul className='mt-3'>
             <li
-              className={`mb-3 rounded-lg bg-linear-to-r py-2 pr-3 pl-4 last:mb-0 ${
-                isHomeActive
-                  ? 'from-violet-500/[0.12] to-violet-500/[0.04] dark:from-violet-500/[0.24]'
-                  : ''
+              className={`mb-3 rounded-lg py-2 pr-3 pl-4 last:mb-0 ${
+                isHomeActive ? 'bg-faddit/10 dark:bg-faddit/20' : ''
               }`}
             >
               <NavLink
@@ -595,11 +612,11 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
                 <div className='flex items-center'>
                   <House
                     className={`shrink-0 ${
-                      isHomeActive ? 'text-violet-500' : 'text-gray-400 dark:text-gray-400'
+                      isHomeActive ? 'text-faddit' : 'text-gray-400 dark:text-gray-400'
                     }`}
                     width='18'
                     height='18'
-                    strokeWidth={3}
+                    strokeWidth={2}
                   />
                   <span className='lg:sidebar-expanded:opacity-100 ml-3 text-sm font-bold duration-200 lg:opacity-0 2xl:opacity-100'>
                     홈
@@ -608,10 +625,8 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
               </NavLink>
             </li>
             <li
-              className={`mb-3 rounded-lg bg-linear-to-r py-2 pr-3 pl-4 last:mb-0 ${
-                isSearchActive
-                  ? 'from-violet-500/[0.12] to-violet-500/[0.04] dark:from-violet-500/[0.24]'
-                  : ''
+              className={`mb-3 rounded-lg py-2 pr-3 pl-4 last:mb-0 ${
+                isSearchActive ? 'bg-faddit/10 dark:bg-faddit/20' : ''
               }`}
             >
               <button
@@ -622,11 +637,11 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
                 <div className='flex items-center'>
                   <Search
                     className={`shrink-0 ${
-                      isSearchActive ? 'text-violet-500' : 'text-gray-400 dark:text-gray-400'
+                      isSearchActive ? 'text-faddit' : 'text-gray-400 dark:text-gray-400'
                     }`}
                     width='18'
                     height='18'
-                    strokeWidth={3}
+                    strokeWidth={2}
                   />
                   <span className='lg:sidebar-expanded:opacity-100 ml-3 text-sm font-bold duration-200 lg:opacity-0 2xl:opacity-100'>
                     검색
@@ -635,7 +650,9 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
               </button>
             </li>
             <li
-              className={`mb-3 rounded-lg bg-linear-to-r py-2 pr-3 pl-4 last:mb-0 ${pathname.includes('messages') && 'from-violet-500/[0.12] to-violet-500/[0.04] dark:from-violet-500/[0.24]'}`}
+              className={`mb-3 rounded-lg py-2 pr-3 pl-4 last:mb-0 ${
+                pathname.includes('messages') ? 'bg-faddit/10 dark:bg-faddit/20' : ''
+              }`}
             >
               <NavLink
                 end
@@ -649,12 +666,12 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
                     <MessagesSquare
                       className={`shrink-0 ${
                         pathname === '/faddit/message'
-                          ? 'text-violet-500'
+                          ? 'text-faddit'
                           : 'text-gray-400 dark:text-gray-400'
                       }`}
                       width='18'
                       height='18'
-                      strokeWidth={3}
+                      strokeWidth={2}
                     />
                     <span className='lg:sidebar-expanded:opacity-100 ml-3 text-sm font-bold duration-200 lg:opacity-0 2xl:opacity-100'>
                       수신함
@@ -669,10 +686,8 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
               </NavLink>
             </li>
             <li
-              className={`rounded-lg bg-linear-to-r py-2 pr-3 pl-4 last:mb-0 ${
-                isDeletedActive
-                  ? 'from-violet-500/[0.12] to-violet-500/[0.04] dark:from-violet-500/[0.24]'
-                  : ''
+              className={`rounded-lg py-2 pr-3 pl-4 last:mb-0 ${
+                isDeletedActive ? 'bg-faddit/10 dark:bg-faddit/20' : ''
               }`}
             >
               <NavLink
@@ -684,11 +699,11 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
                 <div className='flex items-center'>
                   <Trash2
                     className={`shrink-0 ${
-                      isDeletedActive ? 'text-violet-500' : 'text-gray-400 dark:text-gray-400'
+                      isDeletedActive ? 'text-faddit' : 'text-gray-400 dark:text-gray-400'
                     }`}
                     width='18'
                     height='18'
-                    strokeWidth={3}
+                    strokeWidth={2}
                   />
                   <span className='lg:sidebar-expanded:opacity-100 ml-3 text-sm font-bold duration-200 lg:opacity-0 2xl:opacity-100'>
                     휴지통
@@ -699,137 +714,180 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
           </ul>
         </div>
 
-        <div className='no-scrollbar min-h-0 flex-1 overflow-y-auto'>
-          <DragDropSection id='section-workspace' title='워크스페이스' droppable={false}>
-            <ul>
-              <li>
-                <div
-                  ref={setMyWorkspaceDropRef}
-                  className={`mb-0.5 cursor-pointer rounded-md py-2 pr-3 transition duration-150 hover:bg-white/80 dark:hover:bg-gray-700/70 ${
-                    pointedFolderId === 'my-workspace'
-                      ? 'bg-violet-50 dark:bg-violet-500/15'
-                      : isMyWorkspaceOver
-                        ? 'bg-violet-100/70 outline outline-1 outline-violet-300 dark:bg-violet-500/20 dark:outline-violet-500/60'
-                        : ''
-                  }`}
-                  onClick={() => {
-                    setPointedFolderId('my-workspace');
-                    const workspaceRoot = rootFolderId || rootFolderFromAuth;
-                    navigate(workspaceRoot ? `/faddit/drive/${workspaceRoot}` : '/faddit/drive');
-                  }}
-                >
-                  <div className='flex items-center justify-between pl-4'>
-                    <div className='flex min-w-0 items-center'>
-                      {myWorkspaceOpen ? (
-                        <FolderOpen
-                          width={16}
-                          height={16}
-                          strokeWidth={3}
-                          className='text-faddit dark:text-faddit shrink-0'
-                        />
-                      ) : (
-                        <FolderClosed
-                          width={16}
-                          height={16}
-                          strokeWidth={3}
-                          className='shrink-0 text-gray-400 dark:text-gray-500'
-                        />
-                      )}
-                      <span className='ml-4 truncate text-sm font-medium text-gray-800 dark:text-gray-100'>
-                        내 워크스페이스
-                      </span>
-                    </div>
-                    <button
-                      type='button'
-                      className='lg:sidebar-expanded:flex ml-2 flex shrink-0 cursor-pointer rounded p-0.5 text-gray-400 hover:bg-gray-100/80 hover:text-gray-600 lg:hidden 2xl:flex dark:text-gray-500 dark:hover:bg-gray-700/60 dark:hover:text-gray-200'
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setPointedFolderId('my-workspace');
-                        setMyWorkspaceOpen((prev) => !prev);
-                        setSidebarExpanded(true);
-                      }}
-                      aria-label={myWorkspaceOpen ? '내 워크스페이스 닫기' : '내 워크스페이스 열기'}
-                    >
-                      {myWorkspaceOpen ? (
-                        <ChevronUp
-                          width={16}
-                          height={16}
-                          strokeWidth={3}
-                          className='text-gray-500 dark:text-gray-300'
-                        />
-                      ) : (
-                        <ChevronDown
-                          width={16}
-                          height={16}
-                          strokeWidth={3}
-                          className='text-gray-500 dark:text-gray-300'
-                        />
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </li>
-              {myWorkspaceOpen &&
-                workspaces.map((item) => (
-                  <SidebarTreeNode
-                    key={item.id}
-                    item={item}
-                    depth={1}
-                    expandedFolders={expandedFolders}
-                    setExpandedFolders={setExpandedFolders}
-                    setSidebarExpanded={setSidebarExpanded}
-                    pointedFolderId={pointedFolderId}
-                    setPointedFolderId={setPointedFolderId}
-                    loadFolderChildren={loadFolderChildren}
-                    onNavigateFolder={navigateToFolder}
-                    onOpenFile={openFileDetail}
-                  />
-                ))}
-            </ul>
-          </DragDropSection>
-
-          <DragDropSection id='section-favorite' title='즐겨찾기'>
-            <ul>
-              {favorites.map((item) => (
-                <SidebarTreeNode
-                  key={item.id}
-                  item={item}
-                  depth={0}
-                  expandedFolders={expandedFolders}
-                  setExpandedFolders={setExpandedFolders}
-                  setSidebarExpanded={setSidebarExpanded}
-                  pointedFolderId={pointedFolderId}
-                  setPointedFolderId={setPointedFolderId}
-                  loadFolderChildren={loadFolderChildren}
-                  onNavigateFolder={navigateToFolder}
-                  onOpenFile={openFileDetail}
-                />
-              ))}
-            </ul>
-          </DragDropSection>
-        </div>
-
-        <div className='mt-4 border-t border-gray-200 pt-4 dark:border-gray-700/60'>
-          <div className='lg:sidebar-expanded:block rounded-xl p-3 shadow-xs lg:hidden 2xl:block dark:bg-gray-900/40'>
-            <div className='text-sm font-semibold text-gray-700 dark:text-gray-200'>저장용량</div>
-            <div className='mt-3 h-1.5 w-full rounded-full bg-gray-200 dark:bg-gray-700'>
-              <div
-                className='h-full rounded-full bg-gray-700 dark:bg-gray-300'
-                style={{ width: `${usagePercent}%` }}
-              />
-            </div>
-            <div className='mt-2 text-sm font-semibold text-gray-700 dark:text-gray-200'>
-              {limitLabel} 중 {usedLabel} 사용
-            </div>
-            <div className='mt-3 rounded-lg bg-white px-3 py-3 text-sm text-gray-700 dark:bg-gray-800/80 dark:text-gray-300'>
-              <div className='text-faddit font-semibold'>✨ 저장공간 10GB 사용하기</div>
-              <p className='mt-1'>
-                Pro 요금제로 업그레이드하면 10GB의 저장 공간을 사용할 수 있습니다.
-              </p>
-              <p className='mt-2 font-semibold text-gray-400'>Pro 요금제 업그레이드 (출시 예정)</p>
+        {isMyRoute ? (
+          <div className='no-scrollbar min-h-0 flex-1 overflow-y-auto'>
+            <div className='px-1 pt-1'>
+              <span className='lg:sidebar-expanded:block my-5 text-[14px] font-extrabold text-gray-400 lg:hidden 2xl:block'>
+                프로필 설정
+              </span>
+              <ul className='space-y-1'>
+                <li>
+                  <NavLink
+                    end
+                    to='/faddit/my'
+                    className={`block rounded-lg px-3 py-2 text-sm font-medium transition ${
+                      isMyProfileActive
+                        ? 'bg-faddit/10 text-faddit dark:bg-faddit/20 dark:text-faddit'
+                        : 'text-gray-600 hover:bg-white/80 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700/70 dark:hover:text-gray-100'
+                    }`}
+                  >
+                    나의 프로필
+                  </NavLink>
+                </li>
+                <li>
+                  <NavLink
+                    to='/faddit/my/plan'
+                    className={`block rounded-lg px-3 py-2 text-sm font-medium transition ${
+                      isMyPlanActive
+                        ? 'bg-faddit/10 text-faddit dark:bg-faddit/20 dark:text-faddit'
+                        : 'text-gray-600 hover:bg-white/80 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700/70 dark:hover:text-gray-100'
+                    }`}
+                  >
+                    나의 플랜
+                  </NavLink>
+                </li>
+                <li>
+                  <NavLink
+                    to='/faddit/my/billing'
+                    className={`block rounded-lg px-3 py-2 text-sm font-medium transition ${
+                      isMyBillingActive
+                        ? 'bg-faddit/10 text-faddit dark:bg-faddit/20 dark:text-faddit'
+                        : 'text-gray-600 hover:bg-white/80 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700/70 dark:hover:text-gray-100'
+                    }`}
+                  >
+                    나의 결제내역
+                  </NavLink>
+                </li>
+              </ul>
             </div>
           </div>
-        </div>
+        ) : (
+          <>
+            <div className='no-scrollbar min-h-0 flex-1 overflow-y-auto'>
+              <DragDropSection id='section-workspace' title='워크스페이스' droppable={false}>
+                <ul>
+                  <li>
+                    <div
+                      ref={setMyWorkspaceDropRef}
+                      className={`mb-0.5 cursor-pointer rounded-md py-2 pr-3 transition duration-150 hover:bg-white/80 dark:hover:bg-gray-700/70 ${
+                        isWorkspaceRootRoute
+                          ? 'bg-faddit/10 dark:bg-faddit/20'
+                          : isMyWorkspaceOver
+                            ? 'bg-faddit/10 outline outline-1 outline-faddit/40 dark:bg-faddit/20 dark:outline-faddit/60'
+                            : ''
+                      }`}
+                      onClick={() => {
+                        setPointedFolderId('my-workspace');
+                        const workspaceRoot = rootFolderId || rootFolderFromAuth;
+                        navigate(workspaceRoot ? `/faddit/drive/${workspaceRoot}` : '/faddit/drive');
+                      }}
+                    >
+                      <div className='flex items-center justify-between pl-4'>
+                        <div className='flex min-w-0 items-center'>
+                          <ArcFolderIcon open={myWorkspaceOpen} className='shrink-0' />
+                          <span className='ml-4 truncate text-sm font-medium text-gray-800 dark:text-gray-100'>
+                            내 워크스페이스
+                          </span>
+                        </div>
+                        <button
+                          type='button'
+                          className='lg:sidebar-expanded:flex ml-2 flex shrink-0 cursor-pointer rounded p-0.5 text-gray-400 hover:bg-gray-100/80 hover:text-gray-600 lg:hidden 2xl:flex dark:text-gray-500 dark:hover:bg-gray-700/60 dark:hover:text-gray-200'
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setPointedFolderId('my-workspace');
+                            setMyWorkspaceOpen((prev) => !prev);
+                            setSidebarExpanded(true);
+                          }}
+                          aria-label={
+                            myWorkspaceOpen ? '내 워크스페이스 닫기' : '내 워크스페이스 열기'
+                          }
+                        >
+                          {myWorkspaceOpen ? (
+                            <ChevronUp
+                              width={16}
+                              height={16}
+                              strokeWidth={3}
+                              className='text-gray-500 dark:text-gray-300'
+                            />
+                          ) : (
+                            <ChevronDown
+                              width={16}
+                              height={16}
+                              strokeWidth={3}
+                              className='text-gray-500 dark:text-gray-300'
+                            />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </li>
+                  {myWorkspaceOpen &&
+                    workspaces.map((item) => (
+                      <SidebarTreeNode
+                        key={item.id}
+                        item={item}
+                        depth={1}
+                        expandedFolders={expandedFolders}
+                        setExpandedFolders={setExpandedFolders}
+                        setSidebarExpanded={setSidebarExpanded}
+                        pointedFolderId={pointedFolderId}
+                        setPointedFolderId={setPointedFolderId}
+                        loadFolderChildren={loadFolderChildren}
+                        onNavigateFolder={navigateToFolder}
+                        onOpenFile={openFileDetail}
+                        activeFileId={activeFileId}
+                      />
+                    ))}
+                </ul>
+              </DragDropSection>
+
+              <DragDropSection id='section-favorite' title='즐겨찾기'>
+                <ul>
+                  {favorites.map((item) => (
+                    <SidebarTreeNode
+                      key={item.id}
+                      item={item}
+                      depth={0}
+                      expandedFolders={expandedFolders}
+                      setExpandedFolders={setExpandedFolders}
+                      setSidebarExpanded={setSidebarExpanded}
+                      pointedFolderId={pointedFolderId}
+                      setPointedFolderId={setPointedFolderId}
+                      loadFolderChildren={loadFolderChildren}
+                      onNavigateFolder={navigateToFolder}
+                      onOpenFile={openFileDetail}
+                      activeFileId={activeFileId}
+                    />
+                  ))}
+                </ul>
+              </DragDropSection>
+            </div>
+
+            <div className='mt-4 border-t border-gray-200 pt-4 dark:border-gray-700/60'>
+              <div className='lg:sidebar-expanded:block rounded-xl p-3 shadow-xs lg:hidden 2xl:block dark:bg-gray-900/40'>
+                <div className='text-sm font-semibold text-gray-700 dark:text-gray-200'>저장용량</div>
+                <div className='mt-3 h-1.5 w-full rounded-full bg-gray-200 dark:bg-gray-700'>
+                  <div
+                    className='h-full rounded-full bg-gray-700 dark:bg-gray-300'
+                    style={{ width: `${usagePercent}%` }}
+                  />
+                </div>
+                <div className='mt-2 text-sm font-semibold text-gray-700 dark:text-gray-200'>
+                  {limitLabel} 중 {usedLabel} 사용
+                </div>
+                <div className='mt-3 rounded-lg bg-white px-3 py-3 text-sm text-gray-700 dark:bg-gray-800/80 dark:text-gray-300'>
+                  <div className='text-faddit font-semibold'>✨ 저장공간 10GB 사용하기</div>
+                  <p className='mt-1'>
+                    Pro 요금제로 업그레이드하면 10GB의 저장 공간을 사용할 수 있습니다.
+                  </p>
+                  <p className='mt-2 font-semibold text-gray-400'>
+                    Pro 요금제 업그레이드 (출시 예정)
+                  </p>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
