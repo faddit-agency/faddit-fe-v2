@@ -31,6 +31,7 @@ import type {
   WorksheetEditorDocument,
   WorksheetEditorPage,
 } from './worksheetEditorSchema';
+import { isWorksheetCanvasPageType } from './worksheetEditorSchema';
 import {
   createDriveFile,
   createDriveFolder,
@@ -886,7 +887,7 @@ export default function WorksheetGridContent({
 
   const diagramSheets = useMemo<DiagramSheetItem[]>(() => {
     return editorDocument.pages
-      .filter((page) => page.type === 'sketch' || page.type === 'pattern')
+      .filter((page) => isWorksheetCanvasPageType(page.type))
       .map((page) => ({
         id: page.id,
         label: page.label,

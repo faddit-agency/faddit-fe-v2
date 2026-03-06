@@ -1,7 +1,7 @@
 import type { MenuTab, MenuTabConfig, CardDefinition } from './worksheetTypes';
 
 export const MENU_TABS: MenuTabConfig[] = [
-  { key: 'diagram', label: '도식화 & 패턴' },
+  { key: 'diagram', label: '디자인' },
   { key: 'basic', label: '기본 정보' },
   { key: 'size', label: '사이즈 정보' },
   { key: 'cost', label: '원가계산서' },
@@ -11,7 +11,7 @@ export const CARD_DEFINITIONS: Record<MenuTab, CardDefinition[]> = {
   diagram: [
     {
       id: 'diagram-view',
-      title: '도식화 / 패턴',
+      title: '디자인',
       tab: 'diagram',
       defaultLayout: { x: 0, y: 0, w: 7, h: 8, minW: 3, minH: 4 },
       isDefault: true,

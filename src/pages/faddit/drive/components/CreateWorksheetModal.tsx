@@ -1056,7 +1056,7 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
                           <div className='rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700/60 dark:bg-gray-900'>
                             <div className='mb-3 flex items-center justify-between'>
                               <h3 className='text-lg font-bold text-gray-900 dark:text-gray-100'>
-                                도식화/패턴 미리보기
+                                디자인 미리보기
                               </h3>
                               <span className='text-xs font-semibold text-gray-500 dark:text-gray-400'>
                                 {selectedTemplate.technicalDrawingVersion}

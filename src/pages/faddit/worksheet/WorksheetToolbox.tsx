@@ -49,6 +49,7 @@ import {
 } from 'react-icons/cg';
 import ThemeToggle from '../../../components/ThemeToggle';
 import FadditLogoOnly from '../../../images/icons/faddit-logo-only.svg';
+import { useThemeProvider } from '../../../utils/ThemeContext';
 import { useCanvas, type AlignType, type ToolType } from './CanvasProvider';
 import type { PathfinderOp } from './pathfinder';
 import SketchColorPicker from './SketchColorPicker';
@@ -429,6 +430,8 @@ type SidePanelOpenEventDetail = {
 };
 
 export default function WorksheetToolbox() {
+  const { currentTheme } = useThemeProvider();
+  const isDarkMode = currentTheme === 'dark';
   const [activePanelKey, setActivePanelKey] = useState('template');
   const [contentOpen, setContentOpen] = useState(true);
   const [colorTarget, setColorTarget] = useState<'fill' | 'stroke'>('fill');
@@ -600,7 +603,7 @@ export default function WorksheetToolbox() {
   }, []);
 
   return (
-    <div className='worksheet-toolbox flex h-full min-h-0 bg-white p-2 dark:bg-gray-900'>
+    <div className={`worksheet-toolbox flex h-full min-h-0 bg-white p-2 dark:bg-gray-900 ${isDarkMode ? 'dark' : ''}`}>
       <div className='flex min-h-0 min-w-0 flex-1'>
         <nav className='flex w-14 shrink-0 flex-col gap-y-2'>
           <Link

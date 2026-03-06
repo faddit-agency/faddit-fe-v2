@@ -1,13 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Minus, PenLine, Pencil, Plus, Scissors, Table, Trash2 } from 'lucide-react';
+import { Check, Minus, PenLine, Pencil, Plus, Scissors, Table, Tag, Trash2 } from 'lucide-react';
 import ToggleButton from '../../../components/atoms/ToggleButton';
 import WorksheetSketchView from './WorksheetSketchView';
 import WorksheetSizeSpecView from './WorksheetSizeSpecView';
 import { useCanvas } from './CanvasProvider';
 import type {
+  WorksheetCanvasSpec,
   WorksheetEditorDocument,
   WorksheetEditorPage,
   WorksheetEditorPageType,
+} from './worksheetEditorSchema';
+import {
+  createCanvasSpec,
+  getDefaultCanvasSpecForPageType,
+  isWorksheetCanvasPageType,
 } from './worksheetEditorSchema';
 
 type PageType = WorksheetEditorPageType;
@@ -76,6 +82,12 @@ const PAGE_TYPE_META: Record<
   PageType,
   { icon: React.ElementType; iconColor: string; bgColor: string; defaultLabel: string }
 > = {
+  'custom-design': {
+    icon: PenLine,
+    iconColor: 'text-sky-500',
+    bgColor: 'bg-sky-100',
+    defaultLabel: '새 디자인',
+  },
   sketch: {
     icon: PenLine,
     iconColor: 'text-blue-500',
@@ -87,6 +99,12 @@ const PAGE_TYPE_META: Record<
     iconColor: 'text-green-500',
     bgColor: 'bg-green-100',
     defaultLabel: '패턴',
+  },
+  label: {
+    icon: Tag,
+    iconColor: 'text-amber-500',
+    bgColor: 'bg-amber-100',
+    defaultLabel: '라벨',
   },
   'size-spec': {
     icon: Table,
@@ -100,17 +118,21 @@ const THUMB_W = 120;
 const THUMB_H = 80;
 const PAGE_CARD_TOTAL_H = 112;
 
-const ADDABLE_PAGE_TYPES: PageType[] = ['sketch', 'pattern'];
+const ADDABLE_PAGE_TYPES: PageType[] = ['custom-design', 'sketch', 'pattern', 'label'];
 
 const PAGE_TYPE_ORDER: Record<PageType, number> = {
-  sketch: 0,
-  pattern: 1,
-  'size-spec': 2,
+  'custom-design': 0,
+  sketch: 1,
+  pattern: 2,
+  label: 3,
+  'size-spec': 4,
 };
 
 const PAGE_TYPE_CHIP_CLASS: Record<PageType, string> = {
+  'custom-design': 'bg-sky-100 text-sky-700',
   sketch: 'bg-violet-100 text-violet-700',
   pattern: 'bg-gray-200 text-gray-700',
+  label: 'bg-amber-100 text-amber-700',
   'size-spec': 'bg-indigo-100 text-indigo-700',
 };
 
@@ -119,15 +141,36 @@ function sortPagesByType(nextPages: WorksheetPage[]): WorksheetPage[] {
 }
 
 function isCanvasPageType(type: PageType): boolean {
-  return type === 'sketch' || type === 'pattern';
+  return isWorksheetCanvasPageType(type);
 }
 
-const makePage = (type: PageType, sameTypeCount: number): WorksheetPage => {
+function resolveCanvasSpecForPage(page: WorksheetPage): WorksheetCanvasSpec | undefined {
+  const defaultSpec = getDefaultCanvasSpecForPageType(page.type);
+  if (!defaultSpec) {
+    return undefined;
+  }
+  if (page.type === 'sketch' || page.type === 'pattern') {
+    return defaultSpec;
+  }
+  if (!page.canvasSpec) {
+    return defaultSpec;
+  }
+  return createCanvasSpec(page.canvasSpec.width, page.canvasSpec.height);
+}
+
+const makePage = (
+  type: PageType,
+  sameTypeCount: number,
+  canvasSpec?: WorksheetCanvasSpec,
+): WorksheetPage => {
   const meta = PAGE_TYPE_META[type];
+  const nextCanvasSpec =
+    canvasSpec ?? getDefaultCanvasSpecForPageType(type) ?? undefined;
   return {
     id: crypto.randomUUID(),
     label: sameTypeCount > 0 ? `${meta.defaultLabel} ${sameTypeCount + 1}` : meta.defaultLabel,
     type,
+    canvasSpec: nextCanvasSpec,
   };
 };
 
@@ -165,16 +208,15 @@ export default function WorksheetContentPanel({
     session: null,
   });
 
-  const { canvasRef, canvasSession, exportCanvasJson, importCanvasJson, clearCanvas } = useCanvas();
+  const {
+    canvasRef,
+    canvasSession,
+    exportCanvasJson,
+    importCanvasJson,
+    clearCanvas,
+    setCanvasPageSpec,
+  } = useCanvas();
   const orderedPages = useMemo(() => sortPagesByType(pages), [pages]);
-  const protectedPageIds = useMemo(() => {
-    const firstSketchPageId = pages.find((page) => page.type === 'sketch')?.id ?? null;
-    const firstPatternPageId = pages.find((page) => page.type === 'pattern')?.id ?? null;
-
-    return new Set(
-      [firstSketchPageId, firstPatternPageId].filter((id): id is string => Boolean(id)),
-    );
-  }, [pages]);
 
   const selectedPage = pages.find((p) => p.id === selectedId) ?? pages[0];
 
@@ -251,6 +293,8 @@ export default function WorksheetContentPanel({
       return;
     }
 
+    const canvasSpec = resolveCanvasSpecForPage(selectedPage);
+
     const savedJson = sketchPagesRef.current[selectedPage.id];
 
     if (
@@ -263,13 +307,19 @@ export default function WorksheetContentPanel({
 
     if (!savedJson) {
       clearCanvas();
+      if (canvasSpec) {
+        setCanvasPageSpec(canvasSpec);
+      }
       lastLoadedRef.current = { pageId: selectedPage.id, json: null, session: sessionKey };
       return;
     }
 
     await importCanvasJson(savedJson);
+    if (canvasSpec) {
+      setCanvasPageSpec(canvasSpec);
+    }
     lastLoadedRef.current = { pageId: selectedPage.id, json: savedJson, session: sessionKey };
-  }, [selectedPage, importCanvasJson, clearCanvas, canvasSession]);
+  }, [selectedPage, importCanvasJson, clearCanvas, canvasSession, setCanvasPageSpec]);
 
   useEffect(() => {
     if (!selectedPage) return;
@@ -364,11 +414,44 @@ export default function WorksheetContentPanel({
     };
   }, [addMenuOpen]);
 
+  const requestCustomCanvasSpec = useCallback((pageType: PageType): WorksheetCanvasSpec | null => {
+    const pageLabel = PAGE_TYPE_META[pageType].defaultLabel;
+    const widthRaw = window.prompt(`${pageLabel} 가로(px)를 입력해 주세요.`, '1920');
+    if (widthRaw === null) {
+      return null;
+    }
+
+    const heightRaw = window.prompt(`${pageLabel} 세로(px)를 입력해 주세요.`, '1080');
+    if (heightRaw === null) {
+      return null;
+    }
+
+    const width = Number(widthRaw);
+    const height = Number(heightRaw);
+
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      window.alert('가로/세로는 0보다 큰 숫자로 입력해 주세요.');
+      return null;
+    }
+
+    return createCanvasSpec(width, height);
+  }, []);
+
   const handleAddPage = useCallback(
     (type: PageType) => {
       if (readOnly) return;
+      let customCanvasSpec: WorksheetCanvasSpec | undefined;
+
+      if (type === 'custom-design' || type === 'label') {
+        const requested = requestCustomCanvasSpec(type);
+        if (!requested) {
+          return;
+        }
+        customCanvasSpec = requested;
+      }
+
       const sameTypeCount = pages.filter((p) => p.type === type).length;
-      const newPage = makePage(type, sameTypeCount);
+      const newPage = makePage(type, sameTypeCount, customCanvasSpec);
 
       updateDocument((prev) => {
         const nextPages = sortPagesByType([...prev.pages, newPage]);
@@ -381,14 +464,13 @@ export default function WorksheetContentPanel({
 
       setAddMenuOpen(false);
     },
-    [pages, readOnly, updateDocument],
+    [pages, readOnly, requestCustomCanvasSpec, updateDocument],
   );
 
   const handleDeletePage = useCallback(
     (pageId: string) => {
       if (readOnly) return;
       if (pages.length <= 1) return;
-      if (protectedPageIds.has(pageId)) return;
 
       if (pageId === selectedId) {
         persistSketchPageSnapshot(pageId);
@@ -416,7 +498,7 @@ export default function WorksheetContentPanel({
         };
       });
     },
-    [pages, protectedPageIds, readOnly, selectedId, persistSketchPageSnapshot, updateDocument],
+    [pages, readOnly, selectedId, persistSketchPageSnapshot, updateDocument],
   );
 
   const startPageLabelEdit = useCallback((page: WorksheetPage) => {
@@ -490,7 +572,7 @@ export default function WorksheetContentPanel({
                       const meta = PAGE_TYPE_META[page.type];
                       const isEditingName = editingPageId === page.id;
                       const thumbnail = editorDocument.pageThumbnails[page.id];
-                      const isProtectedPage = protectedPageIds.has(page.id);
+                      const canDeletePage = pages.length > 1;
                       return (
                         <div key={page.id} className='relative flex shrink-0 flex-col gap-1'>
                           <div
@@ -527,7 +609,7 @@ export default function WorksheetContentPanel({
                               )}
                             </button>
 
-                            {!isProtectedPage && (
+                            {canDeletePage && (
                               <button
                                 type='button'
                                 onClick={(e) => {
