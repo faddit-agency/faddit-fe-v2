@@ -55,6 +55,9 @@ const Signup: React.FC = () => {
   const [isEmailVerified, setIsEmailVerified] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
+  const [isRequestingVerification, setIsRequestingVerification] = useState(false);
+  const [isResendingVerification, setIsResendingVerification] = useState(false);
+  const [isSigningUp, setIsSigningUp] = useState(false);
 
   const emailValue = watch('email');
   const serviceAgreement = watch('serviceAgreement');
@@ -63,6 +66,11 @@ const Signup: React.FC = () => {
   const verificationCodeValue = watch('verificationCode');
 
   const allAgreed = serviceAgreement && userAgreement && marketingAgreement;
+  const canRequestVerification =
+    Boolean(emailValue) &&
+    (!errors.email || errors.email.type === 'validate') &&
+    !isRequestingVerification &&
+    !isSigningUp;
 
   // Timer Effect
   useEffect(() => {
@@ -184,6 +192,7 @@ const Signup: React.FC = () => {
       return;
     }
 
+    setIsRequestingVerification(true);
     try {
       await requestEmailVerification(emailValue);
       setIsVerificationVisible(true);
@@ -195,6 +204,8 @@ const Signup: React.FC = () => {
       clearErrors('verificationCode');
     } catch (error) {
       setError('email', { message: '인증 메일 발송에 실패했습니다. 잠시 후 다시 시도해주세요.' });
+    } finally {
+      setIsRequestingVerification(false);
     }
   };
 
@@ -204,6 +215,7 @@ const Signup: React.FC = () => {
       return;
     }
 
+    setIsResendingVerification(true);
     try {
       await requestEmailVerification(emailValue);
       setTimeLeft(180);
@@ -214,6 +226,8 @@ const Signup: React.FC = () => {
       clearErrors('verificationCode');
     } catch (error) {
       setError('email', { message: '인증 메일 재전송에 실패했습니다. 잠시 후 다시 시도해주세요.' });
+    } finally {
+      setIsResendingVerification(false);
     }
   };
 
@@ -237,6 +251,7 @@ const Signup: React.FC = () => {
   };
 
   const onSubmit: SubmitHandler<SignupFormInputs> = async (data) => {
+    setIsSigningUp(true);
     try {
       await signUp({
         name: data.name,
@@ -249,6 +264,8 @@ const Signup: React.FC = () => {
       navigate('/faddit/sign/in');
     } catch (error) {
       setError('email', { message: '회원가입에 실패했습니다. 입력값을 확인해주세요.' });
+    } finally {
+      setIsSigningUp(false);
     }
   };
 
@@ -301,14 +318,14 @@ const Signup: React.FC = () => {
               <button
                 type='button'
                 className={`absolute top-1/2 right-4 -translate-y-1/2 transform text-sm font-medium transition-colors ${
-                  emailValue && (!errors.email || errors.email.type === 'validate')
+                  canRequestVerification
                     ? 'text-faddit cursor-pointer hover:opacity-80'
                     : 'cursor-not-allowed text-gray-400'
                 }`}
                 onClick={handleRequestVerification}
-                disabled={!emailValue || (!!errors.email && errors.email.type !== 'validate')}
+                disabled={!canRequestVerification}
               >
-                인증하기
+                {isRequestingVerification ? '요청중...' : '인증하기'}
               </button>
             </div>
             {errors.email && (
@@ -338,10 +355,11 @@ const Signup: React.FC = () => {
                   </div>
                   <button
                     type='button'
-                    className='btn-sm border-gray-200 whitespace-nowrap text-gray-800 hover:border-gray-300 dark:border-gray-700/60 dark:text-gray-300 dark:hover:border-gray-600'
+                    className='btn-sm border-gray-200 whitespace-nowrap text-gray-800 hover:border-gray-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700/60 dark:text-gray-300 dark:hover:border-gray-600'
                     onClick={handleResend}
+                    disabled={isResendingVerification || isRequestingVerification || isSigningUp}
                   >
-                    재전송
+                    {isResendingVerification ? '재전송중...' : '재전송'}
                   </button>
                 </div>
                 {errors.verificationCode && (
@@ -511,10 +529,11 @@ const Signup: React.FC = () => {
 
         <div className='mt-6 flex items-center justify-between'>
           <button
-            className='btn w-full bg-gray-900 text-gray-100 hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-800 dark:hover:bg-white'
+            className='btn w-full bg-gray-900 text-gray-100 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-gray-100 dark:text-gray-800 dark:hover:bg-white'
             type='submit'
+            disabled={isSigningUp || isRequestingVerification || isResendingVerification}
           >
-            회원가입
+            {isSigningUp ? '가입중...' : '회원가입'}
           </button>
         </div>
       </form>

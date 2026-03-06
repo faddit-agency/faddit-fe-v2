@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronRight, LayoutGrid, List, RotateCcw, Trash2 } from 'lucide-react';
 import DriveItemCard from '../../../components/DriveItemCard';
+import DriveEmptyPlaceholder from '../../../components/DriveEmptyPlaceholder';
 import Notification from '../../../components/Notification';
 import GlobalTooltip from '../../../components/ui/GlobalTooltip';
 import { useAuthStore } from '../../../store/useAuthStore';
@@ -358,6 +359,8 @@ const DeletedDrive: React.FC = () => {
     [visibleFiles, visibleFolders],
   );
 
+  const showTrashEmptyPlaceholder = !loading && folders.length === 0 && files.length === 0;
+
   return (
     <div className='h-full bg-[#f9f9f9] text-gray-800 dark:bg-gray-900 dark:text-gray-100'>
       <div className='flex h-full overflow-hidden'>
@@ -457,6 +460,8 @@ const DeletedDrive: React.FC = () => {
               <div className='rounded-xl bg-white p-6 text-sm text-gray-500 shadow-xs dark:bg-gray-800 dark:text-gray-300'>
                 휴지통 데이터를 불러오는 중입니다...
               </div>
+            ) : showTrashEmptyPlaceholder ? (
+              <DriveEmptyPlaceholder message='삭제한 파일이나 폴더가 존재 하지 않습니다' />
             ) : viewMode === 'grid' ? (
               <div className='space-y-6'>
                 <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4'>

@@ -5,6 +5,7 @@ import * as PopoverPrimitive from '@radix-ui/react-popover';
 import { LayoutGrid, List, SlidersHorizontal } from 'lucide-react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import DriveItemCard from '../../../components/DriveItemCard';
+import DriveEmptyPlaceholder from '../../../components/DriveEmptyPlaceholder';
 import GlobalTooltip from '../../../components/ui/GlobalTooltip';
 import Notification from '../../../components/Notification';
 import DropdownButton from '../../../components/atoms/DropdownButton';
@@ -50,6 +51,7 @@ type DriveListEntry = {
   nodeType?: DriveNode['type'];
   title: string;
   subtitle?: string;
+  creatorName: string;
   date: string;
   size: string;
   isStarred?: boolean;
@@ -1150,10 +1152,10 @@ const DriveFolderTile: React.FC<{
         />
       </label>
 
-      <div className='flex items-center gap-3'>
+      <div className='flex items-center gap-[8px]'>
         {folder.shared ? (
           <svg
-            className='h-5 w-5 shrink-0 fill-gray-600 dark:fill-gray-300'
+            className='h-[25px] w-[25px] shrink-0 fill-gray-600 dark:fill-gray-300'
             viewBox='0 0 20 20'
             aria-hidden='true'
           >
@@ -1161,14 +1163,16 @@ const DriveFolderTile: React.FC<{
           </svg>
         ) : (
           <svg
-            className='h-5 w-5 shrink-0 fill-gray-600 dark:fill-gray-300'
+            className='h-[25px] w-[25px] shrink-0 fill-gray-600 dark:fill-gray-300'
             viewBox='0 0 20 20'
             aria-hidden='true'
           >
             <path d='M2.5 4.75A2.25 2.25 0 0 1 4.75 2.5h3.21a2 2 0 0 1 1.41.59l.75.75c.19.19.44.29.71.29h4.42a2.25 2.25 0 0 1 2.25 2.25v6.87a2.25 2.25 0 0 1-2.25 2.25H4.75A2.25 2.25 0 0 1 2.5 13.25V4.75Z' />
           </svg>
         )}
-        <span className='text-md font-medium text-gray-800 dark:text-gray-100'>{folder.name}</span>
+        <span className='text-[16px] font-semibold text-gray-800 dark:text-gray-100'>
+          {folder.name}
+        </span>
         {folder.isStarred ? (
           <svg
             className='h-4 w-4 shrink-0 fill-amber-400'
@@ -1216,7 +1220,7 @@ const DriveFolderTile: React.FC<{
                   onMoveFolder(folder.id);
                 }}
               >
-                폴더 이동
+                파일 이동
               </button>
               <button
                 type='button'
@@ -1258,8 +1262,8 @@ const DriveFolderTile: React.FC<{
 
 const DriveFolderTileSkeleton = () => (
   <div className='relative flex items-center justify-between rounded-xl bg-gray-100 px-4 py-3 dark:bg-gray-800/70'>
-    <div className='flex items-center gap-3'>
-      <div className='h-5 w-5 animate-pulse rounded bg-gray-300/80 dark:bg-gray-600/70' />
+    <div className='flex items-center gap-[8px]'>
+      <div className='h-[25px] w-[25px] animate-pulse rounded bg-gray-300/80 dark:bg-gray-600/70' />
       <div className='h-4 w-28 animate-pulse rounded bg-gray-300/80 dark:bg-gray-600/70' />
     </div>
     <div className='h-8 w-8 animate-pulse rounded-md bg-gray-300/80 dark:bg-gray-600/70' />
@@ -1285,6 +1289,33 @@ const DriveItemCardSkeleton = () => (
       <div className='h-3.5 w-1/2 animate-pulse rounded bg-gray-200 dark:bg-gray-700/70' />
     </div>
   </div>
+);
+
+const DriveListRowSkeleton = () => (
+  <tr className='border-t border-gray-100 dark:border-gray-700/60'>
+    <td className='min-w-[280px] px-4 py-3'>
+      <div className='flex items-center gap-3'>
+        <div className='h-4 w-4 animate-pulse rounded bg-gray-200 dark:bg-gray-700/70' />
+        <div className='h-5 w-5 animate-pulse rounded bg-gray-200 dark:bg-gray-700/70' />
+        <div className='space-y-1'>
+          <div className='h-3.5 w-28 animate-pulse rounded bg-gray-200 dark:bg-gray-700/70' />
+          <div className='h-3 w-16 animate-pulse rounded bg-gray-200 dark:bg-gray-700/70' />
+        </div>
+      </div>
+    </td>
+    <td className='min-w-[120px] px-4 py-3'>
+      <div className='h-3.5 w-16 animate-pulse rounded bg-gray-200 dark:bg-gray-700/70' />
+    </td>
+    <td className='min-w-[190px] px-4 py-3'>
+      <div className='h-3.5 w-24 animate-pulse rounded bg-gray-200 dark:bg-gray-700/70' />
+    </td>
+    <td className='min-w-[110px] px-4 py-3'>
+      <div className='h-3.5 w-14 animate-pulse rounded bg-gray-200 dark:bg-gray-700/70' />
+    </td>
+    <td className='w-px px-4 py-3 text-right'>
+      <div className='ml-auto h-7 w-7 animate-pulse rounded-md bg-gray-200 dark:bg-gray-700/70' />
+    </td>
+  </tr>
 );
 
 const DriveListRow: React.FC<{
@@ -1367,8 +1398,8 @@ const DriveListRow: React.FC<{
             : 'border-gray-100 hover:bg-gray-50/70 dark:hover:bg-gray-800/50'
       }`}
     >
-      <td className='px-4 py-3'>
-        <div className='flex items-center gap-3'>
+      <td className='min-w-[280px] px-4 py-3'>
+        <div className='flex min-w-0 items-center gap-3'>
           <label
             className='inline-flex'
             onPointerDown={(event) => event.stopPropagation()}
@@ -1391,24 +1422,40 @@ const DriveListRow: React.FC<{
               <path d='M2.5 4.75A2.25 2.25 0 0 1 4.75 2.5h3.21a2 2 0 0 1 1.41.59l.75.75c.19.19.44.29.71.29h4.42a2.25 2.25 0 0 1 2.25 2.25v6.87a2.25 2.25 0 0 1-2.25 2.25H4.75A2.25 2.25 0 0 1 2.5 13.25V4.75Z' />
             </svg>
           ) : (
-            <svg className='h-5 w-5 shrink-0 fill-blue-500' viewBox='0 0 20 20' aria-hidden='true'>
+            <svg
+              className='h-5 w-5 shrink-0 fill-[#cecbcb] dark:fill-gray-500'
+              viewBox='0 0 20 20'
+              aria-hidden='true'
+            >
               <path d='M5 2.5A1.5 1.5 0 0 0 3.5 4v12A1.5 1.5 0 0 0 5 17.5h10a1.5 1.5 0 0 0 1.5-1.5V7.25a1.5 1.5 0 0 0-.44-1.06l-3.75-3.75A1.5 1.5 0 0 0 11.25 2H5v.5Zm6.5.56V6a.5.5 0 0 0 .5.5h2.94l-3.44-3.44Z' />
             </svg>
           )}
-          <div>
+          <div className='min-w-0'>
             <div
-              className={`font-medium ${entry.kind === 'file' ? 'cursor-pointer text-gray-800 dark:text-gray-100' : 'text-gray-800 dark:text-gray-100'}`}
+              className={`truncate font-medium ${entry.kind === 'file' ? 'cursor-pointer text-gray-800 dark:text-gray-100' : 'text-gray-800 dark:text-gray-100'}`}
+              title={entry.title}
             >
               {entry.title}
             </div>
             {entry.kind === 'file' && entry.subtitle && (
-              <div className='mt-1 text-xs text-gray-500 dark:text-gray-400'>{entry.subtitle}</div>
+              <div className='mt-1 truncate text-xs text-gray-500 dark:text-gray-400' title={entry.subtitle}>
+                {entry.subtitle}
+              </div>
             )}
           </div>
         </div>
       </td>
-      <td className='px-4 py-3 text-gray-600 dark:text-gray-300'>{entry.date}</td>
-      <td className='px-4 py-3 text-gray-600 dark:text-gray-300'>{entry.size}</td>
+      <td className='min-w-[120px] px-4 py-3 text-gray-600 dark:text-gray-300'>
+        <span className='block truncate whitespace-nowrap' title={entry.creatorName}>
+          {entry.creatorName}
+        </span>
+      </td>
+      <td className='min-w-[190px] px-4 py-3 text-gray-600 dark:text-gray-300'>
+        <span className='block whitespace-nowrap'>{entry.date}</span>
+      </td>
+      <td className='min-w-[110px] px-4 py-3 text-gray-600 dark:text-gray-300'>
+        <span className='block whitespace-nowrap'>{entry.size}</span>
+      </td>
       <td className='w-px px-4 py-3 text-right'>
         <PopoverPrimitive.Root open={kebabOpen} onOpenChange={setKebabOpen}>
           <PopoverPrimitive.Trigger asChild>
@@ -1441,7 +1488,7 @@ const DriveListRow: React.FC<{
                   onMoveToFolder(entry.id);
                 }}
               >
-                폴더 이동
+                파일 이동
               </button>
               <button
                 type='button'
@@ -2055,7 +2102,7 @@ const FadditDrive: React.FC = () => {
             name: node.name,
             shared: false,
             updatedAt: node.updatedAt || '',
-            updatedBy: '',
+            creatorName: node.creatorName || '',
             parentId: node.parentId,
             isStarred: node.isStarred,
           }));
@@ -2164,7 +2211,7 @@ const FadditDrive: React.FC = () => {
           name: node.name,
           shared: false,
           updatedAt: node.recentCreatedAt || node.updatedAt || '',
-          updatedBy: '',
+          creatorName: node.creatorName || '',
           parentId: node.parentId,
           isStarred: node.isStarred,
         }));
@@ -2825,7 +2872,8 @@ const FadditDrive: React.FC = () => {
         id: folder.id,
         kind: 'folder' as const,
         title: folder.name,
-        date: `${formatKoreanDateTime(folder.updatedAt)} ${folder.updatedBy}`.trim(),
+        creatorName: folder.creatorName || '-',
+        date: formatKoreanDateTime(folder.updatedAt),
         size: '—',
         isStarred: folder.isStarred,
       })),
@@ -2835,7 +2883,8 @@ const FadditDrive: React.FC = () => {
         nodeType: item.nodeType,
         title: item.title,
         subtitle: item.subtitle,
-        date: `${item.date || '-'} ${item.owner || ''}`.trim(),
+        creatorName: item.owner || '-',
+        date: item.date || '-',
         size: item.size || '-',
         isStarred: Boolean(item.isStarred),
       })),
@@ -2906,10 +2955,12 @@ const FadditDrive: React.FC = () => {
     entry: DriveListEntry,
     event: React.MouseEvent<HTMLTableRowElement>,
   ) => {
-    if (entry.kind !== 'file') {
+    if (isMultiSelectGesture(event)) {
       return;
     }
-    if (isMultiSelectGesture(event)) {
+
+    if (entry.kind === 'folder') {
+      navigateToFolder(entry.id);
       return;
     }
 
@@ -3170,7 +3221,7 @@ const FadditDrive: React.FC = () => {
         name: node.name,
         shared: false,
         updatedAt: node.recentCreatedAt || node.updatedAt || '',
-        updatedBy: '',
+        creatorName: node.creatorName || '',
         parentId: node.parentId,
         isStarred: node.isStarred,
       }));
@@ -4025,8 +4076,14 @@ const FadditDrive: React.FC = () => {
     : 'grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))]';
 
   const isDriveListLoading = driveLoading || searchLoading;
+  const showDefaultEmptyPlaceholder =
+    !isDriveListLoading &&
+    !isSearchMode &&
+    displayedFolders.length === 0 &&
+    displayedItems.length === 0;
   const folderSkeletonCount = detailPanelOpen ? 4 : 6;
   const fileSkeletonCount = detailPanelOpen ? 6 : 8;
+  const listSkeletonCount = detailPanelOpen ? 7 : 9;
 
   useEffect(() => {
     if (!primaryActiveMaterial) {
@@ -4562,7 +4619,7 @@ const FadditDrive: React.FC = () => {
                             handleOpenMoveDialog(currentLocationFolderId);
                           }}
                         >
-                          폴더 이동
+                          파일 이동
                         </button>
                         <button
                           type='button'
@@ -4850,6 +4907,8 @@ const FadditDrive: React.FC = () => {
                         ))}
                       </div>
                     </>
+                  ) : showDefaultEmptyPlaceholder ? (
+                    <DriveEmptyPlaceholder message='아직 생성하신 작업지시서나 폴더가 존재 하지 않습니다' />
                   ) : (
                     <>
                       <div className={`grid gap-5 ${cardGridClass}`}>
@@ -4969,14 +5028,36 @@ const FadditDrive: React.FC = () => {
                     </>
                   )}
                 </div>
-              ) : (
+              ) : isDriveListLoading ? (
                 <div className='overflow-x-auto rounded-xl bg-white shadow-xs dark:bg-gray-800'>
-                  <table className='w-full table-auto text-sm dark:text-gray-300'>
+                  <table className='min-w-[860px] w-full table-auto text-sm dark:text-gray-300'>
                     <thead className='bg-gray-50 text-xs font-semibold text-gray-500 dark:bg-gray-900/20 dark:text-gray-400'>
                       <tr>
-                        <th className='px-4 py-3 text-left'>이름</th>
-                        <th className='px-4 py-3 text-left'>수정 날짜</th>
-                        <th className='px-4 py-3 text-left'>파일 크기</th>
+                        <th className='min-w-[280px] px-4 py-3 text-left'>이름</th>
+                        <th className='min-w-[120px] px-4 py-3 text-left whitespace-nowrap'>생성자</th>
+                        <th className='min-w-[190px] px-4 py-3 text-left whitespace-nowrap'>수정 날짜</th>
+                        <th className='min-w-[110px] px-4 py-3 text-left whitespace-nowrap'>파일 크기</th>
+                        <th className='w-px px-4 py-3 text-right'>정렬</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Array.from({ length: listSkeletonCount }).map((_, index) => (
+                        <DriveListRowSkeleton key={`list-skeleton-${index + 1}`} />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : showDefaultEmptyPlaceholder ? (
+                <DriveEmptyPlaceholder message='아직 생성하신 작업지시서나 폴더가 존재 하지 않습니다' />
+              ) : (
+                <div className='overflow-x-auto rounded-xl bg-white shadow-xs dark:bg-gray-800'>
+                  <table className='min-w-[860px] w-full table-auto text-sm dark:text-gray-300'>
+                    <thead className='bg-gray-50 text-xs font-semibold text-gray-500 dark:bg-gray-900/20 dark:text-gray-400'>
+                      <tr>
+                        <th className='min-w-[280px] px-4 py-3 text-left'>이름</th>
+                        <th className='min-w-[120px] px-4 py-3 text-left whitespace-nowrap'>생성자</th>
+                        <th className='min-w-[190px] px-4 py-3 text-left whitespace-nowrap'>수정 날짜</th>
+                        <th className='min-w-[110px] px-4 py-3 text-left whitespace-nowrap'>파일 크기</th>
                         <th className='w-px px-4 py-3 text-right'>정렬</th>
                       </tr>
                     </thead>
@@ -5207,7 +5288,7 @@ const FadditDrive: React.FC = () => {
         <div className='fixed inset-0 z-[90] flex items-center justify-center bg-gray-900/45 px-4'>
           <div className='w-full max-w-lg rounded-xl border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-700/60 dark:bg-gray-800'>
             <div className='text-base font-semibold text-gray-800 dark:text-gray-100'>
-              폴더 이동
+              파일 이동
             </div>
             <p className='mt-2 text-sm text-gray-500 dark:text-gray-400'>
               이동할 폴더를 선택하세요.

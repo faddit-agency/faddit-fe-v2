@@ -98,10 +98,10 @@ function DropdownProfile({ align }) {
             <li>
               <Link
                 className='flex items-center px-3 py-1 text-sm font-medium text-violet-500 hover:text-violet-600 dark:hover:text-violet-400'
-                to='/settings'
-                onClick={() => setDropdownOpen(!dropdownOpen)}
+                to='/faddit/my'
+                onClick={() => setDropdownOpen(false)}
               >
-                Settings
+                내 프로필
               </Link>
             </li>
             <li>

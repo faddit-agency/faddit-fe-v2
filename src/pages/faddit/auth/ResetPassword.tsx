@@ -28,6 +28,8 @@ const FadditResetPassword: React.FC = () => {
   const [tokenValid, setTokenValid] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
+  const [isRequestSubmitting, setIsRequestSubmitting] = useState(false);
+  const [isUpdateSubmitting, setIsUpdateSubmitting] = useState(false);
 
   const userId = searchParams.get('userId') || searchParams.get('user_id') || '';
   const passwordResetToken =
@@ -95,21 +97,25 @@ const FadditResetPassword: React.FC = () => {
 
   const onRequestSubmit: SubmitHandler<RequestFormInputs> = async ({ email }) => {
     setRequestError('');
+    setIsRequestSubmitting(true);
 
     try {
       await requestResetPassword(email);
       setRequestSent(true);
     } catch (error) {
       setRequestError('재설정 메일 발송에 실패했습니다. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setIsRequestSubmitting(false);
     }
   };
 
   const onUpdateSubmit: SubmitHandler<UpdateFormInputs> = async ({ password }) => {
-    if (!tokenValid) {
+    if (!tokenValid || isUpdateSubmitting) {
       return;
     }
 
     setUpdateError('');
+    setIsUpdateSubmitting(true);
 
     try {
       await updatePassword({
@@ -121,6 +127,8 @@ const FadditResetPassword: React.FC = () => {
       navigate('/faddit/sign/in');
     } catch (error) {
       setUpdateError('비밀번호 변경에 실패했습니다. 다시 시도해주세요.');
+    } finally {
+      setIsUpdateSubmitting(false);
     }
   };
 
@@ -163,8 +171,12 @@ const FadditResetPassword: React.FC = () => {
             )}
 
             <div className='mt-6 flex justify-end'>
-              <button className='btn bg-gray-900 whitespace-nowrap text-gray-100 hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-800 dark:hover:bg-white'>
-                재설정 링크 발송
+              <button
+                type='submit'
+                className='btn bg-gray-900 whitespace-nowrap text-gray-100 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-gray-100 dark:text-gray-800 dark:hover:bg-white'
+                disabled={isRequestSubmitting}
+              >
+                {isRequestSubmitting ? '발송중...' : '재설정 링크 발송'}
               </button>
             </div>
           </form>
@@ -254,9 +266,10 @@ const FadditResetPassword: React.FC = () => {
             <div className='mt-6 flex justify-end'>
               <button
                 className='btn bg-gray-900 whitespace-nowrap text-gray-100 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-100 dark:text-gray-800 dark:hover:bg-white'
-                disabled={tokenVerifying || !tokenValid}
+                type='submit'
+                disabled={tokenVerifying || !tokenValid || isUpdateSubmitting}
               >
-                비밀번호 변경
+                {isUpdateSubmitting ? '변경중...' : '비밀번호 변경'}
               </button>
             </div>
           </form>
