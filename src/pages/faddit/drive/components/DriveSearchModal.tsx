@@ -16,13 +16,11 @@ const SEARCH_CHIPS: SearchChip[] = [
   { label: '전체', value: 'all' },
   { label: '폴더', value: 'folder' },
   { label: '작업지시서', value: 'worksheet' },
-  { label: 'faddit', value: 'faddit' },
-  { label: '도식화', value: 'schematic' },
   { label: '라벨', value: 'label' },
   { label: '원단', value: 'fabric' },
-  { label: '패턴', value: 'pattern' },
-  { label: '인쇄', value: 'print' },
-  { label: '기타', value: 'etc' },
+  { label: '시보리원단', value: 'rib_fabric' },
+  { label: '부자재', value: 'trim' },
+  { label: '업로드', value: 'upload' },
 ];
 
 const DriveSearchModal = ({ modalOpen, setModalOpen }: Props) => {

@@ -9,15 +9,15 @@ import LogoOnly from '../images/icons/faddit-logo-only.svg';
 
 //icons svg from lucide
 import {
-  House,
-  Search,
-  MessagesSquare,
-  Trash2,
   ChevronUp,
   ChevronDown,
 } from 'lucide-react';
 import { FcFolder, FcOpenedFolder } from 'react-icons/fc';
 import { PiFileFill } from 'react-icons/pi';
+import { HiHome } from 'react-icons/hi2';
+import { TbMessageFilled } from 'react-icons/tb';
+import { FaTrash } from 'react-icons/fa6';
+import { FaSearch } from 'react-icons/fa';
 
 // Helper component for droppable sections
 const DragDropSection = ({ id, title, children, className, droppable = true }) => {
@@ -30,7 +30,7 @@ const DragDropSection = ({ id, title, children, className, droppable = true }) =
   return (
     <div
       ref={setNodeRef}
-      className={`${className} ${isOver ? '-mx-2 rounded-lg bg-faddit/10 px-2 transition-colors dark:bg-faddit/20' : ''}`}
+      className={`${className} ${isOver ? '-mx-2 rounded-lg bg-[#f3f2f2] px-2 transition-colors dark:bg-[#f3f2f2]' : ''}`}
     >
       <span className='lg:sidebar-expanded:block my-5 text-[14px] font-extrabold text-gray-400 lg:hidden 2xl:block'>
         {title}
@@ -66,6 +66,28 @@ const ArcFolderIcon = ({ open, className = '' }) => (
     {open ? <FcOpenedFolder size={16} /> : <FcFolder size={16} />}
   </span>
 );
+
+const topNavIconByType = {
+  home: HiHome,
+  search: FaSearch,
+  messages: TbMessageFilled,
+  trash: FaTrash,
+};
+
+const DriveTopNavIcon = ({ active, type }) => {
+  const Icon = topNavIconByType[type];
+  if (!Icon) {
+    return null;
+  }
+
+  return (
+    <span className='drive-top-nav-icon-wrap' aria-hidden='true'>
+      <Icon
+        className={`drive-top-nav-icon drive-top-nav-icon--${type} ${active ? 'drive-top-nav-icon--active' : 'drive-top-nav-icon--idle'}`}
+      />
+    </span>
+  );
+};
 
 const SidebarTreeNode = ({
   item,
@@ -210,17 +232,17 @@ const SidebarTreeNode = ({
         {...attributes}
         className={`mb-0.5 rounded-md py-2 pr-3 transition duration-150 ${
           item.type === 'folder'
-            ? 'cursor-pointer hover:bg-white/80 dark:hover:bg-gray-700/70'
-            : 'cursor-pointer hover:bg-faddit/10 dark:hover:bg-faddit/20'
+            ? 'cursor-pointer hover:bg-[#f3f2f2] dark:hover:bg-[#f3f2f2]'
+            : 'cursor-pointer hover:bg-[#f3f2f2] dark:hover:bg-[#f3f2f2]'
         } ${
-          isPointed && item.type === 'folder' ? 'bg-faddit/10 dark:bg-faddit/20' : ''
-        } ${isActiveFile ? 'bg-faddit/10 dark:bg-faddit/20' : ''} ${
+          isPointed && item.type === 'folder' ? 'bg-[#f3f2f2] dark:bg-[#f3f2f2]' : ''
+        } ${isActiveFile ? 'bg-[#f3f2f2] dark:bg-[#f3f2f2]' : ''} ${
           isOver && item.type === 'file'
-            ? 'bg-faddit/10 outline outline-1 outline-faddit/40 dark:bg-faddit/20 dark:outline-faddit/60'
+            ? 'bg-[#f3f2f2] outline outline-1 outline-[#e5e3e3] dark:bg-[#f3f2f2] dark:outline-[#e5e3e3]'
             : ''
         } ${
           isOver && item.type === 'folder'
-            ? 'bg-faddit/10 outline outline-1 outline-faddit/40 dark:bg-faddit/20 dark:outline-faddit/60'
+            ? 'bg-[#f3f2f2] outline outline-1 outline-[#e5e3e3] dark:bg-[#f3f2f2] dark:outline-[#e5e3e3]'
             : ''
         }`}
         onClick={handleFolderRowClick}
@@ -264,7 +286,7 @@ const SidebarTreeNode = ({
           {item.type === 'folder' && (
             <button
               type='button'
-              className='lg:sidebar-expanded:flex ml-2 flex shrink-0 cursor-pointer rounded p-0.5 text-gray-400 hover:bg-gray-100/80 hover:text-gray-600 lg:hidden 2xl:flex dark:text-gray-500 dark:hover:bg-gray-700/60 dark:hover:text-gray-200'
+              className='lg:sidebar-expanded:flex ml-2 flex shrink-0 cursor-pointer rounded p-0.5 text-gray-400 hover:bg-[#f3f2f2] hover:text-gray-600 lg:hidden 2xl:flex dark:text-gray-500 dark:hover:bg-[#f3f2f2] dark:hover:text-gray-200'
               onClick={handleChevronClick}
               aria-label={isOpen ? '폴더 닫기' : '폴더 열기'}
             >
@@ -599,7 +621,7 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
           <ul className='mt-3'>
             <li
               className={`mb-3 rounded-lg py-2 pr-3 pl-4 last:mb-0 ${
-                isHomeActive ? 'bg-faddit/10 dark:bg-faddit/20' : ''
+                isHomeActive ? 'bg-[#f3f2f2] dark:bg-[#f3f2f2]' : ''
               }`}
             >
               <NavLink
@@ -610,14 +632,7 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
                 }`}
               >
                 <div className='flex items-center'>
-                  <House
-                    className={`shrink-0 ${
-                      isHomeActive ? 'text-faddit' : 'text-gray-400 dark:text-gray-400'
-                    }`}
-                    width='18'
-                    height='18'
-                    strokeWidth={2}
-                  />
+                  <DriveTopNavIcon active={isHomeActive} type='home' />
                   <span className='lg:sidebar-expanded:opacity-100 ml-3 text-sm font-bold duration-200 lg:opacity-0 2xl:opacity-100'>
                     홈
                   </span>
@@ -626,7 +641,7 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
             </li>
             <li
               className={`mb-3 rounded-lg py-2 pr-3 pl-4 last:mb-0 ${
-                isSearchActive ? 'bg-faddit/10 dark:bg-faddit/20' : ''
+                isSearchActive ? 'bg-[#f3f2f2] dark:bg-[#f3f2f2]' : ''
               }`}
             >
               <button
@@ -635,14 +650,7 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
                 className='block w-full cursor-pointer truncate text-left text-gray-800 transition duration-150 hover:text-gray-900 dark:text-gray-100 dark:hover:text-white'
               >
                 <div className='flex items-center'>
-                  <Search
-                    className={`shrink-0 ${
-                      isSearchActive ? 'text-faddit' : 'text-gray-400 dark:text-gray-400'
-                    }`}
-                    width='18'
-                    height='18'
-                    strokeWidth={2}
-                  />
+                  <DriveTopNavIcon active={isSearchActive} type='search' />
                   <span className='lg:sidebar-expanded:opacity-100 ml-3 text-sm font-bold duration-200 lg:opacity-0 2xl:opacity-100'>
                     검색
                   </span>
@@ -651,7 +659,7 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
             </li>
             <li
               className={`mb-3 rounded-lg py-2 pr-3 pl-4 last:mb-0 ${
-                pathname.includes('messages') ? 'bg-faddit/10 dark:bg-faddit/20' : ''
+                pathname.includes('messages') ? 'bg-[#f3f2f2] dark:bg-[#f3f2f2]' : ''
               }`}
             >
               <NavLink
@@ -663,22 +671,13 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
               >
                 <div className='flex items-center justify-between'>
                   <div className='flex grow items-center'>
-                    <MessagesSquare
-                      className={`shrink-0 ${
-                        pathname === '/faddit/message'
-                          ? 'text-faddit'
-                          : 'text-gray-400 dark:text-gray-400'
-                      }`}
-                      width='18'
-                      height='18'
-                      strokeWidth={2}
-                    />
+                    <DriveTopNavIcon active={pathname.includes('messages')} type='messages' />
                     <span className='lg:sidebar-expanded:opacity-100 ml-3 text-sm font-bold duration-200 lg:opacity-0 2xl:opacity-100'>
                       수신함
                     </span>
                   </div>
                   <div className='ml-2 flex shrink-0'>
-                    <span className='bg-faddit inline-flex h-5 items-center justify-center rounded-sm px-2 text-xs font-medium text-white'>
+                    <span className='bg-gray-600 inline-flex h-5 items-center justify-center rounded-sm px-2 text-xs font-medium text-white'>
                       4
                     </span>
                   </div>
@@ -687,7 +686,7 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
             </li>
             <li
               className={`rounded-lg py-2 pr-3 pl-4 last:mb-0 ${
-                isDeletedActive ? 'bg-faddit/10 dark:bg-faddit/20' : ''
+                isDeletedActive ? 'bg-[#f3f2f2] dark:bg-[#f3f2f2]' : ''
               }`}
             >
               <NavLink
@@ -697,14 +696,7 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
                 }`}
               >
                 <div className='flex items-center'>
-                  <Trash2
-                    className={`shrink-0 ${
-                      isDeletedActive ? 'text-faddit' : 'text-gray-400 dark:text-gray-400'
-                    }`}
-                    width='18'
-                    height='18'
-                    strokeWidth={2}
-                  />
+                  <DriveTopNavIcon active={isDeletedActive} type='trash' />
                   <span className='lg:sidebar-expanded:opacity-100 ml-3 text-sm font-bold duration-200 lg:opacity-0 2xl:opacity-100'>
                     휴지통
                   </span>
@@ -727,8 +719,8 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
                     to='/faddit/my'
                     className={`block rounded-lg px-3 py-2 text-sm font-medium transition ${
                       isMyProfileActive
-                        ? 'bg-faddit/10 text-faddit dark:bg-faddit/20 dark:text-faddit'
-                        : 'text-gray-600 hover:bg-white/80 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700/70 dark:hover:text-gray-100'
+                        ? 'bg-[#f3f2f2] text-faddit dark:bg-[#f3f2f2] dark:text-faddit'
+                        : 'text-gray-600 hover:bg-[#f3f2f2] hover:text-gray-900 dark:text-gray-300 dark:hover:bg-[#f3f2f2] dark:hover:text-gray-100'
                     }`}
                   >
                     나의 프로필
@@ -739,8 +731,8 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
                     to='/faddit/my/plan'
                     className={`block rounded-lg px-3 py-2 text-sm font-medium transition ${
                       isMyPlanActive
-                        ? 'bg-faddit/10 text-faddit dark:bg-faddit/20 dark:text-faddit'
-                        : 'text-gray-600 hover:bg-white/80 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700/70 dark:hover:text-gray-100'
+                        ? 'bg-[#f3f2f2] text-faddit dark:bg-[#f3f2f2] dark:text-faddit'
+                        : 'text-gray-600 hover:bg-[#f3f2f2] hover:text-gray-900 dark:text-gray-300 dark:hover:bg-[#f3f2f2] dark:hover:text-gray-100'
                     }`}
                   >
                     나의 플랜
@@ -751,8 +743,8 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
                     to='/faddit/my/billing'
                     className={`block rounded-lg px-3 py-2 text-sm font-medium transition ${
                       isMyBillingActive
-                        ? 'bg-faddit/10 text-faddit dark:bg-faddit/20 dark:text-faddit'
-                        : 'text-gray-600 hover:bg-white/80 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700/70 dark:hover:text-gray-100'
+                        ? 'bg-[#f3f2f2] text-faddit dark:bg-[#f3f2f2] dark:text-faddit'
+                        : 'text-gray-600 hover:bg-[#f3f2f2] hover:text-gray-900 dark:text-gray-300 dark:hover:bg-[#f3f2f2] dark:hover:text-gray-100'
                     }`}
                   >
                     나의 결제내역
@@ -769,11 +761,11 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
                   <li>
                     <div
                       ref={setMyWorkspaceDropRef}
-                      className={`mb-0.5 cursor-pointer rounded-md py-2 pr-3 transition duration-150 hover:bg-white/80 dark:hover:bg-gray-700/70 ${
+                      className={`mb-0.5 cursor-pointer rounded-md py-2 pr-3 transition duration-150 hover:bg-[#f3f2f2] dark:hover:bg-[#f3f2f2] ${
                         isWorkspaceRootRoute
-                          ? 'bg-faddit/10 dark:bg-faddit/20'
+                          ? 'bg-[#f3f2f2] dark:bg-[#f3f2f2]'
                           : isMyWorkspaceOver
-                            ? 'bg-faddit/10 outline outline-1 outline-faddit/40 dark:bg-faddit/20 dark:outline-faddit/60'
+                            ? 'bg-[#f3f2f2] outline outline-1 outline-[#e5e3e3] dark:bg-[#f3f2f2] dark:outline-[#e5e3e3]'
                             : ''
                       }`}
                       onClick={() => {
@@ -791,7 +783,7 @@ function Drivebar({ sidebarOpen, setSidebarOpen, variant = 'default', onOpenSear
                         </div>
                         <button
                           type='button'
-                          className='lg:sidebar-expanded:flex ml-2 flex shrink-0 cursor-pointer rounded p-0.5 text-gray-400 hover:bg-gray-100/80 hover:text-gray-600 lg:hidden 2xl:flex dark:text-gray-500 dark:hover:bg-gray-700/60 dark:hover:text-gray-200'
+                          className='lg:sidebar-expanded:flex ml-2 flex shrink-0 cursor-pointer rounded p-0.5 text-gray-400 hover:bg-[#f3f2f2] hover:text-gray-600 lg:hidden 2xl:flex dark:text-gray-500 dark:hover:bg-[#f3f2f2] dark:hover:text-gray-200'
                           onClick={(event) => {
                             event.stopPropagation();
                             setPointedFolderId('my-workspace');

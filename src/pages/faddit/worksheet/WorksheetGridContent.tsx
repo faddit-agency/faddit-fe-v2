@@ -938,7 +938,7 @@ export default function WorksheetGridContent({
       return worksheetElementFolderId;
     }
 
-    const rootData = await getDriveAll(rootFolderId);
+    const rootData = await getDriveAll(rootFolderId, { includeHidden: true });
     const folderName = getWorksheetElementFolderName(worksheetId);
     const existingFolder = rootData.folders.find((folder) => folder.name === folderName);
 
@@ -950,9 +950,12 @@ export default function WorksheetGridContent({
     await createDriveFolder({
       parentId: rootFolderId,
       name: folderName,
+      visibilityScope: 'worksheet_upload',
     });
 
-    const refreshedRootData = await getDriveAll(rootFolderId);
+    const refreshedRootData = await getDriveAll(rootFolderId, {
+      includeHidden: true,
+    });
     const createdFolder = refreshedRootData.folders.find((folder) => folder.name === folderName);
     if (!createdFolder) {
       return null;
@@ -984,6 +987,7 @@ export default function WorksheetGridContent({
           userId,
           files: [normalizedFile],
           tags: [tag],
+          visibilityScope: 'worksheet_upload',
         });
 
         const createdEntry = uploadResult.result.find(

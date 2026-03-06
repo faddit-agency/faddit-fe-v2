@@ -33,6 +33,7 @@ export interface DriveItem {
   size?: string;
   parentId?: string | null;
   sourcePath?: string;
+  visibilityScope?: DriveNode['visibilityScope'];
   stateStoreKey?: string;
 }
 
@@ -44,6 +45,8 @@ export interface DriveFolder {
   creatorName: string;
   parentId: string | null;
   isStarred: boolean;
+  sourcePath?: string;
+  visibilityScope?: DriveNode['visibilityScope'];
 }
 
 export interface SidebarItem {
@@ -114,6 +117,8 @@ const toDriveFolder = (folder: DriveNode): DriveFolder => ({
   creatorName: folder.creatorName || '',
   parentId: folder.parentId,
   isStarred: folder.isStarred,
+  sourcePath: folder.path,
+  visibilityScope: folder.visibilityScope,
 });
 
 const toSidebarFolder = (folder: DriveNode): SidebarItem => ({
@@ -131,6 +136,24 @@ const toSidebarFile = (file: DriveNode): SidebarItem => ({
   name: file.name,
   parentId: file.parentId,
 });
+
+const WORKSHEET_UPLOAD_FOLDER_PREFIX = 'worksheet-elements-';
+const WORKSHEET_UPLOAD_PATH_SEGMENT = '/worksheet-elements-';
+
+const isWorksheetUploadProtectedNode = (
+  node: Pick<DriveNode, 'name' | 'visibilityScope' | 'path'>,
+) => {
+  const normalizedName = String(node.name || '').trim().toLowerCase();
+  const normalizedPath = String(node.path || '').trim().toLowerCase();
+  return (
+    node.visibilityScope === 'worksheet_upload' ||
+    normalizedName.startsWith(WORKSHEET_UPLOAD_FOLDER_PREFIX) ||
+    normalizedPath.includes(WORKSHEET_UPLOAD_PATH_SEGMENT)
+  );
+};
+
+const isWorksheetUploadContainer = (node: Pick<DriveNode, 'name' | 'visibilityScope' | 'path'>) =>
+  isWorksheetUploadProtectedNode(node);
 
 const dedupeSidebarNodesById = (nodes: SidebarItem[]): SidebarItem[] => {
   const byId = new Map<string, SidebarItem>();
@@ -373,6 +396,18 @@ const formatDriveItemSubtitle = (extension?: string) => {
   return `.${normalized}`;
 };
 
+const resolveDriveNodeBadge = (node: Pick<DriveNode, 'type' | 'tag'>) => {
+  if (node.tag) {
+    return String(node.tag);
+  }
+
+  if (node.type === 'worksheet') {
+    return '작업지시서';
+  }
+
+  return '파일';
+};
+
 const toDriveItem = (node: DriveNode, imageSrc: string): DriveItem => ({
   id: node.fileSystemId,
   worksheetId: node.worksheetId,
@@ -381,7 +416,7 @@ const toDriveItem = (node: DriveNode, imageSrc: string): DriveItem => ({
   imageAlt: node.name,
   title: node.name,
   subtitle: formatDriveItemSubtitle(node.mimetype),
-  badge: node.tag ? String(node.tag) : '파일',
+  badge: resolveDriveNodeBadge(node),
   isStarred: node.isStarred,
   owner: node.creatorName || undefined,
   ownerProfileImg: node.creatorProfileImg || undefined,
@@ -391,6 +426,7 @@ const toDriveItem = (node: DriveNode, imageSrc: string): DriveItem => ({
   size: formatBytes(node.size),
   parentId: node.parentId,
   sourcePath: node.path,
+  visibilityScope: node.visibilityScope,
   stateStoreKey: 'DriveContext.items',
 });
 
@@ -474,8 +510,12 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
       getDriveStarredAll(),
     ]);
 
-    const rootFolders = rootData.folders.filter((node) => node.type === 'folder');
-    const starredFolders = starredData.folders.filter((node) => node.type === 'folder');
+    const rootFolders = rootData.folders.filter(
+      (node) => node.type === 'folder' && !isWorksheetUploadContainer(node),
+    );
+    const starredFolders = starredData.folders.filter(
+      (node) => node.type === 'folder' && !isWorksheetUploadContainer(node),
+    );
 
     const nextParentMap: Record<string, string | null> = {};
     rootFolders.forEach((folder) => {
@@ -519,7 +559,9 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
       }
 
       const folderData = await getDriveAll(folderId);
-      const folders = folderData.folders.filter((node) => node.type === 'folder');
+      const folders = folderData.folders.filter(
+        (node) => node.type === 'folder' && !isWorksheetUploadContainer(node),
+      );
       const fileItems = await Promise.all(
         folderData.files.map(async (fileNode) => {
           console.log('[Drive] fetched file node -> storing to DriveContext.items', {
@@ -626,7 +668,9 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
     async (folderId: string) => {
       const childData = await getDriveAll(folderId);
       const children = [
-        ...childData.folders.filter((node) => node.type === 'folder').map(toSidebarFolder),
+        ...childData.folders
+          .filter((node) => node.type === 'folder' && !isWorksheetUploadContainer(node))
+          .map(toSidebarFolder),
         ...childData.files.map(toSidebarFile),
       ];
 
@@ -656,7 +700,33 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
 
-      const movingIds = new Set(ids);
+      const movableIds = ids.filter((id) => {
+        const item = items.find((candidate) => candidate.id === id);
+        if (item) {
+          return !isWorksheetUploadProtectedNode({
+            name: item.title,
+            path: item.sourcePath,
+            visibilityScope: item.visibilityScope,
+          });
+        }
+
+        const folder = driveFolders.find((candidate) => candidate.id === id);
+        if (folder) {
+          return !isWorksheetUploadProtectedNode({
+            name: folder.name,
+            path: folder.sourcePath,
+            visibilityScope: folder.visibilityScope,
+          });
+        }
+
+        return true;
+      });
+
+      if (!movableIds.length) {
+        throw new Error('Worksheet upload items cannot be moved');
+      }
+
+      const movingIds = new Set(movableIds);
 
       setWorkspaces((prev) =>
         moveNodesWithRootSupport(prev, movingIds, targetFolderId, rootFolderId),
@@ -666,14 +736,14 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
       );
 
       await updateDriveItems({
-        id: ids,
+        id: movableIds,
         parentId: targetFolderId,
         currentId: sourceFolderId,
       });
 
       setItemParentMap((prev) => {
         const next = { ...prev };
-        ids.forEach((id) => {
+        movableIds.forEach((id) => {
           next[id] = targetFolderId;
         });
         return next;
@@ -700,7 +770,7 @@ export const DriveProvider = ({ children }: { children: ReactNode }) => {
         }
       }
     },
-    [loadFolderChildren, refreshDrive, rootFolderId],
+    [driveFolders, items, loadFolderChildren, refreshDrive, rootFolderId],
   );
 
   const createFolder = useCallback(

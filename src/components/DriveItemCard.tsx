@@ -1,5 +1,6 @@
 import React, { useId, useState } from 'react';
 import * as PopoverPrimitive from '@radix-ui/react-popover';
+import { Upload } from 'lucide-react';
 
 export interface DriveItemCardProps {
   /** 이미지 URL */
@@ -56,6 +57,8 @@ export interface DriveItemCardProps {
   recentActionLabel?: string;
   isStarred?: boolean;
   hideHoverTools?: boolean;
+  showUploadSourceIcon?: boolean;
+  canMoveToFolder?: boolean;
   onMoveToFolder?: (id: string) => void;
   onAddFavorite?: (id: string, nextStarred: boolean) => void;
   onEdit?: (id: string) => void;
@@ -487,6 +490,8 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
   recentActionLabel,
   isStarred = false,
   hideHoverTools = false,
+  showUploadSourceIcon = false,
+  canMoveToFolder = true,
   onMoveToFolder,
   onAddFavorite,
   onEdit,
@@ -531,7 +536,7 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
 
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: id || 'draggable-item',
-    disabled: !id || chipEditorOpen,
+    disabled: !id || chipEditorOpen || !canMoveToFolder,
     data: {
       type: 'drive-item',
       imageSrc,
@@ -740,18 +745,20 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
                     onPointerDown={(e) => e.stopPropagation()}
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <button
-                      type='button'
-                      className='w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
-                      onClick={() => {
-                        setKebabOpen(false);
-                        if (id && onMoveToFolder) {
-                          onMoveToFolder(id);
-                        }
-                      }}
-                    >
-                      파일 이동
-                    </button>
+                    {canMoveToFolder ? (
+                      <button
+                        type='button'
+                        className='w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
+                        onClick={() => {
+                          setKebabOpen(false);
+                          if (id && onMoveToFolder) {
+                            onMoveToFolder(id);
+                          }
+                        }}
+                      >
+                        파일 이동
+                      </button>
+                    ) : null}
                     <button
                       type='button'
                       className='w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
@@ -787,12 +794,17 @@ const DriveItemCard: React.FC<DriveItemCardProps> = ({
         <div className='flex grow flex-col p-[clamp(12px,1.2vw,20px)]'>
           {/* Badge (이미지 아래) */}
           {(categoryLabel || badge) && (
-            <div className=''>
+            <div className='inline-flex items-center gap-1'>
               <span
                 className={`inline-flex items-center rounded-full border px-2.5 pt-1 pb-0.5 text-center text-xs font-medium ${categoryChipStyle}`}
               >
                 {displayCategoryLabel}
               </span>
+              {showUploadSourceIcon ? (
+                <span className='inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/65 text-white'>
+                  <Upload size={11} />
+                </span>
+              ) : null}
             </div>
           )}
           <div className='mt-3 grow'>
