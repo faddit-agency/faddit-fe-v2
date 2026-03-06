@@ -75,10 +75,10 @@ function ToolButton({ active = false, disabled = false, onClick, children, title
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={`flex h-7 w-7 items-center justify-center rounded-md border text-slate-500 transition-colors ${
+      className={`flex h-7 w-7 items-center justify-center rounded-md border text-slate-500 transition-colors dark:text-gray-300 ${
         active
-          ? 'border-blue-200 bg-blue-50 text-blue-600'
-          : 'border-transparent hover:border-slate-200 hover:bg-slate-50 hover:text-slate-700'
+          ? 'border-blue-200 bg-blue-50 text-blue-600 dark:border-violet-500/40 dark:bg-violet-500/15 dark:text-violet-200'
+          : 'border-transparent hover:border-slate-200 hover:bg-slate-50 hover:text-slate-700 dark:hover:border-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-100'
       } ${disabled ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}`}
     >
       {children}
@@ -111,7 +111,7 @@ export default function WorksheetNoticeEditor({
     editorProps: {
       attributes: {
         class:
-          'min-h-[180px] border-0 px-3 py-2 text-[13px] leading-6 text-slate-700 outline-none focus:outline-none [&_p]:my-1 [&_ul]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_h2]:mt-2 [&_h2]:mb-1 [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 [&_h3]:text-xs [&_h3]:font-semibold [&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:text-slate-500',
+          'min-h-[180px] border-0 px-3 py-2 text-[13px] leading-6 text-slate-700 outline-none focus:outline-none dark:text-slate-200 [&_p]:my-1 [&_ul]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_h2]:mt-2 [&_h2]:mb-1 [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 [&_h3]:text-xs [&_h3]:font-semibold dark:[&_h2]:text-slate-100 dark:[&_h3]:text-slate-100 [&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:text-slate-500 dark:[&_blockquote]:border-slate-600 dark:[&_blockquote]:text-slate-400',
       },
     },
   });
@@ -147,8 +147,8 @@ export default function WorksheetNoticeEditor({
   if (!editor) return null;
 
   return (
-    <div className='flex h-full min-h-0 flex-col bg-white'>
-      <div className='flex items-center gap-1 border-b border-slate-200 bg-white px-2 py-1.5'>
+    <div className='flex h-full min-h-0 flex-col bg-white dark:bg-gray-900'>
+      <div className='flex items-center gap-1 border-b border-slate-200 bg-white px-2 py-1.5 dark:border-gray-700 dark:bg-gray-900'>
         <ToolButton
           title='굵게 (Ctrl/Cmd+B)'
           active={editor.isActive('bold')}
@@ -171,7 +171,7 @@ export default function WorksheetNoticeEditor({
           <UnderlineIcon size={14} />
         </ToolButton>
 
-        <div className='mx-1 h-5 w-px bg-slate-200' />
+        <div className='mx-1 h-5 w-px bg-slate-200 dark:bg-gray-700' />
 
         <ToolButton
           title='제목 2'
@@ -209,7 +209,7 @@ export default function WorksheetNoticeEditor({
           <Quote size={14} />
         </ToolButton>
 
-        <div className='mx-1 h-5 w-px bg-slate-200' />
+        <div className='mx-1 h-5 w-px bg-slate-200 dark:bg-gray-700' />
 
         <ToolButton
           title='되돌리기 (Ctrl/Cmd+Z)'
@@ -227,7 +227,7 @@ export default function WorksheetNoticeEditor({
         </ToolButton>
       </div>
 
-      <div className='min-h-0 flex-1 overflow-y-auto bg-white'>
+      <div className='min-h-0 flex-1 overflow-y-auto bg-white dark:bg-gray-900'>
         <EditorContent editor={editor} />
       </div>
     </div>

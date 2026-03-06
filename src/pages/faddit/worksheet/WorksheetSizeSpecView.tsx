@@ -601,8 +601,10 @@ export default function WorksheetSizeSpecView({
       e.dataTransfer.effectAllowed = 'move';
       e.dataTransfer.setData('text/plain', `${type}:${index}`);
       const dragPreview = document.createElement('div');
-      dragPreview.className =
-        'rounded-md border border-blue-200 bg-white/95 px-2 py-1 text-xs font-medium text-blue-700 shadow-md';
+      const darkMode = document.documentElement.classList.contains('dark');
+      dragPreview.className = darkMode
+        ? 'rounded-md border border-violet-500/40 bg-gray-900/95 px-2 py-1 text-xs font-medium text-violet-200 shadow-md'
+        : 'rounded-md border border-blue-200 bg-white/95 dark:bg-gray-900/95 px-2 py-1 text-xs font-medium text-blue-700 shadow-md';
       dragPreview.textContent = type === 'column' ? '열 이동' : '행 이동';
       dragPreview.style.position = 'fixed';
       dragPreview.style.top = '-1000px';
@@ -674,7 +676,7 @@ export default function WorksheetSizeSpecView({
   }, []);
 
   return (
-    <div className='flex h-full flex-col overflow-hidden'>
+    <div className='worksheet-size-spec-view flex h-full flex-col overflow-hidden'>
       {leadingImageColumn?.onUploadFile ? (
         <input
           ref={leadingImageUploadInputRef}
@@ -684,15 +686,15 @@ export default function WorksheetSizeSpecView({
           onChange={handleLeadingImageFileChange}
         />
       ) : null}
-      <div className='flex-1 overflow-auto p-4'>
+      <div className='flex-1 overflow-auto p-4 dark:bg-gray-900'>
         <div
-          className={`relative overflow-hidden rounded-lg bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] ${
+          className={`relative overflow-hidden rounded-lg bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:bg-gray-900 ${
             fillWidth ? 'w-full' : 'inline-block'
           }`}
         >
-          <div className='pointer-events-none absolute inset-0 z-40 rounded-lg border border-slate-200' />
+          <div className='pointer-events-none absolute inset-0 z-40 rounded-lg border border-slate-200 dark:border-gray-700' />
           <table
-            className='border-collapse border-spacing-0 bg-white text-sm'
+            className='border-collapse border-spacing-0 bg-white text-sm dark:bg-gray-900 dark:text-gray-100'
             style={{ width: fillWidth ? '100%' : 'max-content', tableLayout: 'fixed' }}
           >
             <colgroup>
@@ -707,22 +709,22 @@ export default function WorksheetSizeSpecView({
               <tr>
                 {showRowHeader && (
                   <th
-                    className='relative sticky top-0 left-0 z-30 border-y border-r border-l border-slate-200 bg-gray-50 p-0'
+                    className='relative sticky top-0 left-0 z-30 border-y border-r border-l border-slate-200 dark:border-gray-700 bg-gray-50 p-0 dark:bg-gray-800'
                     style={{
                       width: `${rowHeaderExpanded ? ROW_HEADER_EXPANDED_WIDTH : ROW_HEADER_COMPACT_WIDTH}px`,
                       minWidth: `${ROW_HEADER_COMPACT_WIDTH}px`,
                       transition: 'width 240ms ease',
                     }}
                   >
-                    <div className='h-[33px] bg-gray-50' />
+                    <div className='h-[33px] bg-gray-50 dark:bg-gray-800' />
                   </th>
                 )}
                 {showRowActionRail && (
-                  <th className='relative sticky top-0 z-20 border-y border-r border-slate-200 bg-gray-50 p-0' />
+                  <th className='relative sticky top-0 z-20 border-y border-r border-slate-200 dark:border-gray-700 bg-gray-50 p-0 dark:bg-gray-800' />
                 )}
                 {hasLeadingImageColumn && (
-                  <th className='relative sticky top-0 z-20 border-y border-r border-slate-200 bg-gray-50 p-0'>
-                    <div className='flex h-[33px] items-center justify-center px-2 text-[11px] font-semibold text-slate-600'>
+                  <th className='relative sticky top-0 z-20 border-y border-r border-slate-200 dark:border-gray-700 bg-gray-50 p-0 dark:bg-gray-800'>
+                    <div className='flex h-[33px] items-center justify-center px-2 text-[11px] font-semibold text-slate-600 dark:text-gray-200'>
                       {leadingImageColumn?.header ?? '사진'}
                     </div>
                   </th>
@@ -738,7 +740,7 @@ export default function WorksheetSizeSpecView({
                   return (
                     <th
                       key={colIndex}
-                      className='relative sticky top-0 z-20 border-y border-r border-slate-200 bg-gray-50 p-0'
+                      className='relative sticky top-0 z-20 border-y border-r border-slate-200 dark:border-gray-700 bg-gray-50 p-0 dark:bg-gray-800'
                       style={
                         fillWidth
                           ? undefined
@@ -785,7 +787,7 @@ export default function WorksheetSizeSpecView({
                         )}
                         {isReadOnlyHeader ? (
                           <div
-                            className={`relative z-0 w-full py-1.5 text-center text-xs font-semibold text-slate-600 ${
+                            className={`relative z-0 w-full py-1.5 text-center text-xs font-semibold text-slate-600 dark:text-gray-200 ${
                               isDragOver ? 'bg-blue-50/50' : 'bg-transparent'
                             }`}
                             style={{
@@ -816,7 +818,7 @@ export default function WorksheetSizeSpecView({
                             value={displayHeaderLabel}
                             onChange={(e) => handleHeaderChange(colIndex, e.target.value)}
                             placeholder='사이즈'
-                            className={`relative z-0 w-full border-0 py-1.5 text-center text-xs font-semibold text-slate-600 outline-none focus:bg-blue-50 ${isDragOver ? 'bg-blue-50/50' : 'bg-transparent'}`}
+                            className={`relative z-0 w-full border-0 py-1.5 text-center text-xs font-semibold text-slate-600 dark:text-gray-200 outline-none focus:bg-blue-50 dark:focus:bg-blue-500/20 ${isDragOver ? 'bg-blue-50/50' : 'bg-transparent'}`}
                             style={{
                               ...getMotionStyle(xShift, 0, isDragged, isDragOver && !isDragged),
                               paddingLeft: `${
@@ -870,26 +872,26 @@ export default function WorksheetSizeSpecView({
                   );
                 })}
                 {showTotals && (
-                  <th className='relative sticky top-0 z-20 border-y border-r border-slate-300 bg-slate-200 p-0'>
-                    <div className='flex h-[33px] items-center justify-center px-2 text-[11px] font-semibold text-slate-700'>
+                  <th className='relative sticky top-0 z-20 border-y border-r border-slate-300 dark:border-gray-600 bg-slate-200 dark:bg-gray-700 p-0'>
+                    <div className='flex h-[33px] items-center justify-center px-2 text-[11px] font-semibold text-slate-700 dark:text-gray-100'>
                       Total
                     </div>
                   </th>
                 )}
                 {showAddColumnButton && (
-                  <th className='relative sticky top-0 z-20 w-8 border-y border-r border-slate-200 bg-gray-50 p-0'>
+                  <th className='relative sticky top-0 z-20 w-8 border-y border-r border-slate-200 dark:border-gray-700 bg-gray-50 p-0 dark:bg-gray-800'>
                     <button
                       type='button'
                       onClick={addColumn}
                       title='열 추가'
-                      className='flex h-[33px] w-full cursor-pointer items-center justify-center bg-gray-50 p-1 text-slate-400 transition-colors hover:text-slate-600'
+                      className='flex h-[33px] w-full cursor-pointer items-center justify-center bg-gray-50 p-1 dark:bg-gray-800 text-slate-400 dark:text-gray-500 transition-colors hover:text-slate-600 dark:hover:text-gray-200'
                     >
                       <Plus size={12} />
                     </button>
                   </th>
                 )}
                 {!showAddColumnButton && showTrailingActionColumn && (
-                  <th className='relative sticky top-0 z-20 w-8 border-y border-r border-slate-200 bg-gray-50 p-0' />
+                  <th className='relative sticky top-0 z-20 w-8 border-y border-r border-slate-200 dark:border-gray-700 bg-gray-50 p-0 dark:bg-gray-800' />
                 )}
               </tr>
             </thead>
@@ -922,7 +924,7 @@ export default function WorksheetSizeSpecView({
                   >
                     {showRowHeader && (
                       <td
-                        className='sticky left-0 z-10 border border-slate-200 bg-white p-0'
+                        className='sticky left-0 z-10 border border-slate-200 dark:border-gray-700 bg-white p-0 dark:bg-gray-900'
                         style={{
                           width: `${rowHeaderExpanded ? ROW_HEADER_EXPANDED_WIDTH : ROW_HEADER_COMPACT_WIDTH}px`,
                           minWidth: `${ROW_HEADER_COMPACT_WIDTH}px`,
@@ -967,7 +969,9 @@ export default function WorksheetSizeSpecView({
                             onFocus={() => handleCellFocus(rowIndex, 0, row[0])}
                             onChange={(e) => handleCellDraftChange(rowIndex, 0, e.target.value)}
                             onBlur={() => handleCellCommit(rowIndex, 0)}
-                            className={`relative z-0 w-full border-0 py-1.5 text-left text-xs font-medium text-slate-600 outline-none focus:bg-blue-50 ${isDragOver ? 'bg-blue-50/50' : 'bg-gray-50'}`}
+                            className={`relative z-0 w-full border-0 py-1.5 text-left text-xs font-medium text-slate-600 dark:text-gray-200 outline-none focus:bg-blue-50 dark:focus:bg-blue-500/20 ${
+                              isDragOver ? 'bg-blue-50/50 dark:bg-blue-500/20' : 'bg-gray-50 dark:bg-gray-800'
+                            }`}
                             style={{
                               ...getMotionStyle(
                                 0,
@@ -1015,14 +1019,14 @@ export default function WorksheetSizeSpecView({
                     )}
 
                     {showRowActionRail && (
-                      <td className='border border-slate-200 bg-white p-0'>
+                      <td className='border border-slate-200 dark:border-gray-700 bg-white p-0 dark:bg-gray-900'>
                         <div className='flex h-full items-center justify-center gap-1'>
                           <button
                             type='button'
                             draggable
                             onDragStart={(e) => handleDragStart(e, 'row', rowIndex)}
                             onDragEnd={handleDragEnd}
-                            className='flex h-5 w-5 cursor-grab items-center justify-center rounded-md border border-slate-200 bg-white/95 text-slate-400 opacity-0 transition-all duration-200 ease-out group-hover/row:opacity-100 hover:border-slate-300 hover:text-slate-700 active:cursor-grabbing'
+                            className='flex h-5 w-5 cursor-grab items-center justify-center rounded-md border border-slate-200 dark:border-gray-700 bg-white/95 dark:bg-gray-900/95 text-slate-400 dark:text-gray-500 opacity-0 transition-all duration-200 ease-out group-hover/row:opacity-100 hover:border-slate-300 dark:hover:border-gray-500 hover:text-slate-700 dark:hover:text-gray-100 active:cursor-grabbing'
                             title='행 이동'
                           >
                             <GripVertical size={13} strokeWidth={2.2} />
@@ -1031,7 +1035,7 @@ export default function WorksheetSizeSpecView({
                             <button
                               type='button'
                               onClick={() => deleteRow(rowIndex)}
-                              className='flex h-5 w-5 cursor-pointer items-center justify-center rounded-md border border-red-200 bg-white/95 text-red-400 opacity-0 transition-all duration-200 ease-out group-hover/row:opacity-100 hover:border-red-300 hover:bg-red-50 hover:text-red-500'
+                              className='flex h-5 w-5 cursor-pointer items-center justify-center rounded-md border border-red-200 bg-white/95 dark:bg-gray-900/95 text-red-400 opacity-0 transition-all duration-200 ease-out group-hover/row:opacity-100 hover:border-red-300 hover:bg-red-50 hover:text-red-500'
                               title='행 삭제'
                             >
                               <Trash2 size={13} strokeWidth={2.1} />
@@ -1042,11 +1046,11 @@ export default function WorksheetSizeSpecView({
                     )}
 
                     {hasLeadingImageColumn && (
-                      <td className='border border-slate-200 bg-white p-0'>
+                      <td className='border border-slate-200 dark:border-gray-700 bg-white p-0 dark:bg-gray-900'>
                         <div
                           className={`group/photo relative flex h-full min-h-[56px] items-center justify-center p-1 transition-colors ${
                             leadingImageColumn?.onUploadFile
-                              ? 'cursor-pointer hover:bg-violet-50/30'
+                              ? 'cursor-pointer hover:bg-violet-50/30 dark:hover:bg-violet-500/12'
                               : ''
                           }`}
                           onDragOver={(event) => {
@@ -1067,20 +1071,20 @@ export default function WorksheetSizeSpecView({
                               <img
                                 src={rowImageItem.thumbnailUrl}
                                 alt={rowImageItem.name}
-                                className='h-12 w-full rounded-md object-cover ring-1 ring-slate-200'
+                                className='h-12 w-full rounded-md object-cover ring-1 ring-slate-200 dark:ring-gray-700'
                                 loading='lazy'
                               />
                               {leadingImageColumn?.onUploadFile ? (
                                 <div className='pointer-events-none absolute inset-0 flex items-center justify-center rounded-md bg-black/0 opacity-0 transition-all duration-150 group-hover/photo:bg-black/35 group-hover/photo:opacity-100'>
-                                  <span className='rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-medium text-gray-700'>
+                                  <span className='rounded-full bg-white/95 dark:bg-gray-900/95 px-2 py-0.5 text-[10px] font-medium text-gray-700'>
                                     클릭해서 교체
                                   </span>
                                 </div>
                               ) : null}
                             </div>
                           ) : (
-                            <div className='flex h-12 w-full flex-col items-center justify-center rounded-md border border-dashed border-slate-300 bg-gradient-to-b from-white to-slate-50 text-[10px] text-slate-500 transition-colors group-hover/photo:border-violet-300 group-hover/photo:text-violet-600'>
-                              <span className='mb-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-100 transition-colors group-hover/photo:bg-violet-100'>
+                            <div className='flex h-12 w-full flex-col items-center justify-center rounded-md border border-dashed border-slate-300 dark:border-gray-600 bg-gradient-to-b from-white to-slate-50 dark:from-gray-900 dark:to-gray-800 text-[10px] text-slate-500 dark:text-gray-400 transition-colors group-hover/photo:border-violet-300 group-hover/photo:text-violet-600'>
+                              <span className='mb-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-100 dark:bg-gray-800 transition-colors group-hover/photo:bg-violet-100'>
                                 <Upload size={10} />
                               </span>
                               <span className='font-medium'>
@@ -1108,7 +1112,7 @@ export default function WorksheetSizeSpecView({
                       return (
                         <td
                           key={colIndex}
-                          className='border border-slate-200 p-0'
+                          className='border border-slate-200 dark:border-gray-700 p-0'
                           style={
                             fillWidth
                               ? undefined
@@ -1132,7 +1136,7 @@ export default function WorksheetSizeSpecView({
                                 handleCellDraftChange(rowIndex, colIndex, e.target.value)
                               }
                               onBlur={() => handleCellCommit(rowIndex, colIndex)}
-                              className='w-full border-0 bg-transparent px-1.5 py-1.5 text-center text-xs text-slate-700 outline-none focus:bg-blue-50'
+                              className='w-full border-0 bg-transparent px-1.5 py-1.5 text-center text-xs text-slate-700 dark:text-gray-100 outline-none focus:bg-blue-50 dark:focus:bg-blue-500/20'
                               style={{
                                 ...getMotionStyle(
                                   xShift,
@@ -1157,14 +1161,14 @@ export default function WorksheetSizeSpecView({
                       );
                     })}
                     {showTotals && (
-                      <td className='border border-slate-300 bg-slate-100 p-0'>
-                        <div className='flex h-full w-full items-center justify-center px-2 py-1.5 text-xs font-semibold text-slate-700'>
+                      <td className='border border-slate-300 dark:border-gray-600 bg-slate-100 dark:bg-gray-800 p-0'>
+                        <div className='flex h-full w-full items-center justify-center px-2 py-1.5 text-xs font-semibold text-slate-700 dark:text-gray-100'>
                           {formatNumber(rowTotals[rowIndex] ?? 0, 0)}
                         </div>
                       </td>
                     )}
                     {showTrailingActionColumn && (
-                      <td className='w-8 border border-slate-200 bg-white p-0' />
+                      <td className='w-8 border border-slate-200 dark:border-gray-700 bg-white p-0 dark:bg-gray-900' />
                     )}
                   </tr>
                 );
@@ -1172,45 +1176,45 @@ export default function WorksheetSizeSpecView({
               {showTotals && (
                 <tr>
                   {showRowHeader ? (
-                    <td className='sticky left-0 z-10 border border-slate-200 bg-slate-100 p-0'>
-                      <div className='flex h-[33px] items-center px-3 text-xs font-semibold text-slate-700'>
+                    <td className='sticky left-0 z-10 border border-slate-200 dark:border-gray-700 bg-slate-100 dark:bg-gray-800 p-0'>
+                      <div className='flex h-[33px] items-center px-3 text-xs font-semibold text-slate-700 dark:text-gray-100'>
                         Total
                       </div>
                     </td>
                   ) : (
-                    showRowActionRail && <td className='border border-slate-200 bg-slate-100 p-0' />
+                    showRowActionRail && <td className='border border-slate-200 dark:border-gray-700 bg-slate-100 dark:bg-gray-800 p-0' />
                   )}
 
                   {hasLeadingImageColumn && (
-                    <td className='border border-slate-200 bg-slate-100 p-0' />
+                    <td className='border border-slate-200 dark:border-gray-700 bg-slate-100 dark:bg-gray-800 p-0' />
                   )}
 
                   {columnTotals.map((sum, idx) => (
                     <td
                       key={`total-col-${idx}`}
-                      className='border border-slate-200 bg-slate-50 p-0'
+                      className='border border-slate-200 dark:border-gray-700 bg-slate-50 dark:bg-gray-800 p-0'
                     >
-                      <div className='flex h-[33px] items-center justify-center px-2 text-xs font-semibold text-slate-700'>
+                      <div className='flex h-[33px] items-center justify-center px-2 text-xs font-semibold text-slate-700 dark:text-gray-100'>
                         {formatNumber(sum, 0)}
                       </div>
                     </td>
                   ))}
 
-                  <td className='border border-slate-300 bg-slate-200 p-0'>
-                    <div className='flex h-[33px] items-center justify-center px-2 text-xs font-semibold text-slate-800'>
+                  <td className='border border-slate-300 dark:border-gray-600 bg-slate-200 dark:bg-gray-700 p-0'>
+                    <div className='flex h-[33px] items-center justify-center px-2 text-xs font-semibold text-slate-800 dark:text-gray-100'>
                       {formatNumber(grandTotal, 0)}
                     </div>
                   </td>
 
                   {showTrailingActionColumn && (
-                    <td className='w-8 border border-slate-200 bg-white p-0' />
+                    <td className='w-8 border border-slate-200 dark:border-gray-700 bg-white p-0 dark:bg-gray-900' />
                   )}
                 </tr>
               )}
               <tr style={{ height: '33px' }}>
                 {showRowHeader ? (
                   <td
-                    className='sticky left-0 z-10 border border-slate-200 bg-gray-50 p-0'
+                    className='sticky left-0 z-10 border border-slate-200 dark:border-gray-700 bg-gray-50 p-0 dark:bg-gray-800'
                     style={{
                       width: `${rowHeaderExpanded ? ROW_HEADER_EXPANDED_WIDTH : ROW_HEADER_COMPACT_WIDTH}px`,
                       minWidth: `${ROW_HEADER_COMPACT_WIDTH}px`,
@@ -1221,7 +1225,7 @@ export default function WorksheetSizeSpecView({
                       type='button'
                       onClick={addRow}
                       title='행 추가'
-                      className='flex h-full w-full cursor-pointer items-center justify-center bg-gray-50 p-1 text-slate-400 transition-colors hover:text-slate-600'
+                      className='flex h-full w-full cursor-pointer items-center justify-center bg-gray-50 p-1 dark:bg-gray-800 text-slate-400 dark:text-gray-500 transition-colors hover:text-slate-600 dark:hover:text-gray-200'
                     >
                       <Plus size={12} />
                     </button>
@@ -1229,40 +1233,40 @@ export default function WorksheetSizeSpecView({
                 ) : (
                   <>
                     {showRowActionRail && (
-                      <td className='border border-slate-200 bg-gray-50 p-0'>
+                      <td className='border border-slate-200 dark:border-gray-700 bg-gray-50 p-0 dark:bg-gray-800'>
                         <button
                           type='button'
                           onClick={addRow}
                           title='행 추가'
-                          className='flex h-full w-full cursor-pointer items-center justify-center text-slate-400 transition-colors hover:text-slate-600'
+                          className='flex h-full w-full cursor-pointer items-center justify-center text-slate-400 dark:text-gray-500 transition-colors hover:text-slate-600 dark:hover:text-gray-200'
                         >
                           <Plus size={12} />
                         </button>
                       </td>
                     )}
                     {hasLeadingImageColumn && (
-                      <td className='border border-slate-200 bg-white p-0' />
+                      <td className='border border-slate-200 dark:border-gray-700 bg-white p-0 dark:bg-gray-900' />
                     )}
                     <td
                       colSpan={Math.max(1, spec.headers.length)}
-                      className='border border-slate-200 bg-white p-0'
+                      className='border border-slate-200 dark:border-gray-700 bg-white p-0 dark:bg-gray-900'
                     />
                   </>
                 )}
                 {showRowHeader && (
                   <>
                     {hasLeadingImageColumn && (
-                      <td className='border border-slate-200 bg-white p-0' />
+                      <td className='border border-slate-200 dark:border-gray-700 bg-white p-0 dark:bg-gray-900' />
                     )}
                     <td
                       colSpan={Math.max(1, spec.headers.length - 1)}
-                      className='border border-slate-200 bg-white p-0'
+                      className='border border-slate-200 dark:border-gray-700 bg-white p-0 dark:bg-gray-900'
                     />
                   </>
                 )}
-                {showTotals && <td className='border border-slate-200 bg-white p-0' />}
+                {showTotals && <td className='border border-slate-200 dark:border-gray-700 bg-white p-0 dark:bg-gray-900' />}
                 {showTrailingActionColumn && (
-                  <td className='w-8 border border-slate-200 bg-white p-0' />
+                  <td className='w-8 border border-slate-200 dark:border-gray-700 bg-white p-0 dark:bg-gray-900' />
                 )}
               </tr>
             </tbody>

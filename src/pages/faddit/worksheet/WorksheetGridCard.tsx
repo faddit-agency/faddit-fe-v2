@@ -26,7 +26,7 @@ const WorksheetGridCard: React.FC<WorksheetGridCardProps> = ({
     <section
       data-card-id={cardId}
       onMouseDownCapture={() => onActivate?.(cardId)}
-      className={`worksheet-grid-card-root flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg border bg-white transition-[border-color,box-shadow] duration-200 ${
+      className={`worksheet-grid-card-root flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg border bg-white transition-[border-color,box-shadow] duration-200 dark:bg-gray-900 ${
         isActive ? 'border-faddit' : 'border-transparent'
       }`}
       style={
@@ -41,7 +41,7 @@ const WorksheetGridCard: React.FC<WorksheetGridCardProps> = ({
         className={`worksheet-drag-handle flex shrink-0 cursor-grab items-center justify-between px-3 py-2 active:cursor-grabbing`}
       >
         <div className='flex min-w-0 items-center gap-2'>
-          <h3 className='text-[13px] font-semibold text-gray-700'>{title}</h3>
+          <h3 className='text-[13px] font-semibold text-gray-700 dark:text-gray-100'>{title}</h3>
           {headerExtra}
         </div>
         <div className='flex shrink-0 items-center gap-1'>
@@ -53,7 +53,7 @@ const WorksheetGridCard: React.FC<WorksheetGridCardProps> = ({
                 e.stopPropagation();
                 onClose();
               }}
-              className='worksheet-no-drag rounded p-0.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700'
+              className='worksheet-no-drag rounded p-0.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200'
             >
               <X size={13} strokeWidth={2} />
             </button>

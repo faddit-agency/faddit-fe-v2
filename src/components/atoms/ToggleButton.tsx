@@ -9,13 +9,13 @@ export default function ToggleButton({
 }) {
   return (
     <button
-      className='flex cursor-pointer items-center justify-center rounded-md p-3 transition-all duration-300 hover:bg-gray-100'
+      className='flex cursor-pointer items-center justify-center rounded-md p-3 transition-all duration-300 hover:bg-gray-100 dark:hover:bg-gray-800'
       onClick={onChange}
     >
       <div className='flex items-center gap-x-2'>
         <div
           className={`relative inline-flex h-[16px] w-[28px] cursor-pointer items-center rounded-full transition-colors duration-200 ease-in-out focus:outline-none ${
-            checked ? 'bg-black' : 'bg-[#d7d7d5]'
+            checked ? 'bg-black dark:bg-violet-500' : 'bg-[#d7d7d5] dark:bg-gray-600'
           }`}
           role='switch'
           aria-checked={checked}
@@ -26,7 +26,7 @@ export default function ToggleButton({
             }`}
           />
         </div>
-        <span className='b2 cursor-pointer text-[14px] font-semibold'>{label}</span>
+        <span className='b2 cursor-pointer text-[14px] font-semibold dark:text-gray-200'>{label}</span>
       </div>
     </button>
   );

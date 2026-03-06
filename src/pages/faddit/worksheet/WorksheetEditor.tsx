@@ -227,12 +227,12 @@ const WorksheetEditor: React.FC = () => {
   );
 
   return (
-    <div className='worksheet-pointer-scope flex h-screen w-screen gap-2 overflow-hidden bg-[#fafafa] p-2'>
+    <div className='worksheet-pointer-scope flex h-screen w-screen gap-2 overflow-hidden bg-[#fafafa] p-2 dark:bg-gray-950'>
       <CanvasProvider>
         <div className='h-full shrink-0'>
           <WorksheetToolbox />
         </div>
-        <section className='flex min-h-0 min-w-0 flex-1 flex-col gap-2'>
+        <section className='flex min-h-0 min-w-0 flex-1 flex-col gap-2 rounded-md bg-white/70 dark:bg-gray-900/70'>
           <WorksheetTopBar
             onExit={() => navigate(-1)}
             onSave={worksheetId && userId ? handleManualSave : undefined}

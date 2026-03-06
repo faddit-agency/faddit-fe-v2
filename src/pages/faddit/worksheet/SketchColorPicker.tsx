@@ -96,12 +96,13 @@ const STORAGE_KEYS = {
 const MAX_COLOR_ITEMS = 12;
 const MAX_PANTONE_ITEMS = 12;
 const SIDEPANEL_BUTTON_BASE =
-  'rounded-md border border-transparent transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1';
-const SIDEPANEL_BUTTON_IDLE = 'cursor-pointer text-gray-600 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700';
+  'rounded-md border border-transparent transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1 focus-visible:ring-offset-white dark:focus-visible:ring-offset-gray-900';
+const SIDEPANEL_BUTTON_IDLE =
+  'cursor-pointer text-gray-600 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 dark:text-gray-300 dark:hover:border-violet-400/50 dark:hover:bg-violet-500/10 dark:hover:text-violet-200';
 const SIDEPANEL_BUTTON_ACTIVE =
   'border-violet-500 bg-faddit text-white shadow-[0_4px_10px_rgba(118,59,255,0.22)] hover:border-violet-500 hover:bg-violet-600 hover:text-white';
 const SIDEPANEL_BUTTON_DISABLED =
-  'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-300 hover:border-gray-200 hover:bg-gray-50 hover:text-gray-300';
+  'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-300 hover:border-gray-200 hover:bg-gray-50 hover:text-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-500 dark:hover:border-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-500';
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
@@ -730,7 +731,7 @@ export default function SketchColorPicker({
   const hueThumbX = `${(hsb.h / 360) * 100}%`;
 
   return (
-    <div className='flex h-full min-h-0 w-full min-w-0 flex-col gap-2.5 overflow-x-hidden p-2.5'>
+    <div className='sketch-color-picker flex h-full min-h-0 w-full min-w-0 flex-col gap-2.5 overflow-x-hidden p-2.5'>
       <p className='text-[11px] font-medium text-gray-500'>{label}</p>
 
       <div className='grid grid-cols-2 items-center rounded-md border border-gray-200 bg-gray-50 p-0.5'>

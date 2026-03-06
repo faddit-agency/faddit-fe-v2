@@ -441,13 +441,13 @@ function DiagramPlaceholder({
   }, [sheetIdsKey]);
 
   return (
-    <div className='relative flex h-full flex-col bg-white'>
+    <div className='relative flex h-full flex-col bg-white dark:bg-gray-900'>
       <div className='relative flex min-h-0 flex-1 items-center justify-center px-5 pt-5 pb-3'>
         <button
           type='button'
           onClick={onPrev}
           disabled={!canPrev}
-          className='absolute top-1/2 left-4 z-10 flex h-14 w-14 -translate-y-1/2 items-center justify-center rounded-2xl bg-white/80 text-gray-300 shadow-sm transition-all duration-200 hover:text-violet-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-35'
+          className='absolute top-1/2 left-4 z-10 flex h-14 w-14 -translate-y-1/2 items-center justify-center rounded-2xl bg-white/80 text-gray-300 shadow-sm transition-all duration-200 hover:text-violet-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-35 dark:bg-gray-900/85 dark:text-gray-600'
         >
           <ChevronLeft size={28} strokeWidth={2.2} />
         </button>
@@ -460,7 +460,7 @@ function DiagramPlaceholder({
               className='h-full w-full object-contain'
             />
           ) : (
-            <div className='text-sm text-gray-400'>미리보기 없음</div>
+            <div className='text-sm text-gray-400 dark:text-gray-500'>미리보기 없음</div>
           )}
         </div>
 
@@ -468,7 +468,7 @@ function DiagramPlaceholder({
           type='button'
           onClick={onNext}
           disabled={!canNext}
-          className='absolute top-1/2 right-4 z-10 flex h-14 w-14 -translate-y-1/2 items-center justify-center rounded-2xl bg-white/80 text-gray-300 shadow-sm transition-all duration-200 hover:text-violet-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-35'
+          className='absolute top-1/2 right-4 z-10 flex h-14 w-14 -translate-y-1/2 items-center justify-center rounded-2xl bg-white/80 text-gray-300 shadow-sm transition-all duration-200 hover:text-violet-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-35 dark:bg-gray-900/85 dark:text-gray-600'
         >
           <ChevronRight size={28} strokeWidth={2.2} />
         </button>
@@ -486,13 +486,13 @@ function DiagramPlaceholder({
                 <button
                   type='button'
                   onClick={() => onSelectSheet(sheet.id)}
-                  className={`flex w-full shrink-0 flex-col rounded-md border bg-white p-1.5 text-left transition-all duration-200 ${
+                  className={`flex w-full shrink-0 flex-col rounded-md border bg-white p-1.5 text-left transition-all duration-200 dark:bg-gray-900 ${
                     isSelected
                       ? 'border-faddit'
-                      : 'border-gray-200 hover:bg-gray-50 active:scale-[0.98]'
+                      : 'border-gray-200 hover:bg-gray-50 active:scale-[0.98] dark:border-gray-700 dark:hover:bg-gray-800'
                   }`}
                 >
-                  <div className='relative h-16 overflow-hidden rounded-sm bg-white'>
+                  <div className='relative h-16 overflow-hidden rounded-sm bg-white dark:bg-gray-900'>
                     {sheet.thumbnail ? (
                       <img
                         src={sheet.thumbnail}
@@ -500,12 +500,12 @@ function DiagramPlaceholder({
                         className='h-full w-full object-cover'
                       />
                     ) : null}
-                    <span className='absolute right-1 bottom-0.5 text-[10px] font-semibold text-gray-700'>
+                    <span className='absolute right-1 bottom-0.5 text-[10px] font-semibold text-gray-700 dark:text-gray-200'>
                       {index + 1}
                     </span>
                   </div>
                 </button>
-                <span className='truncate text-center text-[11px] text-gray-600'>
+                <span className='truncate text-center text-[11px] text-gray-600 dark:text-gray-300'>
                   {sheet.label}
                 </span>
               </div>
@@ -812,8 +812,8 @@ function CardBodyRenderer({
       }
 
       return (
-        <div className='flex h-full items-center justify-center bg-[#f6f6f7] p-3'>
-          <p className='text-xs text-gray-500'>{cardId}</p>
+        <div className='flex h-full items-center justify-center bg-[#f6f6f7] p-3 dark:bg-gray-800'>
+          <p className='text-xs text-gray-500 dark:text-gray-400'>{cardId}</p>
         </div>
       );
   }
@@ -1504,7 +1504,7 @@ export default function WorksheetGridContent({
   return (
     <div
       ref={containerRef}
-      className='relative min-h-0 flex-1 overflow-hidden rounded-lg'
+      className='relative min-h-0 flex-1 overflow-hidden rounded-lg bg-white dark:bg-gray-900'
       onDragOver={(event) => {
         const draggedCardId = resolveDraggedCardId(event);
         if (!draggedCardId) {

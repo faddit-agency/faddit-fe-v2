@@ -451,7 +451,7 @@ export default function WorksheetContentPanel({
 
   return (
     <section className='flex h-full min-w-0 flex-1 flex-col gap-2'>
-      <div className='relative min-h-0 flex-1 overflow-hidden rounded-md'>
+      <div className='relative min-h-0 flex-1 overflow-hidden rounded-md bg-white dark:bg-gray-900'>
         {!selectedPage && <div className='absolute inset-0' />}
         {selectedPage && isCanvasPageType(selectedPage.type) && (
           <div className='absolute inset-0'>
@@ -503,10 +503,10 @@ export default function WorksheetContentPanel({
                                 if (readOnly) return;
                                 updateDocument((prev) => ({ ...prev, activePageId: page.id }));
                               }}
-                              className={`relative h-full w-full cursor-pointer overflow-hidden rounded-md bg-white transition-all ${
+                              className={`relative h-full w-full cursor-pointer overflow-hidden rounded-md bg-white transition-all dark:bg-gray-900 ${
                                 selectedId === page.id
                                   ? 'border-2 border-violet-500'
-                                  : 'border border-gray-300 hover:border-gray-400'
+                                  : 'border border-gray-300 hover:border-gray-400 dark:border-gray-700 dark:hover:border-gray-500'
                               }`}
                             >
                               <span
@@ -514,7 +514,7 @@ export default function WorksheetContentPanel({
                               >
                                 {meta.defaultLabel}
                               </span>
-                              <span className='absolute right-2 bottom-2 z-10 text-[10px] leading-none font-semibold text-gray-800'>
+                              <span className='absolute right-2 bottom-2 z-10 text-[10px] leading-none font-semibold text-gray-800 dark:text-gray-100'>
                                 {idx + 1}
                               </span>
 
@@ -534,7 +534,7 @@ export default function WorksheetContentPanel({
                                   e.stopPropagation();
                                   handleDeletePage(page.id);
                                 }}
-                                className='absolute top-1/2 right-1.5 z-30 flex h-5 w-6 -translate-y-1/2 translate-x-3 scale-95 cursor-pointer items-center justify-center rounded-md border border-red-200 bg-white text-red-500 opacity-0 shadow-sm transition-all duration-300 ease-out will-change-transform group-hover/thumb:translate-x-0 group-hover/thumb:scale-100 group-hover/thumb:opacity-100 hover:border-red-300 hover:bg-red-50 hover:text-red-600 active:scale-95'
+                                className='absolute top-1/2 right-1.5 z-30 flex h-5 w-6 -translate-y-1/2 translate-x-3 scale-95 cursor-pointer items-center justify-center rounded-md border border-red-200 bg-white text-red-500 opacity-0 shadow-sm transition-all duration-300 ease-out will-change-transform group-hover/thumb:translate-x-0 group-hover/thumb:scale-100 group-hover/thumb:opacity-100 hover:border-red-300 hover:bg-red-50 hover:text-red-600 active:scale-95 dark:border-red-500/40 dark:bg-gray-900 dark:text-red-300 dark:hover:bg-red-500/10'
                                 title='페이지 삭제'
                               >
                                 <Trash2 size={11} strokeWidth={2.1} />
@@ -566,7 +566,7 @@ export default function WorksheetContentPanel({
                                   type='button'
                                   onMouseDown={(e) => e.preventDefault()}
                                   onClick={commitPageLabelEdit}
-                                  className='flex h-7 w-7 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-gray-100'
+                                  className='flex h-7 w-7 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
                                   title='시트명 저장'
                                 >
                                   <Check size={13} />
@@ -575,14 +575,14 @@ export default function WorksheetContentPanel({
                             ) : (
                               <>
                                 <div className='absolute inset-0 flex items-center justify-center px-2 transition-all duration-300 ease-out group-hover/title:pr-8'>
-                                  <p className='w-full truncate text-center text-base font-semibold text-gray-800'>
+                                  <p className='w-full truncate text-center text-base font-semibold text-gray-800 dark:text-gray-100'>
                                     {page.label}
                                   </p>
                                 </div>
                                 <button
                                   type='button'
                                   onClick={() => startPageLabelEdit(page)}
-                                  className='absolute top-1/2 right-0 flex h-6 w-6 -translate-y-1/2 translate-x-1 items-center justify-center rounded-md text-gray-500 opacity-0 transition-all duration-300 ease-out group-hover/title:translate-x-0 group-hover/title:opacity-100 hover:bg-gray-100 hover:text-gray-700'
+                                  className='absolute top-1/2 right-0 flex h-6 w-6 -translate-y-1/2 translate-x-1 items-center justify-center rounded-md text-gray-500 opacity-0 transition-all duration-300 ease-out group-hover/title:translate-x-0 group-hover/title:opacity-100 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200'
                                   title='시트명 수정'
                                 >
                                   <Pencil size={12} />
@@ -599,7 +599,7 @@ export default function WorksheetContentPanel({
                         type='button'
                         disabled={readOnly}
                         onClick={() => setAddMenuOpen((v) => !v)}
-                        className='flex shrink-0 cursor-pointer items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 transition-colors hover:border-gray-300 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50'
+                        className='flex shrink-0 cursor-pointer items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 transition-colors hover:border-gray-300 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-500 dark:hover:border-gray-500 dark:hover:text-gray-300'
                         aria-label='페이지 추가'
                         style={{ width: THUMB_W, height: THUMB_H }}
                       >
@@ -616,7 +616,7 @@ export default function WorksheetContentPanel({
         {addMenuOpen && !readOnly && addMenuPosition && (
           <div
             ref={addMenuPanelRef}
-            className='fixed z-[260] w-36 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg'
+            className='fixed z-[260] w-36 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900'
             style={{
               left: addMenuPosition.left,
               top: addMenuPosition.top,
@@ -631,7 +631,7 @@ export default function WorksheetContentPanel({
                   key={type}
                   type='button'
                   onClick={() => handleAddPage(type)}
-                  className='flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50'
+                  className='flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800'
                 >
                   <Icon size={14} className={meta.iconColor} />
                   {meta.defaultLabel}
@@ -683,18 +683,18 @@ export default function WorksheetContentPanel({
                   if (readOnly) return;
                   updateDocument((prev) => ({ ...prev, zoom: Math.max(10, prev.zoom - 10) }));
                 }}
-                className='flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-gray-600 transition-all duration-300 hover:bg-gray-100'
+                className='flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-gray-600 transition-all duration-300 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
               >
                 <Minus size={14} />
               </button>
-              <span className='min-w-[3.5rem] text-center text-sm text-gray-800'>{zoom}%</span>
+              <span className='min-w-[3.5rem] text-center text-sm text-gray-800 dark:text-gray-100'>{zoom}%</span>
               <button
                 type='button'
                 onClick={() => {
                   if (readOnly) return;
                   updateDocument((prev) => ({ ...prev, zoom: Math.min(200, prev.zoom + 10) }));
                 }}
-                className='flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-gray-600 transition-all duration-300 hover:bg-gray-100'
+                className='flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-gray-600 transition-all duration-300 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
               >
                 <Plus size={14} />
               </button>
@@ -704,22 +704,22 @@ export default function WorksheetContentPanel({
       </div>
 
       {guideModeEnabled && (
-        <aside className='pointer-events-auto fixed top-[72px] right-3 z-[240] w-[320px] rounded-xl border border-gray-200 bg-white/70 p-3 opacity-70 shadow-lg backdrop-blur-[2px] transition-opacity duration-200 hover:opacity-100'>
-          <h3 className='mb-2 text-sm font-semibold text-gray-800'>단축키 가이드</h3>
+        <aside className='pointer-events-auto fixed top-[72px] right-3 z-[240] w-[320px] rounded-xl border border-gray-200 bg-white/70 p-3 opacity-70 shadow-lg backdrop-blur-[2px] transition-opacity duration-200 hover:opacity-100 dark:border-gray-700 dark:bg-gray-900/75'>
+          <h3 className='mb-2 text-sm font-semibold text-gray-800 dark:text-gray-100'>단축키 가이드</h3>
           <div className='max-h-[70vh] overflow-y-auto pr-1'>
             <div className='space-y-1.5'>
               {GUIDE_MANUAL_ITEMS.map((item) => (
                 <div
                   key={`${item.title}-${item.shortcut}`}
-                  className='rounded-md bg-white/70 px-2 py-1.5'
+                  className='rounded-md bg-white/70 px-2 py-1.5 dark:bg-gray-900/70'
                 >
                   <div className='flex items-center justify-between gap-2'>
-                    <span className='text-xs font-semibold text-gray-800'>{item.title}</span>
-                    <span className='rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600'>
+                    <span className='text-xs font-semibold text-gray-800 dark:text-gray-100'>{item.title}</span>
+                    <span className='rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300'>
                       {item.shortcut}
                     </span>
                   </div>
-                  <p className='mt-1 text-[11px] leading-4 text-gray-600'>{item.usage}</p>
+                  <p className='mt-1 text-[11px] leading-4 text-gray-600 dark:text-gray-300'>{item.usage}</p>
                 </div>
               ))}
             </div>

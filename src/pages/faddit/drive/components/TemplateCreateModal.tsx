@@ -1975,7 +1975,7 @@ const TemplateCreateModal = ({
   return (
     <div className='fixed inset-0 z-50'>
       <div
-        className='absolute inset-0 bg-gray-900/30'
+        className='absolute inset-0 bg-gray-900/30 dark:bg-gray-950/75'
         onMouseDown={(event) => {
           if (event.target === event.currentTarget) {
             setModalOpen(false);
@@ -1983,8 +1983,8 @@ const TemplateCreateModal = ({
         }}
       />
       <div className='relative flex h-full w-full items-center justify-center p-0 lg:p-4'>
-        <div className='flex h-screen w-screen flex-col bg-white shadow-lg lg:h-[70vh] lg:max-h-[70vh] lg:w-[80vw] lg:max-w-[80vw] lg:rounded-lg dark:bg-gray-800'>
-          <div className='flex-shrink-0 border-b border-gray-200 px-5 py-3 dark:border-gray-700/60'>
+        <div className='template-create-modal flex h-screen w-screen flex-col bg-white shadow-lg lg:h-[70vh] lg:max-h-[70vh] lg:w-[80vw] lg:max-w-[80vw] lg:rounded-lg dark:bg-gray-900 dark:shadow-[0_24px_64px_rgba(0,0,0,0.55)]'>
+          <div className='flex-shrink-0 border-b border-gray-200 px-5 py-3 dark:border-gray-700'>
             <div className='flex items-center justify-between'>
               <div className='font-semibold text-gray-800 dark:text-gray-100'>새 항목 만들기</div>
               <button
@@ -2000,7 +2000,7 @@ const TemplateCreateModal = ({
             </div>
           </div>
 
-          <div className='min-h-0 flex-1 overflow-hidden'>
+          <div className='min-h-0 flex-1 overflow-hidden bg-gray-50 dark:bg-gray-950/40'>
             <form
               id='faddit-template-create-form'
               onSubmit={handleSubmit}
@@ -2008,7 +2008,7 @@ const TemplateCreateModal = ({
             >
               <div className='grid h-full gap-4 lg:grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)]'>
                 {showSelectorPane && (
-                  <section className='flex min-h-0 flex-col rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700/60 dark:bg-gray-800'>
+                  <section className='flex min-h-0 flex-col rounded-xl border border-gray-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-gray-600 dark:bg-gray-800/85'>
                     <h3 className='mb-3 text-sm font-semibold text-gray-700 dark:text-gray-200'>
                       생성 템플릿 선택
                     </h3>
@@ -2047,7 +2047,7 @@ const TemplateCreateModal = ({
                 )}
 
                 {showFormPane && (
-                  <section className='flex min-h-0 flex-col rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700/60 dark:bg-gray-800'>
+                  <section className='flex min-h-0 flex-col rounded-xl border border-gray-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-gray-600 dark:bg-gray-800/85'>
                     <h3 className='mb-3 text-sm font-semibold text-gray-700 dark:text-gray-200'>
                       {selectedTemplate
                         ? `${TEMPLATE_ITEMS.find((item) => item.key === selectedTemplate)?.title || '항목'} 정보 입력`
@@ -2118,7 +2118,7 @@ const TemplateCreateModal = ({
                                 ) as HTMLInputElement | null;
                                 input?.click();
                               }}
-                              className={`cursor-pointer rounded-lg border-2 border-dashed px-4 py-5 text-center transition ${
+                              className={`cursor-pointer rounded-lg border-2 border-dashed bg-white px-4 py-5 text-center transition dark:bg-gray-900/50 ${
                                 draggingFile
                                   ? 'border-violet-400 bg-violet-50 dark:border-violet-500 dark:bg-violet-500/10'
                                   : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50 dark:border-gray-700/60 dark:hover:border-gray-600 dark:hover:bg-gray-700/40'
@@ -2260,7 +2260,7 @@ const TemplateCreateModal = ({
             </form>
           </div>
 
-          <div className='flex-shrink-0 border-t border-gray-200 px-5 py-4 dark:border-gray-700/60'>
+          <div className='flex-shrink-0 border-t border-gray-200 px-5 py-4 dark:border-gray-700'>
             <div className='flex flex-wrap items-center justify-end gap-2'>
               {submitError ? (
                 <p className='mr-auto text-xs text-rose-500 dark:text-rose-300'>{submitError}</p>

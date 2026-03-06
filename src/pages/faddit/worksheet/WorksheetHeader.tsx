@@ -117,8 +117,8 @@ export default function WorksheetHeader({
   const saveStatus = isSaving
     ? {
         label: '드라이브에 저장 중',
-        icon: <Loader2 size={15} className='animate-spin text-gray-400' />,
-        className: 'text-gray-500',
+        icon: <Loader2 size={15} className='animate-spin text-gray-400 dark:text-gray-500' />,
+        className: 'text-gray-500 dark:text-gray-400',
       }
     : saveError
       ? {
@@ -130,12 +130,12 @@ export default function WorksheetHeader({
         ? {
             label: '저장되지 않음',
             icon: <CloudOff size={15} className='text-amber-500' />,
-            className: 'text-amber-600',
+            className: 'text-amber-600 dark:text-amber-400',
           }
         : {
             label: '드라이브에 저장됨',
-            icon: <CloudCheck size={15} className='text-gray-400' />,
-            className: 'text-gray-500',
+            icon: <CloudCheck size={15} className='text-gray-400 dark:text-gray-500' />,
+            className: 'text-gray-500 dark:text-gray-400',
           };
 
   const savedAtLabel = saveSuccessAt ? new Date(saveSuccessAt).toLocaleTimeString('ko-KR') : null;
@@ -166,7 +166,7 @@ export default function WorksheetHeader({
                     aria-label='작업지시서 제목 수정 완료'
                     title='작업지시서 제목 수정 완료'
                     disabled={isTitleSaving}
-                    className='inline-flex h-8 w-8 items-center justify-center rounded border border-gray-200 bg-white text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-60'
+                    className='inline-flex h-8 w-8 items-center justify-center rounded border border-gray-200 bg-white text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100'
                   >
                     {isTitleSaving ? (
                       <Loader2 size={14} className='shrink-0 animate-spin' />
@@ -177,7 +177,7 @@ export default function WorksheetHeader({
                 </div>
               ) : (
                 <>
-                  <h1 className='truncate text-[18px] leading-[1.15] font-semibold tracking-[-0.02em] text-gray-800'>
+                  <h1 className='truncate text-[18px] leading-[1.15] font-semibold tracking-[-0.02em] text-gray-800 dark:text-gray-100'>
                     {isLoadingWorksheet ? '불러오는 중...' : worksheetTitle}
                   </h1>
                   {canRenameTitle ? (
@@ -186,7 +186,7 @@ export default function WorksheetHeader({
                       onClick={beginTitleEdit}
                       aria-label='작업지시서 제목 수정'
                       title='작업지시서 제목 수정'
-                      className='pointer-events-none ml-1 inline-flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 opacity-0 shadow-sm -translate-x-1 transition-all duration-200 ease-out group-hover:pointer-events-auto group-hover:translate-x-0 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:translate-x-0 group-focus-within:opacity-100 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-800'
+                      className='pointer-events-none ml-1 inline-flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 opacity-0 shadow-sm -translate-x-1 transition-all duration-200 ease-out group-hover:pointer-events-auto group-hover:translate-x-0 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:translate-x-0 group-focus-within:opacity-100 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-100'
                     >
                       <Pencil size={13} className='shrink-0' />
                     </button>
@@ -205,12 +205,12 @@ export default function WorksheetHeader({
           {worksheetLoadError || titleSaveError ? (
             <div className='mt-1 flex flex-col gap-1'>
               {worksheetLoadError ? (
-                <span className='inline-flex rounded bg-red-50 px-2 py-1 text-xs text-red-500'>
+                <span className='inline-flex rounded bg-red-50 px-2 py-1 text-xs text-red-500 dark:bg-red-500/10 dark:text-red-300'>
                   {worksheetLoadError}
                 </span>
               ) : null}
               {titleSaveError ? (
-                <span className='inline-flex rounded bg-red-50 px-2 py-1 text-xs text-red-500'>
+                <span className='inline-flex rounded bg-red-50 px-2 py-1 text-xs text-red-500 dark:bg-red-500/10 dark:text-red-300'>
                   {titleSaveError}
                 </span>
               ) : null}
@@ -229,7 +229,7 @@ export default function WorksheetHeader({
               className={`cursor-pointer border-b-2 text-[14px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1 ${
                 activeTab === tab.key
                   ? 'border-faddit text-faddit'
-                  : 'border-transparent text-gray-500 hover:border-violet-200 hover:text-violet-700'
+                  : 'border-transparent text-gray-500 hover:border-violet-200 hover:text-violet-700 dark:text-gray-400 dark:hover:border-violet-400/40 dark:hover:text-violet-300'
               }`}
             >
               {tab.label}
@@ -240,7 +240,7 @@ export default function WorksheetHeader({
         <div className='flex items-center gap-x-2'>
           <button
             type='button'
-            className='border-faddit inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-lg border bg-white px-4 text-sm font-medium text-gray-900 transition-colors hover:bg-violet-50'
+            className='border-faddit inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-lg border bg-white px-4 text-sm font-medium text-gray-900 transition-colors hover:bg-violet-50 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800'
           >
             <Play size={14} fill='currentColor' className='shrink-0 translate-y-[0.5px]' />
             Play

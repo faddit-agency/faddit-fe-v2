@@ -202,7 +202,7 @@ export default function DropdownButton({
         ref={trigger}
         className={`${
           size === 'compact'
-            ? 'flex h-6 w-full items-center justify-between rounded-md border border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-700 transition-colors hover:border-gray-300'
+            ? 'flex h-6 w-full items-center justify-between rounded-md border border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-700 transition-colors hover:border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-gray-500'
             : size === 'form'
               ? 'flex h-10 w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-3 text-sm leading-5 text-gray-800 shadow-xs transition-colors hover:border-gray-300 dark:border-gray-700/60 dark:bg-gray-900/30 dark:text-gray-100 dark:hover:border-gray-600'
             : 'btn w-full justify-between border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-800 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-gray-600 dark:hover:text-gray-100'
@@ -260,7 +260,7 @@ export default function DropdownButton({
                       className={`flex w-full min-w-0 items-center ${size === 'compact' ? 'px-2 py-0.5' : 'px-3 py-1'} ${
                         option.disabled
                           ? 'cursor-not-allowed opacity-50'
-                          : 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/20'
+                          : 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700'
                       } ${option.value === value && 'text-violet-500'}`}
                       disabled={option.disabled}
                       onClick={(e) => {
