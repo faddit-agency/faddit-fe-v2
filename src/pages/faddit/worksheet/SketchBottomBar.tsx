@@ -1,5 +1,7 @@
 import React, { useRef } from 'react';
 import {
+  Eye,
+  EyeOff,
   Grid3X3,
   ImageUp,
   MousePointer2,
@@ -60,6 +62,8 @@ export default function SketchBottomBar({ onZoomReset }: SketchBottomBarProps) {
     selectedType,
     showGrid,
     toggleGrid,
+    showOutsideElements,
+    toggleShowOutsideElements,
     canUndo,
     canRedo,
     undo,
@@ -181,6 +185,14 @@ export default function SketchBottomBar({ onZoomReset }: SketchBottomBarProps) {
 
         <ToolButton active={showGrid} onClick={toggleGrid} title='그리드 토글'>
           <Grid3X3 size={16} strokeWidth={1.5} />
+        </ToolButton>
+
+        <ToolButton
+          active={!showOutsideElements}
+          onClick={toggleShowOutsideElements}
+          title={showOutsideElements ? '규격 밖 요소 숨기기' : '규격 밖 요소 보이기'}
+        >
+          {showOutsideElements ? <Eye size={16} strokeWidth={1.5} /> : <EyeOff size={16} strokeWidth={1.5} />}
         </ToolButton>
 
         <div className='mx-1 h-5 w-px bg-gray-200 dark:bg-gray-700' />

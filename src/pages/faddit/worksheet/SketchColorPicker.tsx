@@ -663,7 +663,7 @@ export default function SketchColorPicker({
     }
   };
 
-  const handleEyedropperPick = async () => {
+  const handleEyedropperPick = useCallback(async () => {
     setEyedropperError('');
     const eyeDropperCtor = (
       window as Window & {
@@ -690,7 +690,7 @@ export default function SketchColorPicker({
       }
       setEyedropperError('스포이드 실행에 실패했습니다.');
     }
-  };
+  }, [applyHexColor]);
 
   const toggleColorFavorite = () => {
     const normalized = normalizeHexColor(currentHex);
@@ -826,7 +826,8 @@ export default function SketchColorPicker({
               type='button'
               onClick={() => void handleEyedropperPick()}
               disabled={!supportsEyedropper}
-              title={supportsEyedropper ? '스포이드' : '스포이드 미지원 브라우저'}
+              title={supportsEyedropper ? '스포이드 (I)' : '스포이드 미지원 브라우저'}
+              aria-label={supportsEyedropper ? '스포이드 (I)' : '스포이드 미지원 브라우저'}
               className={`inline-flex h-6 w-6 shrink-0 items-center justify-center ${SIDEPANEL_BUTTON_BASE} ${
                 supportsEyedropper ? SIDEPANEL_BUTTON_IDLE : SIDEPANEL_BUTTON_DISABLED
               }`}

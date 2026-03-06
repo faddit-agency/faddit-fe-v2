@@ -75,6 +75,8 @@ interface CanvasCtx {
   selectedType: string | null;
   showGrid: boolean;
   toggleGrid: () => void;
+  showOutsideElements: boolean;
+  toggleShowOutsideElements: () => void;
   canUndo: boolean;
   canRedo: boolean;
   undo: () => void;
@@ -373,6 +375,50 @@ function getObjPreviewColor(obj: FabricObject): string {
   return '#cccccc';
 }
 
+function buildSingleLayerItem(
+  obj: FabricObject,
+  depth: number,
+  expandedIds: Set<string>,
+  counter: { n: number },
+): LayerItem {
+  counter.n += 1;
+  const type = obj.type ?? 'object';
+  const currentData = (obj as ObjWithData).data;
+  const fallbackId = `obj-${Date.now()}-${counter.n}`;
+  const fallbackName = LAYER_NAME_MAP[type] ?? type;
+  const normalizedData = {
+    ...(currentData ?? {}),
+    id: currentData?.id ?? fallbackId,
+    name: currentData?.name ?? fallbackName,
+  };
+
+  if (!currentData?.id || !currentData?.name) {
+    (obj as ObjWithData).data = normalizedData;
+  }
+
+  const id = normalizedData.id;
+  const name = normalizedData.name;
+  const isGroup = obj instanceof Group;
+  const isExpanded = expandedIds.has(id);
+  const children: LayerItem[] =
+    isGroup && isExpanded
+      ? buildLayerTree((obj as Group).getObjects(), depth + 1, expandedIds, counter)
+      : [];
+
+  return {
+    obj,
+    id,
+    name,
+    visible: obj.visible !== false,
+    locked: !obj.selectable,
+    previewColor: getObjPreviewColor(obj),
+    depth,
+    isGroup,
+    isExpanded,
+    children,
+  };
+}
+
 function buildLayerTree(
   objs: FabricObject[],
   depth: number,
@@ -382,45 +428,7 @@ function buildLayerTree(
   return [...objs]
     .filter((obj) => !isInternalOverlayObject(obj))
     .reverse()
-    .map((obj) => {
-      counter.n += 1;
-      const type = obj.type ?? 'object';
-      const currentData = (obj as ObjWithData).data;
-      const fallbackId = `obj-${Date.now()}-${counter.n}`;
-      const fallbackName = LAYER_NAME_MAP[type] ?? type;
-      const normalizedData = {
-        ...(currentData ?? {}),
-        id: currentData?.id ?? fallbackId,
-        name: currentData?.name ?? fallbackName,
-      };
-
-      if (!currentData?.id || !currentData?.name) {
-        (obj as ObjWithData).data = normalizedData;
-      }
-
-      const id = normalizedData.id;
-      const name = normalizedData.name;
-      const isGroup = obj instanceof Group;
-      const isExpanded = expandedIds.has(id);
-
-      const children: LayerItem[] =
-        isGroup && isExpanded
-          ? buildLayerTree((obj as Group).getObjects(), depth + 1, expandedIds, counter)
-          : [];
-
-      return {
-        obj,
-        id,
-        name,
-        visible: obj.visible !== false,
-        locked: !obj.selectable,
-        previewColor: getObjPreviewColor(obj),
-        depth,
-        isGroup,
-        isExpanded,
-        children,
-      };
-    });
+    .map((obj) => buildSingleLayerItem(obj, depth, expandedIds, counter));
 }
 
 function flattenLayerTree(items: LayerItem[]): LayerItem[] {
@@ -476,6 +484,7 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
   const [showGrid, setShowGrid] = useState(false);
+  const [showOutsideElements, setShowOutsideElements] = useState(true);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const [layers, setLayers] = useState<LayerItem[]>([]);
@@ -1056,33 +1065,48 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
   }, [refreshLayers, syncUndoRedo]);
 
   const toggleGrid = useCallback(() => setShowGrid((v) => !v), []);
+  const toggleShowOutsideElements = useCallback(() => setShowOutsideElements((v) => !v), []);
 
   const findLayerById = useCallback(
     (id: string): LayerItem | undefined => layers.find((l) => l.id === id),
     [layers],
   );
 
+  const resolveLayerTargets = useCallback(
+    (id: string): FabricObject[] => {
+      const item = findLayerById(id);
+      return item ? [item.obj] : [];
+    },
+    [findLayerById],
+  );
+
   const toggleLayerVisibility = useCallback(
     (id: string) => {
-      const item = findLayerById(id);
-      if (!item) return;
-      item.obj.set('visible', !item.obj.visible);
+      const targets = resolveLayerTargets(id);
+      if (targets.length === 0) return;
+      const shouldShow = targets.some((obj) => obj.visible === false);
+      targets.forEach((obj) => obj.set('visible', shouldShow));
       canvasRef.current?.renderAll();
       refreshLayers();
     },
-    [findLayerById, refreshLayers],
+    [resolveLayerTargets, refreshLayers],
   );
 
   const toggleLayerLock = useCallback(
     (id: string) => {
-      const item = findLayerById(id);
-      if (!item) return;
-      const locked = !item.obj.selectable;
-      item.obj.set({ selectable: locked, evented: locked });
+      const targets = resolveLayerTargets(id);
+      if (targets.length === 0) return;
+      const shouldUnlock = targets.every((obj) => !obj.selectable);
+      targets.forEach((obj) =>
+        obj.set({
+          selectable: shouldUnlock,
+          evented: shouldUnlock,
+        }),
+      );
       canvasRef.current?.renderAll();
       refreshLayers();
     },
-    [findLayerById, refreshLayers],
+    [resolveLayerTargets, refreshLayers],
   );
 
   const reorderObject = useCallback(
@@ -1110,38 +1134,38 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
 
   const moveLayerUp = useCallback(
     (id: string) => {
-      const item = findLayerById(id);
-      if (!item) return;
-      reorderObject(item.obj, 'forward');
+      const target = resolveLayerTargets(id)[0];
+      if (!target) return;
+      reorderObject(target, 'forward');
     },
-    [findLayerById, reorderObject],
+    [resolveLayerTargets, reorderObject],
   );
 
   const moveLayerDown = useCallback(
     (id: string) => {
-      const item = findLayerById(id);
-      if (!item) return;
-      reorderObject(item.obj, 'backward');
+      const target = resolveLayerTargets(id)[0];
+      if (!target) return;
+      reorderObject(target, 'backward');
     },
-    [findLayerById, reorderObject],
+    [resolveLayerTargets, reorderObject],
   );
 
   const moveLayerToFront = useCallback(
     (id: string) => {
-      const item = findLayerById(id);
-      if (!item) return;
-      reorderObject(item.obj, 'front');
+      const target = resolveLayerTargets(id)[0];
+      if (!target) return;
+      reorderObject(target, 'front');
     },
-    [findLayerById, reorderObject],
+    [resolveLayerTargets, reorderObject],
   );
 
   const moveLayerToBack = useCallback(
     (id: string) => {
-      const item = findLayerById(id);
-      if (!item) return;
-      reorderObject(item.obj, 'back');
+      const target = resolveLayerTargets(id)[0];
+      if (!target) return;
+      reorderObject(target, 'back');
     },
-    [findLayerById, reorderObject],
+    [resolveLayerTargets, reorderObject],
   );
 
   const bringSelectionForward = useCallback(() => {
@@ -1256,22 +1280,27 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
     (id: string) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
-      const item = findLayerById(id);
-      if (!item) return;
-      canvas.setActiveObject(item.obj);
+      const targets = resolveLayerTargets(id);
+      if (targets.length === 0) return;
+
+      if (targets.length > 1) {
+        canvas.setActiveObject(new ActiveSelection(targets, { canvas }));
+      } else {
+        canvas.setActiveObject(targets[0]);
+      }
       canvas.renderAll();
-      syncSelectionProps(item.obj);
+      syncSelectionProps(targets[0]);
     },
-    [findLayerById, syncSelectionProps],
+    [resolveLayerTargets, syncSelectionProps],
   );
 
   const renameLayer = useCallback(
     (id: string, name: string) => {
-      const item = findLayerById(id);
-      if (!item) return;
       const nextName = name.trim();
       if (!nextName) return;
 
+      const item = findLayerById(id);
+      if (!item) return;
       const data = (item.obj as ObjWithData).data;
       (item.obj as ObjWithData).data = {
         id: data?.id ?? id,
@@ -1289,11 +1318,13 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
     if (!canvas) return;
     const active = canvas.getActiveObject();
     if (!active) return;
+
     if (active instanceof ActiveSelection) {
       active.getObjects().forEach((obj) => canvas.remove(obj));
     } else {
       canvas.remove(active);
     }
+
     canvas.discardActiveObject();
     canvas.renderAll();
     refreshLayers();
@@ -1601,6 +1632,8 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
         selectedType,
         showGrid,
         toggleGrid,
+        showOutsideElements,
+        toggleShowOutsideElements,
         canUndo,
         canRedo,
         undo,

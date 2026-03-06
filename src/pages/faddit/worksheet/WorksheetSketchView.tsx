@@ -140,6 +140,55 @@ function isArtboardObject(obj: FabricObject | null): obj is Rect {
   return data?.kind === '__artboard__' || data?.id === CANVAS_ARTBOARD_OBJECT_ID;
 }
 
+type SceneBounds = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+};
+
+function getArtboardSceneBounds(artboard: Rect): SceneBounds | null {
+  const center = artboard.getCenterPoint();
+  const halfWidth = artboard.getScaledWidth() / 2;
+  const halfHeight = artboard.getScaledHeight() / 2;
+  if (
+    !center ||
+    !Number.isFinite(center.x) ||
+    !Number.isFinite(center.y) ||
+    !Number.isFinite(halfWidth) ||
+    !Number.isFinite(halfHeight) ||
+    halfWidth <= 0 ||
+    halfHeight <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    left: center.x - halfWidth,
+    top: center.y - halfHeight,
+    right: center.x + halfWidth,
+    bottom: center.y + halfHeight,
+  };
+}
+
+function isObjectOutsideArtboard(obj: FabricObject, artboardBounds: SceneBounds): boolean {
+  const objectBounds = obj.getBoundingRect();
+  const left = objectBounds.left;
+  const top = objectBounds.top;
+  const right = objectBounds.left + objectBounds.width;
+  const bottom = objectBounds.top + objectBounds.height;
+  if (![left, top, right, bottom].every((value) => Number.isFinite(value))) {
+    return false;
+  }
+
+  return (
+    right <= artboardBounds.left ||
+    left >= artboardBounds.right ||
+    bottom <= artboardBounds.top ||
+    top >= artboardBounds.bottom
+  );
+}
+
 function buildArrowPathCommands(tail: ArrowPoint, tip: ArrowPoint): TSimplePathData {
   const dx = tip.x - tail.x;
   const dy = tip.y - tail.y;
@@ -463,7 +512,7 @@ function setupArrowEndpointEditing(path: Path): void {
   path.controls = createArrowEndpointControls();
 }
 
-function setupEndpointEditingIfNeeded(obj: FabricObject): void {
+function setupBasicEndpointEditingIfNeeded(obj: FabricObject): void {
   if (obj instanceof Line) {
     setupLineEndpointEditing(obj);
     return;
@@ -481,11 +530,8 @@ interface WorksheetSketchViewProps {
 export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSketchViewProps) {
   const canvasElRef = useRef<HTMLCanvasElement>(null);
   const gridOverlayRef = useRef<HTMLDivElement>(null);
-  const borderOverlayRef = useRef<HTMLDivElement>(null);
   const gridSyncRafRef = useRef<number | null>(null);
-  const lastBorderRectRef = useRef<{ left: number; top: number; width: number; height: number } | null>(
-    null,
-  );
+  const outsideHiddenMapRef = useRef<Map<FabricObject, boolean>>(new Map());
   const fabricRef = useRef<Canvas | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const drawStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -519,6 +565,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
 
   const {
     canvasRef,
+    canvasSession,
     registerCanvas,
     activeTool,
     setActiveTool,
@@ -533,6 +580,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     strokeWidth,
     cornerRadius,
     showGrid,
+    showOutsideElements,
     saveHistory,
     refreshLayers,
     deleteSelected,
@@ -577,6 +625,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         includeStroke?: boolean;
         kind?: string;
         name?: string;
+        extraData?: Partial<ArrowObjectData>;
       } = {},
     ) => {
       const extra: Partial<ArrowObjectData> = {};
@@ -593,18 +642,27 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       if (options.name) {
         extra.name = options.name;
       }
+      if (options.extraData) {
+        Object.assign(extra, options.extraData);
+      }
 
       return makeData(type, extra);
     },
     [fillPantoneCode, strokePantoneCode],
   );
 
+  const setupEndpointEditingIfNeeded = useCallback(
+    (obj: FabricObject): void => {
+      setupBasicEndpointEditingIfNeeded(obj);
+    },
+    [],
+  );
+
   const syncGridOverlay = useCallback(() => {
     const overlay = gridOverlayRef.current;
-    const borderOverlay = borderOverlayRef.current;
     const canvas = fabricRef.current;
     const container = containerRef.current;
-    if (!overlay || !borderOverlay || !canvas || !container) {
+    if (!overlay || !canvas || !container) {
       return;
     }
 
@@ -612,45 +670,21 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       overlay.style.opacity = '0';
       overlay.style.clipPath = 'inset(0 100% 100% 0)';
     };
-    const hideBorderOverlay = () => {
-      lastBorderRectRef.current = null;
-      borderOverlay.style.opacity = '0';
-      borderOverlay.style.left = '0px';
-      borderOverlay.style.top = '0px';
-      borderOverlay.style.width = '0px';
-      borderOverlay.style.height = '0px';
-    };
-    const keepLastBorderOverlay = () => {
-      const last = lastBorderRectRef.current;
-      if (!last) {
-        hideBorderOverlay();
-        return false;
-      }
-      borderOverlay.style.left = `${last.left}px`;
-      borderOverlay.style.top = `${last.top}px`;
-      borderOverlay.style.width = `${last.width}px`;
-      borderOverlay.style.height = `${last.height}px`;
-      borderOverlay.style.opacity = '1';
-      return true;
-    };
 
     if (!showGridRef.current) {
       hideGridOverlay();
+      return;
     }
 
     const artboard = canvas.getObjects().find((obj): obj is Rect => isArtboardObject(obj));
     if (!artboard) {
       hideGridOverlay();
-      keepLastBorderOverlay();
       return;
     }
 
-    const center = artboard.getCenterPoint();
-    const halfWidth = artboard.getScaledWidth() / 2;
-    const halfHeight = artboard.getScaledHeight() / 2;
-    if (!Number.isFinite(halfWidth) || !Number.isFinite(halfHeight) || halfWidth <= 0 || halfHeight <= 0) {
+    const artboardBounds = getArtboardSceneBounds(artboard);
+    if (!artboardBounds) {
       hideGridOverlay();
-      keepLastBorderOverlay();
       return;
     }
 
@@ -661,10 +695,10 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     });
 
     const corners = [
-      toViewport(center.x - halfWidth, center.y - halfHeight),
-      toViewport(center.x + halfWidth, center.y - halfHeight),
-      toViewport(center.x + halfWidth, center.y + halfHeight),
-      toViewport(center.x - halfWidth, center.y + halfHeight),
+      toViewport(artboardBounds.left, artboardBounds.top),
+      toViewport(artboardBounds.right, artboardBounds.top),
+      toViewport(artboardBounds.right, artboardBounds.bottom),
+      toViewport(artboardBounds.left, artboardBounds.bottom),
     ];
 
     const minX = Math.min(...corners.map((corner) => corner.x));
@@ -679,46 +713,9 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     const rightInset = Math.max(0, Math.min(containerWidth, containerWidth - maxX));
     const topInset = Math.max(0, Math.min(containerHeight, minY));
     const bottomInset = Math.max(0, Math.min(containerHeight, containerHeight - maxY));
-    const borderWidth = maxX - minX;
-    const borderHeight = maxY - minY;
 
-    if (
-      leftInset + rightInset >= containerWidth ||
-      topInset + bottomInset >= containerHeight ||
-      borderWidth <= 0 ||
-      borderHeight <= 0
-    ) {
+    if (leftInset + rightInset >= containerWidth || topInset + bottomInset >= containerHeight) {
       hideGridOverlay();
-      keepLastBorderOverlay();
-      return;
-    }
-
-    const nextBorderLeft = Math.round(minX) + 0.5;
-    const nextBorderTop = Math.round(minY) + 0.5;
-    const nextBorderWidth = Math.max(1, Math.round(borderWidth) - 1);
-    const nextBorderHeight = Math.max(1, Math.round(borderHeight) - 1);
-    const prevBorderRect = lastBorderRectRef.current;
-    if (
-      !prevBorderRect ||
-      Math.abs(prevBorderRect.left - nextBorderLeft) > 0.01 ||
-      Math.abs(prevBorderRect.top - nextBorderTop) > 0.01 ||
-      Math.abs(prevBorderRect.width - nextBorderWidth) > 0.01 ||
-      Math.abs(prevBorderRect.height - nextBorderHeight) > 0.01
-    ) {
-      borderOverlay.style.left = `${nextBorderLeft}px`;
-      borderOverlay.style.top = `${nextBorderTop}px`;
-      borderOverlay.style.width = `${nextBorderWidth}px`;
-      borderOverlay.style.height = `${nextBorderHeight}px`;
-      lastBorderRectRef.current = {
-        left: nextBorderLeft,
-        top: nextBorderTop,
-        width: nextBorderWidth,
-        height: nextBorderHeight,
-      };
-    }
-    borderOverlay.style.opacity = '1';
-
-    if (!showGridRef.current) {
       return;
     }
 
@@ -759,6 +756,116 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       }
     };
   }, []);
+
+  const syncOutsideVisibility = useCallback(() => {
+    const canvas = fabricRef.current;
+    if (!canvas) {
+      return;
+    }
+
+    const hiddenMap = outsideHiddenMapRef.current;
+    const canvasObjects = canvas.getObjects();
+
+    if (showOutsideElements) {
+      let restored = false;
+      for (const [obj, originalVisible] of hiddenMap.entries()) {
+        if (!canvasObjects.includes(obj)) {
+          hiddenMap.delete(obj);
+          continue;
+        }
+        if ((obj.visible ?? true) !== originalVisible) {
+          obj.set('visible', originalVisible);
+          restored = true;
+        }
+        hiddenMap.delete(obj);
+      }
+      if (restored) {
+        canvas.requestRenderAll();
+        refreshLayers();
+      }
+      return;
+    }
+
+    const artboard = canvasObjects.find((obj): obj is Rect => isArtboardObject(obj));
+    const artboardBounds = artboard ? getArtboardSceneBounds(artboard) : null;
+    if (!artboardBounds) {
+      return;
+    }
+
+    let changed = false;
+
+    for (const [obj] of hiddenMap.entries()) {
+      if (!canvasObjects.includes(obj)) {
+        hiddenMap.delete(obj);
+        changed = true;
+      }
+    }
+
+    for (const obj of canvasObjects) {
+      if (isArtboardObject(obj) || isHoverOverlayObject(obj)) {
+        continue;
+      }
+
+      const outside = isObjectOutsideArtboard(obj, artboardBounds);
+      if (outside) {
+        if (!hiddenMap.has(obj)) {
+          hiddenMap.set(obj, obj.visible !== false);
+        }
+        if (obj.visible !== false) {
+          obj.set('visible', false);
+          changed = true;
+        }
+        continue;
+      }
+
+      if (hiddenMap.has(obj)) {
+        const originalVisible = hiddenMap.get(obj) ?? true;
+        hiddenMap.delete(obj);
+        if ((obj.visible ?? true) !== originalVisible) {
+          obj.set('visible', originalVisible);
+          changed = true;
+        }
+      }
+    }
+
+    const activeObject = canvas.getActiveObject();
+    if (activeObject && activeObject.visible === false) {
+      canvas.discardActiveObject();
+      changed = true;
+    }
+
+    if (changed) {
+      canvas.requestRenderAll();
+      refreshLayers();
+    }
+  }, [showOutsideElements, refreshLayers]);
+
+  useEffect(() => {
+    syncOutsideVisibility();
+  }, [showOutsideElements, canvasSession, syncOutsideVisibility]);
+
+  useEffect(() => {
+    const canvas = fabricRef.current;
+    if (!canvas) {
+      return;
+    }
+
+    const handleOutsideSync = () => {
+      syncOutsideVisibility();
+    };
+
+    canvas.on('object:added', handleOutsideSync);
+    canvas.on('object:removed', handleOutsideSync);
+    canvas.on('object:modified', handleOutsideSync);
+    canvas.on('path:created', handleOutsideSync);
+
+    return () => {
+      canvas.off('object:added', handleOutsideSync);
+      canvas.off('object:removed', handleOutsideSync);
+      canvas.off('object:modified', handleOutsideSync);
+      canvas.off('path:created', handleOutsideSync);
+    };
+  }, [canvasSession, syncOutsideVisibility]);
 
   const handlePathEditDone = useCallback(
     (nodes: NodePoint[]) => {
@@ -1380,6 +1487,9 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         } else if (e.code === 'KeyL') {
           e.preventDefault();
           setActiveTool('line');
+        } else if (e.code === 'Minus') {
+          e.preventDefault();
+          setActiveTool('arrow');
         } else if (e.code === 'KeyA') {
           e.preventDefault();
           startPathEditFromActiveSelection();
@@ -2373,6 +2483,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         canvas.add(line);
         canvas.renderAll();
       }
+
     };
 
     const handleMouseMove = (opt: TPointerEventInfo<TPointerEvent>) => {
@@ -3064,10 +3175,6 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         ref={gridOverlayRef}
         className='pointer-events-none absolute inset-0 z-20 transition-opacity duration-150'
         style={{ opacity: 0, clipPath: 'inset(0 100% 100% 0)' }}
-      />
-      <div
-        ref={borderOverlayRef}
-        className='pointer-events-none absolute z-[25] border border-slate-500 opacity-0 dark:border-slate-400'
       />
       <InteractionOverlay
         canvas={fabricRef.current}

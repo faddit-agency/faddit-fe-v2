@@ -26,7 +26,7 @@ import {
   Paintbrush,
   Palette,
   PenTool,
-  Pencil,
+  PencilRuler,
   Scissors,
   Search,
   Square,
@@ -67,7 +67,7 @@ const SIDEPANEL_BUTTON_DISABLED =
 
 const TOOL_ITEMS = [
   { key: 'template', label: '템플릿', icon: LayoutGrid },
-  { key: 'tools', label: '그리기', icon: PenTool },
+  { key: 'tools', label: '도구', icon: PencilRuler },
   { key: 'text', label: '텍스트', icon: Type },
   { key: 'color', label: '색상', icon: Palette },
   { key: 'layer', label: '레이어', icon: Layers },
@@ -359,9 +359,31 @@ const SHAPE_ITEMS: { tool: ToolType; label: string; icon: React.ReactNode }[] = 
   { tool: 'ellipse', label: '원 (O)', icon: <Circle size={18} strokeWidth={1.5} /> },
   { tool: 'triangle', label: '삼각형 (Y)', icon: <Triangle size={18} strokeWidth={1.5} /> },
   { tool: 'line', label: '선 (L)', icon: <Minus size={18} strokeWidth={1.5} /> },
-  { tool: 'arrow', label: '화살표', icon: <ArrowRight size={18} strokeWidth={1.5} /> },
+  { tool: 'arrow', label: '화살표 (-)', icon: <ArrowRight size={18} strokeWidth={1.5} /> },
   { tool: 'draw', label: '브러쉬 (B)', icon: <Paintbrush size={18} strokeWidth={1.5} /> },
   { tool: 'pen', label: '펜 (P)', icon: <PenTool size={18} strokeWidth={1.5} /> },
+];
+
+const ELEMENT_CATEGORY_ITEMS: Array<{
+  key: string;
+  title: string;
+  items: Array<{ tool: ToolType; label: string; icon: React.ReactNode }>;
+}> = [
+  {
+    key: 'shape',
+    title: '도형',
+    items: SHAPE_ITEMS.filter((item) => item.tool === 'rect' || item.tool === 'ellipse' || item.tool === 'triangle'),
+  },
+  {
+    key: 'line',
+    title: '선',
+    items: SHAPE_ITEMS.filter((item) => item.tool === 'line' || item.tool === 'arrow'),
+  },
+  {
+    key: 'draw',
+    title: '그리기',
+    items: SHAPE_ITEMS.filter((item) => item.tool === 'draw' || item.tool === 'pen'),
+  },
 ];
 
 const TEXT_FONT_PRESETS: { label: string; family: string; preview: string }[] = [
@@ -602,6 +624,80 @@ export default function WorksheetToolbox() {
     };
   }, []);
 
+  const triggerEyedropperShortcut = useCallback(async () => {
+    const eyeDropperCtor = (
+      window as Window & {
+        EyeDropper?: new () => { open: () => Promise<{ sRGBHex: string }> };
+      }
+    ).EyeDropper;
+
+    if (!eyeDropperCtor) {
+      return;
+    }
+
+    try {
+      const result = await new eyeDropperCtor().open();
+      if (!result?.sRGBHex) {
+        return;
+      }
+
+      if (colorTarget === 'fill') {
+        setFillColor(result.sRGBHex);
+        setFillPantoneCode(null);
+      } else {
+        setStrokeColor(result.sRGBHex);
+        setStrokePantoneCode(null);
+      }
+    } catch (error) {
+      const domError = error as DOMException;
+      if (domError?.name === 'AbortError') {
+        return;
+      }
+    }
+  }, [
+    colorTarget,
+    setFillColor,
+    setFillPantoneCode,
+    setStrokeColor,
+    setStrokePantoneCode,
+  ]);
+
+  useEffect(() => {
+    const isTextFocused = () => {
+      const el = document.activeElement;
+      return (
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLTextAreaElement ||
+        (el instanceof HTMLElement && el.isContentEditable)
+      );
+    };
+
+    const handleEyedropperShortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat) {
+        return;
+      }
+      if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) {
+        return;
+      }
+      if (event.code !== 'KeyI') {
+        return;
+      }
+      if (isTextFocused()) {
+        return;
+      }
+
+      event.preventDefault();
+      setActivePanelKey('color');
+      setContentOpen(true);
+      void triggerEyedropperShortcut();
+    };
+
+    window.addEventListener('keydown', handleEyedropperShortcut);
+    return () => {
+      window.removeEventListener('keydown', handleEyedropperShortcut);
+    };
+  }, [triggerEyedropperShortcut]);
+
   return (
     <div className={`worksheet-toolbox flex h-full min-h-0 bg-white p-2 dark:bg-gray-900 ${isDarkMode ? 'dark' : ''}`}>
       <div className='flex min-h-0 min-w-0 flex-1'>
@@ -666,28 +762,37 @@ export default function WorksheetToolbox() {
           >
             {activePanelKey === 'tools' ? (
               <div className='flex min-h-0 flex-1 flex-col gap-y-3 overflow-y-auto'>
-                <p className='shrink-0 text-[11px] font-semibold tracking-wider text-gray-400 uppercase dark:text-gray-500'>
-                  그리기
-                </p>
-                <div className='grid grid-cols-3 gap-2'>
-                  {SHAPE_ITEMS.map(({ tool, label, icon }) => (
-                    <SidePanelTooltip key={tool} title={label} className='w-full'>
-                      <button
-                        type='button'
-                        onPointerDown={(event) => handleFastPress(event, () => setActiveTool(tool))}
-                        onClick={() => runClickAction(() => setActiveTool(tool))}
-                        title={label}
-                        aria-label={label}
-                        className={`flex w-full touch-manipulation flex-col items-center gap-1 rounded-lg px-2 py-3 text-[10px] ${SIDEPANEL_BUTTON_BASE} ${
-                          activeTool === tool ? SIDEPANEL_BUTTON_ACTIVE : SIDEPANEL_BUTTON_IDLE
-                        }`}
-                      >
-                        {icon}
-                        {label}
-                      </button>
-                    </SidePanelTooltip>
-                  ))}
+                <div className='flex items-center justify-between gap-2'>
+                  <p className='shrink-0 text-[11px] font-semibold tracking-wider text-gray-400 uppercase dark:text-gray-500'>
+                    도구
+                  </p>
                 </div>
+                {ELEMENT_CATEGORY_ITEMS.map((category) => (
+                  <div key={category.key} className='space-y-1.5'>
+                    <p className='text-[10px] font-semibold tracking-wide text-gray-500 dark:text-gray-400'>
+                      {category.title}
+                    </p>
+                    <div className='grid grid-cols-3 gap-2'>
+                      {category.items.map(({ tool, label, icon }) => (
+                        <SidePanelTooltip key={`${category.key}-${tool}`} title={label} className='w-full'>
+                          <button
+                            type='button'
+                            onPointerDown={(event) => handleFastPress(event, () => setActiveTool(tool))}
+                            onClick={() => runClickAction(() => setActiveTool(tool))}
+                            title={label}
+                            aria-label={label}
+                            className={`flex w-full touch-manipulation flex-col items-center gap-1 rounded-lg px-2 py-3 text-[10px] ${SIDEPANEL_BUTTON_BASE} ${
+                              activeTool === tool ? SIDEPANEL_BUTTON_ACTIVE : SIDEPANEL_BUTTON_IDLE
+                            }`}
+                          >
+                            {icon}
+                            {label}
+                          </button>
+                        </SidePanelTooltip>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : activePanelKey === 'text' ? (
               <div className='flex min-h-0 flex-1 flex-col gap-y-3 overflow-y-auto overflow-x-hidden'>
