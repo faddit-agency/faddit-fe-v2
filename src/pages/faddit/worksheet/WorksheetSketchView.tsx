@@ -66,6 +66,7 @@ type PenAnchor = {
 const GRID_UNIT = 10;
 const MIN_ZOOM_SCALE = 0.1;
 const MAX_ZOOM_SCALE = 5;
+const CANVAS_ARTBOARD_OBJECT_ID = '__canvas-artboard__';
 
 function clampZoomScale(value: number): number {
   return Math.max(MIN_ZOOM_SCALE, Math.min(MAX_ZOOM_SCALE, value));
@@ -131,6 +132,12 @@ function isHoverOverlayObject(obj: FabricObject | null): boolean {
   if (!obj) return false;
   const data = getObjectData(obj);
   return data?.kind === '__hover_overlay__' || data?.kind === '__artboard__';
+}
+
+function isArtboardObject(obj: FabricObject | null): obj is Rect {
+  if (!(obj instanceof Rect)) return false;
+  const data = getObjectData(obj);
+  return data?.kind === '__artboard__' || data?.id === CANVAS_ARTBOARD_OBJECT_ID;
 }
 
 function buildArrowPathCommands(tail: ArrowPoint, tip: ArrowPoint): TSimplePathData {
@@ -473,6 +480,12 @@ interface WorksheetSketchViewProps {
 
 export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSketchViewProps) {
   const canvasElRef = useRef<HTMLCanvasElement>(null);
+  const gridOverlayRef = useRef<HTMLDivElement>(null);
+  const borderOverlayRef = useRef<HTMLDivElement>(null);
+  const gridSyncRafRef = useRef<number | null>(null);
+  const lastBorderRectRef = useRef<{ left: number; top: number; width: number; height: number } | null>(
+    null,
+  );
   const fabricRef = useRef<Canvas | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const drawStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -531,6 +544,8 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     sendSelectionBackward,
     bringSelectionToFront,
     sendSelectionToBack,
+    undo,
+    redo,
   } = useCanvas();
 
   const [localZoom, setLocalZoom] = useState(zoom);
@@ -539,6 +554,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     guides: [],
     hud: [],
   });
+  const showGridRef = useRef(showGrid);
   const onZoomChangeRef = useRef(onZoomChange);
 
   useEffect(() => {
@@ -583,22 +599,166 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     [fillPantoneCode, strokePantoneCode],
   );
 
-  const gridStyle = (() => {
+  const syncGridOverlay = useCallback(() => {
+    const overlay = gridOverlayRef.current;
+    const borderOverlay = borderOverlayRef.current;
     const canvas = fabricRef.current;
-    const vpt = canvas?.viewportTransform ?? [localZoom / 100, 0, 0, localZoom / 100, 0, 0];
-    const scaleX = Math.max(0.0001, Math.abs(vpt[0]));
-    const scaleY = Math.max(0.0001, Math.abs(vpt[3]));
-    const stepX = 10 * scaleX;
-    const stepY = 10 * scaleY;
+    const container = containerRef.current;
+    if (!overlay || !borderOverlay || !canvas || !container) {
+      return;
+    }
 
-    return {
-      backgroundImage:
-        'linear-gradient(to right, rgba(255,0,0,0.25) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,0,0,0.25) 1px, transparent 1px)',
-      backgroundSize: `${stepX}px ${stepY}px`,
-      backgroundPosition: `${vpt[4]}px ${vpt[5]}px`,
-      opacity: showGrid ? 1 : 0,
+    const hideGridOverlay = () => {
+      overlay.style.opacity = '0';
+      overlay.style.clipPath = 'inset(0 100% 100% 0)';
     };
-  })();
+    const hideBorderOverlay = () => {
+      lastBorderRectRef.current = null;
+      borderOverlay.style.opacity = '0';
+      borderOverlay.style.left = '0px';
+      borderOverlay.style.top = '0px';
+      borderOverlay.style.width = '0px';
+      borderOverlay.style.height = '0px';
+    };
+    const keepLastBorderOverlay = () => {
+      const last = lastBorderRectRef.current;
+      if (!last) {
+        hideBorderOverlay();
+        return false;
+      }
+      borderOverlay.style.left = `${last.left}px`;
+      borderOverlay.style.top = `${last.top}px`;
+      borderOverlay.style.width = `${last.width}px`;
+      borderOverlay.style.height = `${last.height}px`;
+      borderOverlay.style.opacity = '1';
+      return true;
+    };
+
+    if (!showGridRef.current) {
+      hideGridOverlay();
+    }
+
+    const artboard = canvas.getObjects().find((obj): obj is Rect => isArtboardObject(obj));
+    if (!artboard) {
+      hideGridOverlay();
+      keepLastBorderOverlay();
+      return;
+    }
+
+    const center = artboard.getCenterPoint();
+    const halfWidth = artboard.getScaledWidth() / 2;
+    const halfHeight = artboard.getScaledHeight() / 2;
+    if (!Number.isFinite(halfWidth) || !Number.isFinite(halfHeight) || halfWidth <= 0 || halfHeight <= 0) {
+      hideGridOverlay();
+      keepLastBorderOverlay();
+      return;
+    }
+
+    const vpt = (canvas.viewportTransform ?? [1, 0, 0, 1, 0, 0]) as Mat6;
+    const toViewport = (x: number, y: number) => ({
+      x: vpt[0] * x + vpt[2] * y + vpt[4],
+      y: vpt[1] * x + vpt[3] * y + vpt[5],
+    });
+
+    const corners = [
+      toViewport(center.x - halfWidth, center.y - halfHeight),
+      toViewport(center.x + halfWidth, center.y - halfHeight),
+      toViewport(center.x + halfWidth, center.y + halfHeight),
+      toViewport(center.x - halfWidth, center.y + halfHeight),
+    ];
+
+    const minX = Math.min(...corners.map((corner) => corner.x));
+    const maxX = Math.max(...corners.map((corner) => corner.x));
+    const minY = Math.min(...corners.map((corner) => corner.y));
+    const maxY = Math.max(...corners.map((corner) => corner.y));
+
+    const containerWidth = container.clientWidth;
+    const containerHeight = container.clientHeight;
+
+    const leftInset = Math.max(0, Math.min(containerWidth, minX));
+    const rightInset = Math.max(0, Math.min(containerWidth, containerWidth - maxX));
+    const topInset = Math.max(0, Math.min(containerHeight, minY));
+    const bottomInset = Math.max(0, Math.min(containerHeight, containerHeight - maxY));
+    const borderWidth = maxX - minX;
+    const borderHeight = maxY - minY;
+
+    if (
+      leftInset + rightInset >= containerWidth ||
+      topInset + bottomInset >= containerHeight ||
+      borderWidth <= 0 ||
+      borderHeight <= 0
+    ) {
+      hideGridOverlay();
+      keepLastBorderOverlay();
+      return;
+    }
+
+    const nextBorderLeft = Math.round(minX) + 0.5;
+    const nextBorderTop = Math.round(minY) + 0.5;
+    const nextBorderWidth = Math.max(1, Math.round(borderWidth) - 1);
+    const nextBorderHeight = Math.max(1, Math.round(borderHeight) - 1);
+    const prevBorderRect = lastBorderRectRef.current;
+    if (
+      !prevBorderRect ||
+      Math.abs(prevBorderRect.left - nextBorderLeft) > 0.01 ||
+      Math.abs(prevBorderRect.top - nextBorderTop) > 0.01 ||
+      Math.abs(prevBorderRect.width - nextBorderWidth) > 0.01 ||
+      Math.abs(prevBorderRect.height - nextBorderHeight) > 0.01
+    ) {
+      borderOverlay.style.left = `${nextBorderLeft}px`;
+      borderOverlay.style.top = `${nextBorderTop}px`;
+      borderOverlay.style.width = `${nextBorderWidth}px`;
+      borderOverlay.style.height = `${nextBorderHeight}px`;
+      lastBorderRectRef.current = {
+        left: nextBorderLeft,
+        top: nextBorderTop,
+        width: nextBorderWidth,
+        height: nextBorderHeight,
+      };
+    }
+    borderOverlay.style.opacity = '1';
+
+    if (!showGridRef.current) {
+      return;
+    }
+
+    const scaleX = Math.max(0.0001, Math.hypot(vpt[0], vpt[1]));
+    const scaleY = Math.max(0.0001, Math.hypot(vpt[2], vpt[3]));
+
+    overlay.style.backgroundImage =
+      'linear-gradient(to right, rgba(255,0,0,0.25) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,0,0,0.25) 1px, transparent 1px)';
+    overlay.style.backgroundSize = `${GRID_UNIT * scaleX}px ${GRID_UNIT * scaleY}px`;
+    overlay.style.backgroundPosition = `${vpt[4]}px ${vpt[5]}px`;
+    overlay.style.clipPath = `inset(${topInset}px ${rightInset}px ${bottomInset}px ${leftInset}px)`;
+    overlay.style.opacity = '1';
+  }, []);
+
+  const scheduleGridOverlaySync = useCallback(() => {
+    if (typeof window === 'undefined') {
+      syncGridOverlay();
+      return;
+    }
+    if (gridSyncRafRef.current !== null) {
+      window.cancelAnimationFrame(gridSyncRafRef.current);
+    }
+    gridSyncRafRef.current = window.requestAnimationFrame(() => {
+      gridSyncRafRef.current = null;
+      syncGridOverlay();
+    });
+  }, [syncGridOverlay]);
+
+  useEffect(() => {
+    showGridRef.current = showGrid;
+    scheduleGridOverlaySync();
+  }, [showGrid, scheduleGridOverlaySync]);
+
+  useEffect(() => {
+    return () => {
+      if (gridSyncRafRef.current !== null && typeof window !== 'undefined') {
+        window.cancelAnimationFrame(gridSyncRafRef.current);
+      }
+    };
+  }, []);
 
   const handlePathEditDone = useCallback(
     (nodes: NodePoint[]) => {
@@ -663,6 +823,10 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     fabricRef.current = canvas;
     canvasRef.current = canvas;
     registerCanvas(canvas);
+    const handleAfterRender = () => {
+      scheduleGridOverlaySync();
+    };
+    canvas.on('after:render', handleAfterRender);
     const upperCanvasEl = (canvas as unknown as { upperCanvasEl?: HTMLCanvasElement }).upperCanvasEl;
     if (upperCanvasEl) {
       upperCanvasEl.style.touchAction = 'none';
@@ -693,6 +857,11 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
 
     return () => {
       resizeObserver.disconnect();
+      canvas.off('after:render', handleAfterRender);
+      if (gridSyncRafRef.current !== null && typeof window !== 'undefined') {
+        window.cancelAnimationFrame(gridSyncRafRef.current);
+        gridSyncRafRef.current = null;
+      }
       canvas.dispose();
       fabricRef.current = null;
       canvasRef.current = null;
@@ -1150,6 +1319,15 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         deleteSelected();
+      } else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.code === 'KeyZ') {
+        e.preventDefault();
+        undo();
+      } else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.code === 'KeyY') {
+        e.preventDefault();
+        redo();
+      } else if ((e.ctrlKey || e.metaKey) && !e.altKey && e.shiftKey && e.code === 'KeyZ') {
+        e.preventDefault();
+        redo();
       } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.code === 'KeyC') {
         e.preventDefault();
         copySelected();
@@ -1230,6 +1408,8 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     sendSelectionBackward,
     bringSelectionToFront,
     sendSelectionToBack,
+    undo,
+    redo,
     pathEditingPath,
     setActiveTool,
     setPathEditingPath,
@@ -2876,11 +3056,19 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
   return (
     <div
       ref={containerRef}
-      className='relative h-full w-full overflow-hidden rounded-md'
+      className='relative h-full w-full overflow-hidden rounded-md bg-[#fafafa] dark:bg-[#08122a]'
       style={{ touchAction: 'none' }}
     >
-      <div className='pointer-events-none absolute inset-0 z-10' style={gridStyle} />
       <canvas ref={canvasElRef} className='absolute inset-0 z-20' />
+      <div
+        ref={gridOverlayRef}
+        className='pointer-events-none absolute inset-0 z-20 transition-opacity duration-150'
+        style={{ opacity: 0, clipPath: 'inset(0 100% 100% 0)' }}
+      />
+      <div
+        ref={borderOverlayRef}
+        className='pointer-events-none absolute z-[25] border border-slate-500 opacity-0 dark:border-slate-400'
+      />
       <InteractionOverlay
         canvas={fabricRef.current}
         model={interactionOverlayModel}

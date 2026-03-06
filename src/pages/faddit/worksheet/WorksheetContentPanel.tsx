@@ -135,6 +135,94 @@ const PAGE_TYPE_CHIP_CLASS: Record<PageType, string> = {
   label: 'bg-amber-100 text-amber-700',
   'size-spec': 'bg-indigo-100 text-indigo-700',
 };
+const CANVAS_ARTBOARD_OBJECT_ID = '__canvas-artboard__';
+
+function makeCanvasAreaThumbnail(canvas: any): string | null {
+  if (!canvas || typeof canvas.toDataURL !== 'function') {
+    return null;
+  }
+
+  const artboard = canvas.getObjects?.().find((obj: any) => {
+    const data = obj?.data;
+    return data?.kind === '__artboard__' || data?.id === CANVAS_ARTBOARD_OBJECT_ID;
+  });
+
+  if (
+    !artboard ||
+    typeof artboard.getCenterPoint !== 'function' ||
+    typeof artboard.getScaledWidth !== 'function' ||
+    typeof artboard.getScaledHeight !== 'function'
+  ) {
+    return canvas.toDataURL({ format: 'png', multiplier: 1 });
+  }
+
+  const center = artboard.getCenterPoint();
+  const halfWidth = artboard.getScaledWidth() / 2;
+  const halfHeight = artboard.getScaledHeight() / 2;
+
+  if (
+    !center ||
+    !Number.isFinite(center.x) ||
+    !Number.isFinite(center.y) ||
+    !Number.isFinite(halfWidth) ||
+    !Number.isFinite(halfHeight) ||
+    halfWidth <= 0 ||
+    halfHeight <= 0
+  ) {
+    return canvas.toDataURL({ format: 'png', multiplier: 1 });
+  }
+
+  const vpt = (canvas.viewportTransform ?? [1, 0, 0, 1, 0, 0]) as [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
+  const toViewport = (x: number, y: number) => ({
+    x: vpt[0] * x + vpt[2] * y + vpt[4],
+    y: vpt[1] * x + vpt[3] * y + vpt[5],
+  });
+
+  const corners = [
+    toViewport(center.x - halfWidth, center.y - halfHeight),
+    toViewport(center.x + halfWidth, center.y - halfHeight),
+    toViewport(center.x + halfWidth, center.y + halfHeight),
+    toViewport(center.x - halfWidth, center.y + halfHeight),
+  ];
+
+  const minX = Math.min(...corners.map((corner) => corner.x));
+  const maxX = Math.max(...corners.map((corner) => corner.x));
+  const minY = Math.min(...corners.map((corner) => corner.y));
+  const maxY = Math.max(...corners.map((corner) => corner.y));
+  const canvasWidth = Number(canvas.getWidth?.() ?? 0);
+  const canvasHeight = Number(canvas.getHeight?.() ?? 0);
+
+  if (canvasWidth <= 0 || canvasHeight <= 0) {
+    return canvas.toDataURL({ format: 'png', multiplier: 1 });
+  }
+
+  const left = Math.max(0, Math.min(canvasWidth, minX));
+  const top = Math.max(0, Math.min(canvasHeight, minY));
+  const right = Math.max(0, Math.min(canvasWidth, maxX));
+  const bottom = Math.max(0, Math.min(canvasHeight, maxY));
+  const width = Math.floor(right - left);
+  const height = Math.floor(bottom - top);
+
+  if (width <= 1 || height <= 1) {
+    return canvas.toDataURL({ format: 'png', multiplier: 1 });
+  }
+
+  return canvas.toDataURL({
+    format: 'png',
+    multiplier: 1,
+    left,
+    top,
+    width,
+    height,
+  } as any);
+}
 
 function sortPagesByType(nextPages: WorksheetPage[]): WorksheetPage[] {
   return [...nextPages].sort((a, b) => PAGE_TYPE_ORDER[a.type] - PAGE_TYPE_ORDER[b.type]);
@@ -244,12 +332,7 @@ export default function WorksheetContentPanel({
       if (!json) return;
 
       const canvas = canvasRef.current;
-      const thumbnail = canvas
-        ? canvas.toDataURL({
-            format: 'png',
-            multiplier: 1,
-          })
-        : null;
+      const thumbnail = canvas ? makeCanvasAreaThumbnail(canvas) : null;
 
       updateDocument((prev) => {
         const sameSketchJson = prev.sketchPages[pageId] === json;
@@ -533,7 +616,7 @@ export default function WorksheetContentPanel({
 
   return (
     <section className='flex h-full min-w-0 flex-1 flex-col gap-2'>
-      <div className='relative min-h-0 flex-1 overflow-hidden rounded-md bg-white dark:bg-gray-900'>
+      <div className='relative min-h-0 flex-1 overflow-hidden rounded-md bg-transparent'>
         {!selectedPage && <div className='absolute inset-0' />}
         {selectedPage && isCanvasPageType(selectedPage.type) && (
           <div className='absolute inset-0'>
@@ -552,7 +635,7 @@ export default function WorksheetContentPanel({
         )}
       </div>
 
-      <div className='relative z-[120] flex w-full min-w-0 shrink-0 items-end gap-3 rounded-md pt-0 pr-0 pb-0 pl-4 xl:px-4 xl:py-3'>
+      <div className='relative z-[120] flex w-full min-w-0 shrink-0 items-end gap-3 rounded-md bg-[#fafafa] pt-0 pr-0 pb-0 pl-4 dark:bg-[#08122a] xl:px-4 xl:py-3'>
         <div className='min-w-0 flex-1'>
           <div
             className='w-full min-w-0 transition-[max-height,margin] duration-300 ease-in-out'
@@ -585,7 +668,7 @@ export default function WorksheetContentPanel({
                                 if (readOnly) return;
                                 updateDocument((prev) => ({ ...prev, activePageId: page.id }));
                               }}
-                              className={`relative h-full w-full cursor-pointer overflow-hidden rounded-md bg-white transition-all dark:bg-gray-900 ${
+                              className={`relative h-full w-full cursor-pointer overflow-hidden rounded-md bg-[#fafafa] transition-all dark:bg-gray-900 ${
                                 selectedId === page.id
                                   ? 'border-2 border-violet-500'
                                   : 'border border-gray-300 hover:border-gray-400 dark:border-gray-700 dark:hover:border-gray-500'
@@ -604,7 +687,7 @@ export default function WorksheetContentPanel({
                                 <img
                                   src={thumbnail}
                                   alt={`${page.label} 썸네일`}
-                                  className='h-full w-full object-cover'
+                                  className='h-full w-full object-contain'
                                 />
                               )}
                             </button>
