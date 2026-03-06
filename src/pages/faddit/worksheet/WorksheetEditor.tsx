@@ -232,7 +232,7 @@ const WorksheetEditor: React.FC = () => {
         <div className='h-full shrink-0'>
           <WorksheetToolbox />
         </div>
-        <section className='flex min-h-0 min-w-0 flex-1 flex-col gap-2 rounded-md bg-white/70 dark:bg-gray-900/70'>
+        <section className='flex min-h-0 min-w-0 flex-1 flex-col gap-2 rounded-md bg-[#fafafa] dark:bg-gray-900/70'>
           <WorksheetTopBar
             onExit={() => navigate(-1)}
             onSave={worksheetId && userId ? handleManualSave : undefined}

@@ -298,7 +298,7 @@ const Worksheet: React.FC = () => {
       <aside className='shrink-0 overflow-hidden rounded-md bg-white dark:bg-gray-900'>
         <WorksheetTemplateSidebar collapsible />
       </aside>
-      <main className='flex min-w-0 flex-1 flex-col gap-y-6 rounded-md bg-white/70 p-4 dark:bg-gray-900/70'>
+      <main className='flex min-w-0 flex-1 flex-col gap-y-6 rounded-md bg-[#fafafa] p-4 dark:bg-gray-900/70'>
         <WorksheetHeader
           onSave={handleSave}
           onRenameTitle={handleRenameTitle}

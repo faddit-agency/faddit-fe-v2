@@ -16,7 +16,8 @@ import {
   type FabricObject,
   type TSimplePathData,
 } from 'fabric';
-import { useCanvas } from './CanvasProvider';
+import { annotationToolToAnnotationType, isAnnotationTool, useCanvas } from './CanvasProvider';
+import WorksheetAnnotationOverlay from './WorksheetAnnotationOverlay';
 import SketchBottomBar from './SketchBottomBar';
 import PathEditorOverlay, { applyNodesToFabric, type NodePoint } from './PathEditorOverlay';
 import {
@@ -26,6 +27,11 @@ import {
   type InteractionControllerApi,
   type OverlayModel,
 } from './interaction';
+import {
+  getDefaultAnnotationText,
+  type WorksheetCanvasAnnotation,
+  type WorksheetCanvasAnnotationType,
+} from './worksheetEditorSchema';
 
 const LAYER_NAME_MAP: Record<string, string> = {
   rect: '사각형',
@@ -66,6 +72,14 @@ type PenAnchor = {
 const GRID_UNIT = 10;
 const MIN_ZOOM_SCALE = 0.1;
 const MAX_ZOOM_SCALE = 5;
+const CANVAS_ARTBOARD_OBJECT_ID = '__canvas-artboard__';
+const ANNOTATION_CLICK_TOLERANCE = 4;
+
+type AnnotationDraft = {
+  type: WorksheetCanvasAnnotationType;
+  anchor: ArrowPoint;
+  label: ArrowPoint;
+};
 
 function clampZoomScale(value: number): number {
   return Math.max(MIN_ZOOM_SCALE, Math.min(MAX_ZOOM_SCALE, value));
@@ -73,6 +87,82 @@ function clampZoomScale(value: number): number {
 
 function clampZoomPercent(value: number): number {
   return Math.max(MIN_ZOOM_SCALE * 100, Math.min(MAX_ZOOM_SCALE * 100, value));
+}
+
+function isClickLikeDrag(start: ArrowPoint, end: ArrowPoint): boolean {
+  return Math.abs(end.x - start.x) < ANNOTATION_CLICK_TOLERANCE && Math.abs(end.y - start.y) < ANNOTATION_CLICK_TOLERANCE;
+}
+
+function buildAnnotationFromGesture(
+  type: WorksheetCanvasAnnotationType,
+  start: ArrowPoint,
+  end: ArrowPoint,
+): WorksheetCanvasAnnotation {
+  const clickLike = isClickLikeDrag(start, end);
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const distance = Math.max(1, Math.round(Math.hypot(dx, dy)));
+
+  if (type === 'pin') {
+    return {
+      id: `annotation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type,
+      anchor: { x: start.x, y: start.y },
+      label: clickLike ? { x: start.x + 18, y: start.y - 18 } : { x: end.x + 14, y: end.y - 14 },
+      text: getDefaultAnnotationText(type),
+      color: '#2563EB',
+      backgroundColor: '#FFFFFF',
+    };
+  }
+
+  if (type === 'dimension') {
+    return {
+      id: `annotation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type,
+      anchor: { x: start.x, y: start.y },
+      label: clickLike ? { x: start.x + 160, y: start.y } : { x: end.x, y: end.y },
+      text: `${distance} px`,
+      color: '#0F766E',
+      backgroundColor: '#ECFDF5',
+      textColor: '#115E59',
+    };
+  }
+
+  if (type === 'highlight') {
+    return {
+      id: `annotation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type,
+      anchor: { x: start.x, y: start.y },
+      label: clickLike ? { x: start.x + 220, y: start.y + 120 } : { x: end.x, y: end.y },
+      text: getDefaultAnnotationText(type),
+      color: '#D97706',
+      backgroundColor: '#FEF3C7',
+      textColor: '#92400E',
+    };
+  }
+
+  if (type === 'status') {
+    return {
+      id: `annotation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type,
+      anchor: { x: start.x, y: start.y },
+      label: clickLike ? { x: start.x + 28, y: start.y - 18 } : { x: end.x + 18, y: end.y - 18 },
+      text: getDefaultAnnotationText(type),
+      status: 'review',
+      color: '#DC2626',
+      backgroundColor: '#FEF2F2',
+      textColor: '#991B1B',
+    };
+  }
+
+  return {
+    id: `annotation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    type,
+    anchor: { x: start.x, y: start.y },
+    label: clickLike ? { x: start.x + 92, y: start.y - 34 } : { x: end.x + 12, y: end.y - 18 },
+    text: getDefaultAnnotationText(type),
+    color: '#475569',
+  };
 }
 
 function getTouchDistance(a: { x: number; y: number }, b: { x: number; y: number }): number {
@@ -131,6 +221,61 @@ function isHoverOverlayObject(obj: FabricObject | null): boolean {
   if (!obj) return false;
   const data = getObjectData(obj);
   return data?.kind === '__hover_overlay__' || data?.kind === '__artboard__';
+}
+
+function isArtboardObject(obj: FabricObject | null): obj is Rect {
+  if (!(obj instanceof Rect)) return false;
+  const data = getObjectData(obj);
+  return data?.kind === '__artboard__' || data?.id === CANVAS_ARTBOARD_OBJECT_ID;
+}
+
+type SceneBounds = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+};
+
+function getArtboardSceneBounds(artboard: Rect): SceneBounds | null {
+  const center = artboard.getCenterPoint();
+  const halfWidth = artboard.getScaledWidth() / 2;
+  const halfHeight = artboard.getScaledHeight() / 2;
+  if (
+    !center ||
+    !Number.isFinite(center.x) ||
+    !Number.isFinite(center.y) ||
+    !Number.isFinite(halfWidth) ||
+    !Number.isFinite(halfHeight) ||
+    halfWidth <= 0 ||
+    halfHeight <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    left: center.x - halfWidth,
+    top: center.y - halfHeight,
+    right: center.x + halfWidth,
+    bottom: center.y + halfHeight,
+  };
+}
+
+function isObjectOutsideArtboard(obj: FabricObject, artboardBounds: SceneBounds): boolean {
+  const objectBounds = obj.getBoundingRect();
+  const left = objectBounds.left;
+  const top = objectBounds.top;
+  const right = objectBounds.left + objectBounds.width;
+  const bottom = objectBounds.top + objectBounds.height;
+  if (![left, top, right, bottom].every((value) => Number.isFinite(value))) {
+    return false;
+  }
+
+  return (
+    right <= artboardBounds.left ||
+    left >= artboardBounds.right ||
+    bottom <= artboardBounds.top ||
+    top >= artboardBounds.bottom
+  );
 }
 
 function buildArrowPathCommands(tail: ArrowPoint, tip: ArrowPoint): TSimplePathData {
@@ -456,7 +601,7 @@ function setupArrowEndpointEditing(path: Path): void {
   path.controls = createArrowEndpointControls();
 }
 
-function setupEndpointEditingIfNeeded(obj: FabricObject): void {
+function setupBasicEndpointEditingIfNeeded(obj: FabricObject): void {
   if (obj instanceof Line) {
     setupLineEndpointEditing(obj);
     return;
@@ -469,10 +614,22 @@ function setupEndpointEditingIfNeeded(obj: FabricObject): void {
 interface WorksheetSketchViewProps {
   zoom: number;
   onZoomChange: (z: number) => void;
+  annotations: WorksheetCanvasAnnotation[];
+  annotationsVisible: boolean;
+  onAnnotationsChange: (annotations: WorksheetCanvasAnnotation[]) => void;
 }
 
-export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSketchViewProps) {
+export default function WorksheetSketchView({
+  zoom,
+  onZoomChange,
+  annotations,
+  annotationsVisible,
+  onAnnotationsChange,
+}: WorksheetSketchViewProps) {
   const canvasElRef = useRef<HTMLCanvasElement>(null);
+  const gridOverlayRef = useRef<HTMLDivElement>(null);
+  const gridSyncRafRef = useRef<number | null>(null);
+  const outsideHiddenMapRef = useRef<Map<FabricObject, boolean>>(new Map());
   const fabricRef = useRef<Canvas | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const drawStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -503,9 +660,12 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
   const hoverOutlineRef = useRef<FabricObject | null>(null);
   const hoverTargetRef = useRef<FabricObject | null>(null);
   const hoverApplySeqRef = useRef(0);
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+  const [annotationDraft, setAnnotationDraft] = useState<AnnotationDraft | null>(null);
 
   const {
     canvasRef,
+    canvasSession,
     registerCanvas,
     activeTool,
     setActiveTool,
@@ -520,6 +680,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     strokeWidth,
     cornerRadius,
     showGrid,
+    showOutsideElements,
     saveHistory,
     refreshLayers,
     deleteSelected,
@@ -531,6 +692,8 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     sendSelectionBackward,
     bringSelectionToFront,
     sendSelectionToBack,
+    undo,
+    redo,
   } = useCanvas();
 
   const [localZoom, setLocalZoom] = useState(zoom);
@@ -539,11 +702,31 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     guides: [],
     hud: [],
   });
+  const showGridRef = useRef(showGrid);
   const onZoomChangeRef = useRef(onZoomChange);
 
   useEffect(() => {
     onZoomChangeRef.current = onZoomChange;
   }, [onZoomChange]);
+
+  useEffect(() => {
+    if (selectedAnnotationId && !annotations.some((annotation) => annotation.id === selectedAnnotationId)) {
+      setSelectedAnnotationId(null);
+    }
+  }, [annotations, selectedAnnotationId]);
+
+  useEffect(() => {
+    if (!annotationsVisible) {
+      setSelectedAnnotationId(null);
+      setAnnotationDraft(null);
+    }
+  }, [annotationsVisible]);
+
+  useEffect(() => {
+    if (!isAnnotationTool(activeTool) && annotationDraft) {
+      setAnnotationDraft(null);
+    }
+  }, [activeTool, annotationDraft]);
 
   const syncZoomState = useCallback((nextScale: number) => {
     const clampedScale = clampZoomScale(nextScale);
@@ -553,6 +736,21 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     return clampedScale;
   }, []);
 
+  const handleSelectAnnotation = useCallback(
+    (annotationId: string | null) => {
+      const canvas = fabricRef.current;
+      if (canvas) {
+        canvas.discardActiveObject();
+        canvas.requestRenderAll();
+      }
+      if (pathEditingPath) {
+        setPathEditingPath(null);
+      }
+      setSelectedAnnotationId(annotationId);
+    },
+    [pathEditingPath],
+  );
+
   const buildObjectData = useCallback(
     (
       type: string,
@@ -561,6 +759,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         includeStroke?: boolean;
         kind?: string;
         name?: string;
+        extraData?: Partial<ArrowObjectData>;
       } = {},
     ) => {
       const extra: Partial<ArrowObjectData> = {};
@@ -577,28 +776,230 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       if (options.name) {
         extra.name = options.name;
       }
+      if (options.extraData) {
+        Object.assign(extra, options.extraData);
+      }
 
       return makeData(type, extra);
     },
     [fillPantoneCode, strokePantoneCode],
   );
 
-  const gridStyle = (() => {
-    const canvas = fabricRef.current;
-    const vpt = canvas?.viewportTransform ?? [localZoom / 100, 0, 0, localZoom / 100, 0, 0];
-    const scaleX = Math.max(0.0001, Math.abs(vpt[0]));
-    const scaleY = Math.max(0.0001, Math.abs(vpt[3]));
-    const stepX = 10 * scaleX;
-    const stepY = 10 * scaleY;
+  const setupEndpointEditingIfNeeded = useCallback(
+    (obj: FabricObject): void => {
+      setupBasicEndpointEditingIfNeeded(obj);
+    },
+    [],
+  );
 
-    return {
-      backgroundImage:
-        'linear-gradient(to right, rgba(255,0,0,0.25) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,0,0,0.25) 1px, transparent 1px)',
-      backgroundSize: `${stepX}px ${stepY}px`,
-      backgroundPosition: `${vpt[4]}px ${vpt[5]}px`,
-      opacity: showGrid ? 1 : 0,
+  const syncGridOverlay = useCallback(() => {
+    const overlay = gridOverlayRef.current;
+    const canvas = fabricRef.current;
+    const container = containerRef.current;
+    if (!overlay || !canvas || !container) {
+      return;
+    }
+
+    const hideGridOverlay = () => {
+      overlay.style.opacity = '0';
+      overlay.style.clipPath = 'inset(0 100% 100% 0)';
     };
-  })();
+
+    if (!showGridRef.current) {
+      hideGridOverlay();
+      return;
+    }
+
+    const artboard = canvas.getObjects().find((obj): obj is Rect => isArtboardObject(obj));
+    if (!artboard) {
+      hideGridOverlay();
+      return;
+    }
+
+    const artboardBounds = getArtboardSceneBounds(artboard);
+    if (!artboardBounds) {
+      hideGridOverlay();
+      return;
+    }
+
+    const vpt = (canvas.viewportTransform ?? [1, 0, 0, 1, 0, 0]) as Mat6;
+    const toViewport = (x: number, y: number) => ({
+      x: vpt[0] * x + vpt[2] * y + vpt[4],
+      y: vpt[1] * x + vpt[3] * y + vpt[5],
+    });
+
+    const corners = [
+      toViewport(artboardBounds.left, artboardBounds.top),
+      toViewport(artboardBounds.right, artboardBounds.top),
+      toViewport(artboardBounds.right, artboardBounds.bottom),
+      toViewport(artboardBounds.left, artboardBounds.bottom),
+    ];
+
+    const minX = Math.min(...corners.map((corner) => corner.x));
+    const maxX = Math.max(...corners.map((corner) => corner.x));
+    const minY = Math.min(...corners.map((corner) => corner.y));
+    const maxY = Math.max(...corners.map((corner) => corner.y));
+
+    const containerWidth = container.clientWidth;
+    const containerHeight = container.clientHeight;
+
+    const leftInset = Math.max(0, Math.min(containerWidth, minX));
+    const rightInset = Math.max(0, Math.min(containerWidth, containerWidth - maxX));
+    const topInset = Math.max(0, Math.min(containerHeight, minY));
+    const bottomInset = Math.max(0, Math.min(containerHeight, containerHeight - maxY));
+
+    if (leftInset + rightInset >= containerWidth || topInset + bottomInset >= containerHeight) {
+      hideGridOverlay();
+      return;
+    }
+
+    const scaleX = Math.max(0.0001, Math.hypot(vpt[0], vpt[1]));
+    const scaleY = Math.max(0.0001, Math.hypot(vpt[2], vpt[3]));
+
+    overlay.style.backgroundImage =
+      'linear-gradient(to right, rgba(255,0,0,0.25) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,0,0,0.25) 1px, transparent 1px)';
+    overlay.style.backgroundSize = `${GRID_UNIT * scaleX}px ${GRID_UNIT * scaleY}px`;
+    overlay.style.backgroundPosition = `${vpt[4]}px ${vpt[5]}px`;
+    overlay.style.clipPath = `inset(${topInset}px ${rightInset}px ${bottomInset}px ${leftInset}px)`;
+    overlay.style.opacity = '1';
+  }, []);
+
+  const scheduleGridOverlaySync = useCallback(() => {
+    if (typeof window === 'undefined') {
+      syncGridOverlay();
+      return;
+    }
+    if (gridSyncRafRef.current !== null) {
+      window.cancelAnimationFrame(gridSyncRafRef.current);
+    }
+    gridSyncRafRef.current = window.requestAnimationFrame(() => {
+      gridSyncRafRef.current = null;
+      syncGridOverlay();
+    });
+  }, [syncGridOverlay]);
+
+  useEffect(() => {
+    showGridRef.current = showGrid;
+    scheduleGridOverlaySync();
+  }, [showGrid, scheduleGridOverlaySync]);
+
+  useEffect(() => {
+    return () => {
+      if (gridSyncRafRef.current !== null && typeof window !== 'undefined') {
+        window.cancelAnimationFrame(gridSyncRafRef.current);
+      }
+    };
+  }, []);
+
+  const syncOutsideVisibility = useCallback(() => {
+    const canvas = fabricRef.current;
+    if (!canvas) {
+      return;
+    }
+
+    const hiddenMap = outsideHiddenMapRef.current;
+    const canvasObjects = canvas.getObjects();
+
+    if (showOutsideElements) {
+      let restored = false;
+      for (const [obj, originalVisible] of hiddenMap.entries()) {
+        if (!canvasObjects.includes(obj)) {
+          hiddenMap.delete(obj);
+          continue;
+        }
+        if ((obj.visible ?? true) !== originalVisible) {
+          obj.set('visible', originalVisible);
+          restored = true;
+        }
+        hiddenMap.delete(obj);
+      }
+      if (restored) {
+        canvas.requestRenderAll();
+        refreshLayers();
+      }
+      return;
+    }
+
+    const artboard = canvasObjects.find((obj): obj is Rect => isArtboardObject(obj));
+    const artboardBounds = artboard ? getArtboardSceneBounds(artboard) : null;
+    if (!artboardBounds) {
+      return;
+    }
+
+    let changed = false;
+
+    for (const [obj] of hiddenMap.entries()) {
+      if (!canvasObjects.includes(obj)) {
+        hiddenMap.delete(obj);
+        changed = true;
+      }
+    }
+
+    for (const obj of canvasObjects) {
+      if (isArtboardObject(obj) || isHoverOverlayObject(obj)) {
+        continue;
+      }
+
+      const outside = isObjectOutsideArtboard(obj, artboardBounds);
+      if (outside) {
+        if (!hiddenMap.has(obj)) {
+          hiddenMap.set(obj, obj.visible !== false);
+        }
+        if (obj.visible !== false) {
+          obj.set('visible', false);
+          changed = true;
+        }
+        continue;
+      }
+
+      if (hiddenMap.has(obj)) {
+        const originalVisible = hiddenMap.get(obj) ?? true;
+        hiddenMap.delete(obj);
+        if ((obj.visible ?? true) !== originalVisible) {
+          obj.set('visible', originalVisible);
+          changed = true;
+        }
+      }
+    }
+
+    const activeObject = canvas.getActiveObject();
+    if (activeObject && activeObject.visible === false) {
+      canvas.discardActiveObject();
+      changed = true;
+    }
+
+    if (changed) {
+      canvas.requestRenderAll();
+      refreshLayers();
+    }
+  }, [showOutsideElements, refreshLayers]);
+
+  useEffect(() => {
+    syncOutsideVisibility();
+  }, [showOutsideElements, canvasSession, syncOutsideVisibility]);
+
+  useEffect(() => {
+    const canvas = fabricRef.current;
+    if (!canvas) {
+      return;
+    }
+
+    const handleOutsideSync = () => {
+      syncOutsideVisibility();
+    };
+
+    canvas.on('object:added', handleOutsideSync);
+    canvas.on('object:removed', handleOutsideSync);
+    canvas.on('object:modified', handleOutsideSync);
+    canvas.on('path:created', handleOutsideSync);
+
+    return () => {
+      canvas.off('object:added', handleOutsideSync);
+      canvas.off('object:removed', handleOutsideSync);
+      canvas.off('object:modified', handleOutsideSync);
+      canvas.off('path:created', handleOutsideSync);
+    };
+  }, [canvasSession, syncOutsideVisibility]);
 
   const handlePathEditDone = useCallback(
     (nodes: NodePoint[]) => {
@@ -663,6 +1064,10 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     fabricRef.current = canvas;
     canvasRef.current = canvas;
     registerCanvas(canvas);
+    const handleAfterRender = () => {
+      scheduleGridOverlaySync();
+    };
+    canvas.on('after:render', handleAfterRender);
     const upperCanvasEl = (canvas as unknown as { upperCanvasEl?: HTMLCanvasElement }).upperCanvasEl;
     if (upperCanvasEl) {
       upperCanvasEl.style.touchAction = 'none';
@@ -693,6 +1098,11 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
 
     return () => {
       resizeObserver.disconnect();
+      canvas.off('after:render', handleAfterRender);
+      if (gridSyncRafRef.current !== null && typeof window !== 'undefined') {
+        window.cancelAnimationFrame(gridSyncRafRef.current);
+        gridSyncRafRef.current = null;
+      }
       canvas.dispose();
       fabricRef.current = null;
       canvasRef.current = null;
@@ -1115,6 +1525,50 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       );
     };
 
+    const deleteSelectedAnnotation = () => {
+      if (!selectedAnnotationId) {
+        return false;
+      }
+
+      const nextAnnotations = annotations.filter((annotation) => annotation.id !== selectedAnnotationId);
+      if (nextAnnotations.length === annotations.length) {
+        return false;
+      }
+
+      onAnnotationsChange(nextAnnotations);
+      setSelectedAnnotationId(null);
+      return true;
+    };
+
+    const nudgeSelectedAnnotation = (dx: number, dy: number) => {
+      if (!selectedAnnotationId) {
+        return false;
+      }
+
+      let changed = false;
+      onAnnotationsChange(
+        annotations.map((annotation) => {
+          if (annotation.id !== selectedAnnotationId) {
+            return annotation;
+          }
+
+          changed = true;
+          return {
+            ...annotation,
+            anchor: {
+              x: annotation.anchor.x + dx,
+              y: annotation.anchor.y + dy,
+            },
+            label: {
+              x: annotation.label.x + dx,
+              y: annotation.label.y + dy,
+            },
+          };
+        }),
+      );
+      return changed;
+    };
+
     const nudgeActiveObject = (dx: number, dy: number) => {
       const canvas = fabricRef.current;
       if (!canvas) return;
@@ -1149,7 +1603,18 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       if (isTextFocused()) return;
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
-        deleteSelected();
+        if (!deleteSelectedAnnotation()) {
+          deleteSelected();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.code === 'KeyZ') {
+        e.preventDefault();
+        undo();
+      } else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.code === 'KeyY') {
+        e.preventDefault();
+        redo();
+      } else if ((e.ctrlKey || e.metaKey) && !e.altKey && e.shiftKey && e.code === 'KeyZ') {
+        e.preventDefault();
+        redo();
       } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.code === 'KeyC') {
         e.preventDefault();
         copySelected();
@@ -1177,16 +1642,24 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       } else if (!e.ctrlKey && !e.metaKey && !e.altKey) {
         if (e.code === 'ArrowLeft') {
           e.preventDefault();
-          nudgeActiveObject(-1, 0);
+          if (!nudgeSelectedAnnotation(-1, 0)) {
+            nudgeActiveObject(-1, 0);
+          }
         } else if (e.code === 'ArrowRight') {
           e.preventDefault();
-          nudgeActiveObject(1, 0);
+          if (!nudgeSelectedAnnotation(1, 0)) {
+            nudgeActiveObject(1, 0);
+          }
         } else if (e.code === 'ArrowUp') {
           e.preventDefault();
-          nudgeActiveObject(0, -1);
+          if (!nudgeSelectedAnnotation(0, -1)) {
+            nudgeActiveObject(0, -1);
+          }
         } else if (e.code === 'ArrowDown') {
           e.preventDefault();
-          nudgeActiveObject(0, 1);
+          if (!nudgeSelectedAnnotation(0, 1)) {
+            nudgeActiveObject(0, 1);
+          }
         } else if (e.code === 'KeyV') {
           e.preventDefault();
           setActiveTool('select');
@@ -1202,6 +1675,12 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         } else if (e.code === 'KeyL') {
           e.preventDefault();
           setActiveTool('line');
+        } else if (e.code === 'Minus') {
+          e.preventDefault();
+          setActiveTool('arrow');
+        } else if (e.code === 'KeyN') {
+          e.preventDefault();
+          setActiveTool('annotation-card');
         } else if (e.code === 'KeyA') {
           e.preventDefault();
           startPathEditFromActiveSelection();
@@ -1230,7 +1709,12 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     sendSelectionBackward,
     bringSelectionToFront,
     sendSelectionToBack,
+    undo,
+    redo,
     pathEditingPath,
+    annotations,
+    selectedAnnotationId,
+    onAnnotationsChange,
     setActiveTool,
     setPathEditingPath,
     refreshLayers,
@@ -1752,6 +2236,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
 
     const handleSelection = (e: { selected?: FabricObject[] }) => {
       clearHoverHighlight();
+      setSelectedAnnotationId(null);
       const selected = (e.selected ?? []).filter((obj) => !isHoverOverlayObject(obj));
       if (ENABLE_CANVA_INTERACTION_ENGINE) {
         selected.forEach((obj) => interactionControllerRef.current?.applyObjectControls(obj));
@@ -2060,6 +2545,18 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       }
     };
 
+    const activeAnnotationType = isAnnotationTool(activeTool)
+      ? annotationToolToAnnotationType(activeTool)
+      : null;
+
+    const shouldSnapAnnotationToAngle =
+      activeAnnotationType === 'card' ||
+      activeAnnotationType === 'pin' ||
+      activeAnnotationType === 'dimension' ||
+      activeAnnotationType === 'status';
+
+    const shouldConstrainAnnotationAsArea = activeAnnotationType === 'highlight';
+
     const handleMouseDown = (opt: TPointerEventInfo<TPointerEvent>) => {
       clearTransientHoverOverlay();
 
@@ -2074,10 +2571,26 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         );
         if (consumed) return;
       }
-      if (activeTool === 'select') return;
+      if (activeTool === 'select') {
+        if (!opt.target) {
+          setSelectedAnnotationId(null);
+        }
+        return;
+      }
 
       const pointer = canvas.getScenePoint(opt.e);
       drawStartRef.current = { x: pointer.x, y: pointer.y };
+      setSelectedAnnotationId(null);
+
+      if (activeAnnotationType) {
+        canvas.discardActiveObject();
+        setAnnotationDraft({
+          type: activeAnnotationType,
+          anchor: { x: pointer.x, y: pointer.y },
+          label: { x: pointer.x, y: pointer.y },
+        });
+        return;
+      }
 
       if (activeTool === 'text') {
         const text = new IText('텍스트', {
@@ -2193,6 +2706,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         canvas.add(line);
         canvas.renderAll();
       }
+
     };
 
     const handleMouseMove = (opt: TPointerEventInfo<TPointerEvent>) => {
@@ -2208,23 +2722,27 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
           );
         }
       }
-      if (!drawStartRef.current || !activeShapeRef.current) return;
+      if (!drawStartRef.current) return;
 
       clearTransientHoverOverlay();
 
       const { x: startX, y: startY } = drawStartRef.current;
-      const shape = activeShapeRef.current;
 
       const getConstrainedDrawPoint = (moving: ArrowPoint, event: TPointerEvent): ArrowPoint => {
         if (!('shiftKey' in event) || !event.shiftKey) {
           return moving;
         }
 
-        if (activeTool === 'line' || activeTool === 'arrow') {
+        if (activeTool === 'line' || activeTool === 'arrow' || shouldSnapAnnotationToAngle) {
           return snapPointToAngle({ x: startX, y: startY }, moving, 45);
         }
 
-        if (activeTool === 'rect' || activeTool === 'ellipse' || activeTool === 'triangle') {
+        if (
+          activeTool === 'rect' ||
+          activeTool === 'ellipse' ||
+          activeTool === 'triangle' ||
+          shouldConstrainAnnotationAsArea
+        ) {
           const dx = moving.x - startX;
           const dy = moving.y - startY;
           const size = Math.max(Math.abs(dx), Math.abs(dy));
@@ -2237,6 +2755,19 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       };
 
       const pointer = getConstrainedDrawPoint(canvas.getScenePoint(opt.e), opt.e);
+
+      if (activeAnnotationType) {
+        setAnnotationDraft({
+          type: activeAnnotationType,
+          anchor: { x: startX, y: startY },
+          label: { x: pointer.x, y: pointer.y },
+        });
+        return;
+      }
+
+      if (!activeShapeRef.current) return;
+
+      const shape = activeShapeRef.current;
 
       if (activeTool === 'rect') {
         const rect = shape as Rect;
@@ -2303,11 +2834,16 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
           return moving;
         }
 
-        if (activeTool === 'line' || activeTool === 'arrow') {
+        if (activeTool === 'line' || activeTool === 'arrow' || shouldSnapAnnotationToAngle) {
           return snapPointToAngle({ x: startX, y: startY }, moving, 45);
         }
 
-        if (activeTool === 'rect' || activeTool === 'ellipse' || activeTool === 'triangle') {
+        if (
+          activeTool === 'rect' ||
+          activeTool === 'ellipse' ||
+          activeTool === 'triangle' ||
+          shouldConstrainAnnotationAsArea
+        ) {
           const dx = moving.x - startX;
           const dy = moving.y - startY;
           const size = Math.max(Math.abs(dx), Math.abs(dy));
@@ -2320,6 +2856,19 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       };
 
       const pointer = getConstrainedDrawPoint(canvas.getScenePoint(opt.e), opt.e);
+
+      if (activeAnnotationType) {
+        const nextAnnotation = buildAnnotationFromGesture(activeAnnotationType, { x: startX, y: startY }, pointer);
+        onAnnotationsChange([...annotations, nextAnnotation]);
+        setSelectedAnnotationId(nextAnnotation.id);
+        setAnnotationDraft(null);
+        drawStartRef.current = null;
+        activeShapeRef.current = null;
+        setActiveTool('select');
+        canvas.discardActiveObject();
+        canvas.requestRenderAll();
+        return;
+      }
 
       if (activeTool === 'arrow' && activeShapeRef.current) {
         canvas.remove(activeShapeRef.current);
@@ -2857,6 +3406,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     };
   }, [
     activeTool,
+    annotations,
     buildObjectData,
     pathEditingPath,
     fillColor,
@@ -2871,16 +3421,30 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     saveHistory,
     setActiveTool,
     refreshLayers,
+    onAnnotationsChange,
   ]);
 
   return (
     <div
       ref={containerRef}
-      className='relative h-full w-full overflow-hidden rounded-md'
+      className='relative h-full w-full overflow-hidden rounded-md bg-[#fafafa] dark:bg-[#08122a]'
       style={{ touchAction: 'none' }}
     >
-      <div className='pointer-events-none absolute inset-0 z-10' style={gridStyle} />
       <canvas ref={canvasElRef} className='absolute inset-0 z-20' />
+      <WorksheetAnnotationOverlay
+        canvas={fabricRef.current}
+        annotations={annotations}
+        selectedAnnotationId={selectedAnnotationId}
+        visible={annotationsVisible}
+        draftAnnotation={annotationDraft}
+        onSelectAnnotation={handleSelectAnnotation}
+        onAnnotationsChange={onAnnotationsChange}
+      />
+      <div
+        ref={gridOverlayRef}
+        className='pointer-events-none absolute inset-0 z-20 transition-opacity duration-150'
+        style={{ opacity: 0, clipPath: 'inset(0 100% 100% 0)' }}
+      />
       <InteractionOverlay
         canvas={fabricRef.current}
         model={interactionOverlayModel}

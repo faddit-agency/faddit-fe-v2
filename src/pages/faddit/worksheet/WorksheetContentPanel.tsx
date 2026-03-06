@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Minus, PenLine, Pencil, Plus, Scissors, Table, Tag, Trash2 } from 'lucide-react';
 import ToggleButton from '../../../components/atoms/ToggleButton';
 import WorksheetSketchView from './WorksheetSketchView';
 import WorksheetSizeSpecView from './WorksheetSizeSpecView';
-import { useCanvas } from './CanvasProvider';
+import { isAnnotationTool, useCanvas } from './CanvasProvider';
 import type {
+  WorksheetCanvasAnnotation,
   WorksheetCanvasSpec,
   WorksheetEditorDocument,
   WorksheetEditorPage,
@@ -30,16 +31,30 @@ interface WorksheetContentPanelProps {
 }
 
 const GUIDE_MANUAL_ITEMS: Array<{ title: string; shortcut: string; usage: string }> = [
+  { title: '저장', shortcut: 'Cmd/Ctrl+S', usage: '현재 편집 상태를 저장' },
+  {
+    title: '실행 취소/다시 실행',
+    shortcut: 'Cmd/Ctrl+Z, Cmd/Ctrl+Y, Cmd/Ctrl+Shift+Z',
+    usage: '최근 작업 되돌리기/복원',
+  },
+  { title: '복사/붙여넣기', shortcut: 'Cmd/Ctrl+C, V', usage: '선택 객체 복사/붙여넣기' },
+  { title: '삭제', shortcut: 'Delete / Backspace', usage: '선택 객체 삭제' },
   { title: '선택 모드', shortcut: 'V', usage: '객체 선택/이동/크기 조절' },
+  { title: '스포이드', shortcut: 'I', usage: '색상 패널을 열고 화면에서 색상을 추출' },
   { title: '브러쉬', shortcut: 'B', usage: '자유 드로잉 경로 생성' },
   { title: '펜툴', shortcut: 'P', usage: '클릭은 직선, 드래그는 곡선 앵커 생성' },
+  { title: '펜 경로 확정', shortcut: 'Enter', usage: '펜으로 그리는 현재 경로를 확정' },
+  { title: '펜 작업 취소', shortcut: 'Esc', usage: '펜으로 그리는 현재 경로를 취소' },
+  { title: '펜 앵커 삭제', shortcut: 'Backspace', usage: '펜 모드에서 마지막 앵커 삭제' },
   { title: '텍스트', shortcut: 'T', usage: '캔버스 클릭으로 텍스트 박스 생성' },
   { title: '사각형', shortcut: 'R', usage: '드래그로 사각형 생성' },
   { title: '원', shortcut: 'O', usage: '드래그로 원/타원 생성' },
   { title: '삼각형', shortcut: 'Y', usage: '드래그로 삼각형 생성' },
   { title: '선', shortcut: 'L', usage: '드래그로 직선 생성' },
   { title: '화살표', shortcut: '-', usage: '드래그로 화살표 생성' },
+  { title: '주석 카드', shortcut: 'N', usage: '기준점에서 설명 카드까지 드래그해 주석 생성' },
   { title: '패스 편집', shortcut: 'A', usage: '선택한 패스를 직접 편집(더블클릭과 동일)' },
+  { title: '패스 편집 종료', shortcut: 'Esc', usage: '패스 포인트 편집 모드를 종료' },
   { title: '그룹화', shortcut: 'Cmd/Ctrl+G', usage: '선택 객체 그룹화' },
   { title: '그룹 해제', shortcut: 'Cmd/Ctrl+Alt+G', usage: '그룹 해제' },
   { title: '앞으로 가져오기', shortcut: 'Cmd/Ctrl+]', usage: '선택 객체를 한 단계 앞으로 이동' },
@@ -54,17 +69,17 @@ const GUIDE_MANUAL_ITEMS: Array<{ title: string; shortcut: string; usage: string
     shortcut: 'Cmd/Ctrl+Alt+[',
     usage: '선택 객체를 최하단 레이어로 이동',
   },
-  { title: '복사/붙여넣기', shortcut: 'Cmd/Ctrl+C, V', usage: '선택 객체 복사/붙여넣기' },
-  { title: '실행 취소/다시 실행', shortcut: 'Cmd/Ctrl+Z, Y', usage: '최근 작업 되돌리기/복원' },
   { title: '팬', shortcut: 'Space + Drag', usage: '캔버스 이동(패닝)' },
+  { title: '팬', shortcut: '마우스 휠 클릭 + Drag', usage: '캔버스 이동(패닝)' },
   {
     title: '이동 축 고정',
     shortcut: 'Shift + Drag',
     usage: '드래그 중 수평/수직 한 축으로 이동 고정',
   },
+  { title: '그리드 스냅', shortcut: 'Q (Hold)', usage: '이동/크기 조절 시 그리드 단위로 스냅' },
   {
     title: '스마트 가이드',
-    shortcut: '-',
+    shortcut: '자동',
     usage: '정렬 지시선 + 끝점/중간/중심 구분 라벨 표시',
   },
   {
@@ -75,7 +90,6 @@ const GUIDE_MANUAL_ITEMS: Array<{ title: string; shortcut: string; usage: string
   { title: '키보드 이동', shortcut: '↑ ↓ ← →', usage: '선택 요소를 방향키로 미세 이동' },
   { title: '각도 스냅', shortcut: 'Shift', usage: '선/펜 핸들 각도 스냅' },
   { title: '펜 비대칭 핸들', shortcut: 'Alt + Drag', usage: '펜 핸들을 한쪽만 조절' },
-  { title: '펜 앵커 삭제', shortcut: 'Backspace', usage: '마지막 펜 앵커 제거' },
 ];
 
 const PAGE_TYPE_META: Record<
@@ -120,14 +134,6 @@ const PAGE_CARD_TOTAL_H = 112;
 
 const ADDABLE_PAGE_TYPES: PageType[] = ['custom-design', 'sketch', 'pattern', 'label'];
 
-const PAGE_TYPE_ORDER: Record<PageType, number> = {
-  'custom-design': 0,
-  sketch: 1,
-  pattern: 2,
-  label: 3,
-  'size-spec': 4,
-};
-
 const PAGE_TYPE_CHIP_CLASS: Record<PageType, string> = {
   'custom-design': 'bg-sky-100 text-sky-700',
   sketch: 'bg-violet-100 text-violet-700',
@@ -135,13 +141,106 @@ const PAGE_TYPE_CHIP_CLASS: Record<PageType, string> = {
   label: 'bg-amber-100 text-amber-700',
   'size-spec': 'bg-indigo-100 text-indigo-700',
 };
+const CANVAS_ARTBOARD_OBJECT_ID = '__canvas-artboard__';
+type PageDropSide = 'before' | 'after';
 
-function sortPagesByType(nextPages: WorksheetPage[]): WorksheetPage[] {
-  return [...nextPages].sort((a, b) => PAGE_TYPE_ORDER[a.type] - PAGE_TYPE_ORDER[b.type]);
+function makeCanvasAreaThumbnail(canvas: any): string | null {
+  if (!canvas || typeof canvas.toDataURL !== 'function') {
+    return null;
+  }
+
+  const artboard = canvas.getObjects?.().find((obj: any) => {
+    const data = obj?.data;
+    return data?.kind === '__artboard__' || data?.id === CANVAS_ARTBOARD_OBJECT_ID;
+  });
+
+  if (
+    !artboard ||
+    typeof artboard.getCenterPoint !== 'function' ||
+    typeof artboard.getScaledWidth !== 'function' ||
+    typeof artboard.getScaledHeight !== 'function'
+  ) {
+    return canvas.toDataURL({ format: 'png', multiplier: 1 });
+  }
+
+  const center = artboard.getCenterPoint();
+  const halfWidth = artboard.getScaledWidth() / 2;
+  const halfHeight = artboard.getScaledHeight() / 2;
+
+  if (
+    !center ||
+    !Number.isFinite(center.x) ||
+    !Number.isFinite(center.y) ||
+    !Number.isFinite(halfWidth) ||
+    !Number.isFinite(halfHeight) ||
+    halfWidth <= 0 ||
+    halfHeight <= 0
+  ) {
+    return canvas.toDataURL({ format: 'png', multiplier: 1 });
+  }
+
+  const vpt = (canvas.viewportTransform ?? [1, 0, 0, 1, 0, 0]) as [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
+  const toViewport = (x: number, y: number) => ({
+    x: vpt[0] * x + vpt[2] * y + vpt[4],
+    y: vpt[1] * x + vpt[3] * y + vpt[5],
+  });
+
+  const corners = [
+    toViewport(center.x - halfWidth, center.y - halfHeight),
+    toViewport(center.x + halfWidth, center.y - halfHeight),
+    toViewport(center.x + halfWidth, center.y + halfHeight),
+    toViewport(center.x - halfWidth, center.y + halfHeight),
+  ];
+
+  const minX = Math.min(...corners.map((corner) => corner.x));
+  const maxX = Math.max(...corners.map((corner) => corner.x));
+  const minY = Math.min(...corners.map((corner) => corner.y));
+  const maxY = Math.max(...corners.map((corner) => corner.y));
+  const canvasWidth = Number(canvas.getWidth?.() ?? 0);
+  const canvasHeight = Number(canvas.getHeight?.() ?? 0);
+
+  if (canvasWidth <= 0 || canvasHeight <= 0) {
+    return canvas.toDataURL({ format: 'png', multiplier: 1 });
+  }
+
+  const left = Math.max(0, Math.min(canvasWidth, minX));
+  const top = Math.max(0, Math.min(canvasHeight, minY));
+  const right = Math.max(0, Math.min(canvasWidth, maxX));
+  const bottom = Math.max(0, Math.min(canvasHeight, maxY));
+  const width = Math.floor(right - left);
+  const height = Math.floor(bottom - top);
+
+  if (width <= 1 || height <= 1) {
+    return canvas.toDataURL({ format: 'png', multiplier: 1 });
+  }
+
+  return canvas.toDataURL({
+    format: 'png',
+    multiplier: 1,
+    left,
+    top,
+    width,
+    height,
+  } as any);
 }
 
 function isCanvasPageType(type: PageType): boolean {
   return isWorksheetCanvasPageType(type);
+}
+
+function moveByInsertIndex<T>(items: T[], fromIndex: number, insertIndex: number): T[] {
+  const next = [...items];
+  const [moved] = next.splice(fromIndex, 1);
+  const adjustedInsert = fromIndex < insertIndex ? insertIndex - 1 : insertIndex;
+  next.splice(adjustedInsert, 0, moved);
+  return next;
 }
 
 function resolveCanvasSpecForPage(page: WorksheetPage): WorksheetCanvasSpec | undefined {
@@ -191,6 +290,10 @@ export default function WorksheetContentPanel({
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [editingPageId, setEditingPageId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
+  const [draggingPageId, setDraggingPageId] = useState<string | null>(null);
+  const [dragOverTarget, setDragOverTarget] = useState<{ pageId: string | null; side: PageDropSide } | null>(
+    null,
+  );
   const addMenuRef = useRef<HTMLDivElement>(null);
   const addMenuPanelRef = useRef<HTMLDivElement>(null);
   const [addMenuPosition, setAddMenuPosition] = useState<{ left: number; top: number } | null>(
@@ -198,6 +301,7 @@ export default function WorksheetContentPanel({
   );
   const previousSelectedIdRef = useRef<string>(selectedId);
   const sketchPagesRef = useRef(editorDocument.sketchPages);
+  const pageAnnotationsRef = useRef(editorDocument.pageAnnotations);
   const lastLoadedRef = useRef<{
     pageId: string | null;
     json: string | null;
@@ -209,6 +313,7 @@ export default function WorksheetContentPanel({
   });
 
   const {
+    activeTool,
     canvasRef,
     canvasSession,
     exportCanvasJson,
@@ -216,13 +321,30 @@ export default function WorksheetContentPanel({
     clearCanvas,
     setCanvasPageSpec,
   } = useCanvas();
-  const orderedPages = useMemo(() => sortPagesByType(pages), [pages]);
+  const orderedPages = pages;
 
   const selectedPage = pages.find((p) => p.id === selectedId) ?? pages[0];
+  const [currentAnnotations, setCurrentAnnotations] = useState<WorksheetCanvasAnnotation[]>([]);
+  const currentAnnotationsRef = useRef<WorksheetCanvasAnnotation[]>([]);
+  const [showAnnotationOverlay, setShowAnnotationOverlay] = useState(true);
 
   useEffect(() => {
     sketchPagesRef.current = editorDocument.sketchPages;
   }, [editorDocument.sketchPages]);
+
+  useEffect(() => {
+    pageAnnotationsRef.current = editorDocument.pageAnnotations;
+  }, [editorDocument.pageAnnotations]);
+
+  useEffect(() => {
+    currentAnnotationsRef.current = currentAnnotations;
+  }, [currentAnnotations]);
+
+  useEffect(() => {
+    if (isAnnotationTool(activeTool) && !showAnnotationOverlay) {
+      setShowAnnotationOverlay(true);
+    }
+  }, [activeTool, showAnnotationOverlay]);
 
   const updateDocument = useCallback(
     (updater: (prev: WorksheetEditorDocument) => WorksheetEditorDocument) => {
@@ -244,12 +366,7 @@ export default function WorksheetContentPanel({
       if (!json) return;
 
       const canvas = canvasRef.current;
-      const thumbnail = canvas
-        ? canvas.toDataURL({
-            format: 'png',
-            multiplier: 1,
-          })
-        : null;
+      const thumbnail = canvas ? makeCanvasAreaThumbnail(canvas) : null;
 
       updateDocument((prev) => {
         const sameSketchJson = prev.sketchPages[pageId] === json;
@@ -278,17 +395,46 @@ export default function WorksheetContentPanel({
     [pages, canvasRef, exportCanvasJson, updateDocument],
   );
 
+  const persistAnnotationSnapshot = useCallback(
+    (pageId: string | null | undefined, annotations: WorksheetCanvasAnnotation[]) => {
+      if (!pageId) return;
+
+      const targetPage = pages.find((page) => page.id === pageId);
+      if (!targetPage || !isCanvasPageType(targetPage.type)) {
+        return;
+      }
+
+      updateDocument((prev) => {
+        const previousAnnotations = prev.pageAnnotations[pageId] ?? [];
+        if (JSON.stringify(previousAnnotations) === JSON.stringify(annotations)) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          pageAnnotations: {
+            ...prev.pageAnnotations,
+            [pageId]: annotations,
+          },
+        };
+      });
+    },
+    [pages, updateDocument],
+  );
+
   const loadSelectedSketchPage = useCallback(async () => {
     const sessionKey = String(canvasSession ?? '');
 
     if (!selectedPage) {
       clearCanvas();
+      setCurrentAnnotations([]);
       lastLoadedRef.current = { pageId: null, json: null, session: sessionKey };
       return;
     }
 
     if (!isCanvasPageType(selectedPage.type)) {
       clearCanvas();
+      setCurrentAnnotations([]);
       lastLoadedRef.current = { pageId: selectedPage.id, json: null, session: sessionKey };
       return;
     }
@@ -310,6 +456,7 @@ export default function WorksheetContentPanel({
       if (canvasSpec) {
         setCanvasPageSpec(canvasSpec);
       }
+      setCurrentAnnotations(pageAnnotationsRef.current[selectedPage.id] ?? []);
       lastLoadedRef.current = { pageId: selectedPage.id, json: null, session: sessionKey };
       return;
     }
@@ -318,6 +465,7 @@ export default function WorksheetContentPanel({
     if (canvasSpec) {
       setCanvasPageSpec(canvasSpec);
     }
+    setCurrentAnnotations(pageAnnotationsRef.current[selectedPage.id] ?? []);
     lastLoadedRef.current = { pageId: selectedPage.id, json: savedJson, session: sessionKey };
   }, [selectedPage, importCanvasJson, clearCanvas, canvasSession, setCanvasPageSpec]);
 
@@ -327,18 +475,41 @@ export default function WorksheetContentPanel({
     const prev = previousSelectedIdRef.current;
     if (prev !== selectedId) {
       persistSketchPageSnapshot(prev);
+      persistAnnotationSnapshot(prev, currentAnnotationsRef.current);
     }
 
     previousSelectedIdRef.current = selectedId;
 
     void loadSelectedSketchPage();
-  }, [selectedId, selectedPage, persistSketchPageSnapshot, loadSelectedSketchPage, canvasSession]);
+  }, [
+    selectedId,
+    selectedPage,
+    persistSketchPageSnapshot,
+    persistAnnotationSnapshot,
+    loadSelectedSketchPage,
+    canvasSession,
+  ]);
 
   useEffect(() => {
     return () => {
       persistSketchPageSnapshot(previousSelectedIdRef.current);
+      persistAnnotationSnapshot(previousSelectedIdRef.current, currentAnnotationsRef.current);
     };
-  }, [persistSketchPageSnapshot]);
+  }, [persistSketchPageSnapshot, persistAnnotationSnapshot]);
+
+  useEffect(() => {
+    if (!selectedPage || !isCanvasPageType(selectedPage.type)) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      persistAnnotationSnapshot(selectedPage.id, currentAnnotations);
+    }, 120);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [currentAnnotations, selectedPage, persistAnnotationSnapshot]);
 
   useEffect(() => {
     if (!selectedPage || !isCanvasPageType(selectedPage.type)) {
@@ -454,7 +625,7 @@ export default function WorksheetContentPanel({
       const newPage = makePage(type, sameTypeCount, customCanvasSpec);
 
       updateDocument((prev) => {
-        const nextPages = sortPagesByType([...prev.pages, newPage]);
+        const nextPages = [...prev.pages, newPage];
         return {
           ...prev,
           pages: nextPages,
@@ -489,11 +660,15 @@ export default function WorksheetContentPanel({
         const nextThumbnails = { ...prev.pageThumbnails };
         delete nextThumbnails[pageId];
 
+        const nextAnnotations = { ...prev.pageAnnotations };
+        delete nextAnnotations[pageId];
+
         return {
           ...prev,
-          pages: sortPagesByType(nextPages),
+          pages: nextPages,
           activePageId: nextActivePageId,
           sketchPages: nextSketchPages,
+          pageAnnotations: nextAnnotations,
           pageThumbnails: nextThumbnails,
         };
       });
@@ -531,14 +706,115 @@ export default function WorksheetContentPanel({
     setEditingName('');
   }, [editingName, editingPageId, updateDocument]);
 
+  const clearPageDragState = useCallback(() => {
+    setDraggingPageId(null);
+    setDragOverTarget(null);
+  }, []);
+
+  const reorderPages = useCallback(
+    (draggedPageId: string, targetPageId: string | null, side: PageDropSide) => {
+      if (readOnly) return;
+
+      updateDocument((prev) => {
+        const fromIndex = prev.pages.findIndex((page) => page.id === draggedPageId);
+        if (fromIndex < 0) {
+          return prev;
+        }
+
+        let insertIndex = prev.pages.length;
+        if (targetPageId) {
+          const targetIndex = prev.pages.findIndex((page) => page.id === targetPageId);
+          if (targetIndex < 0) {
+            return prev;
+          }
+          insertIndex = targetIndex + (side === 'after' ? 1 : 0);
+        }
+
+        const adjustedInsert = fromIndex < insertIndex ? insertIndex - 1 : insertIndex;
+        if (adjustedInsert === fromIndex) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          pages: moveByInsertIndex(prev.pages, fromIndex, insertIndex),
+        };
+      });
+    },
+    [readOnly, updateDocument],
+  );
+
+  const handlePageDragStart = useCallback(
+    (event: React.DragEvent<HTMLDivElement>, pageId: string) => {
+      if (readOnly) return;
+      setDraggingPageId(pageId);
+      setDragOverTarget(null);
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', pageId);
+    },
+    [readOnly],
+  );
+
+  const handlePageDragOver = useCallback(
+    (event: React.DragEvent<HTMLDivElement>, pageId: string) => {
+      if (readOnly || !draggingPageId) return;
+      if (pageId === draggingPageId) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+
+      const rect = event.currentTarget.getBoundingClientRect();
+      const side: PageDropSide = event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+      setDragOverTarget((prev) =>
+        prev?.pageId === pageId && prev.side === side ? prev : { pageId, side },
+      );
+    },
+    [readOnly, draggingPageId],
+  );
+
+  const handlePageDrop = useCallback(
+    (event: React.DragEvent<HTMLDivElement>, targetPageId: string) => {
+      if (readOnly || !draggingPageId) return;
+      event.preventDefault();
+
+      const rect = event.currentTarget.getBoundingClientRect();
+      const side: PageDropSide = event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+      reorderPages(draggingPageId, targetPageId, side);
+      clearPageDragState();
+    },
+    [readOnly, draggingPageId, reorderPages, clearPageDragState],
+  );
+
+  const handleEndDropZoneDragOver = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      if (readOnly || !draggingPageId) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      setDragOverTarget((prev) => (prev?.pageId === null ? prev : { pageId: null, side: 'after' }));
+    },
+    [readOnly, draggingPageId],
+  );
+
+  const handleEndDropZoneDrop = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      if (readOnly || !draggingPageId) return;
+      event.preventDefault();
+      reorderPages(draggingPageId, null, 'after');
+      clearPageDragState();
+    },
+    [readOnly, draggingPageId, reorderPages, clearPageDragState],
+  );
+
   return (
     <section className='flex h-full min-w-0 flex-1 flex-col gap-2'>
-      <div className='relative min-h-0 flex-1 overflow-hidden rounded-md bg-white dark:bg-gray-900'>
+      <div className='relative min-h-0 flex-1 overflow-hidden rounded-md bg-transparent'>
         {!selectedPage && <div className='absolute inset-0' />}
         {selectedPage && isCanvasPageType(selectedPage.type) && (
           <div className='absolute inset-0'>
             <WorksheetSketchView
               zoom={zoom}
+              annotations={currentAnnotations}
+              annotationsVisible={showAnnotationOverlay}
+              onAnnotationsChange={setCurrentAnnotations}
               onZoomChange={(nextZoom) => {
                 updateDocument((prev) => ({ ...prev, zoom: nextZoom }));
               }}
@@ -552,7 +828,7 @@ export default function WorksheetContentPanel({
         )}
       </div>
 
-      <div className='relative z-[120] flex w-full min-w-0 shrink-0 items-end gap-3 rounded-md pt-0 pr-0 pb-0 pl-4 xl:px-4 xl:py-3'>
+      <div className='relative z-[120] flex w-full min-w-0 shrink-0 items-end gap-3 rounded-md bg-[#fafafa] pt-0 pr-0 pb-0 pl-4 dark:bg-[#08122a] xl:px-4 xl:py-3'>
         <div className='min-w-0 flex-1'>
           <div
             className='w-full min-w-0 transition-[max-height,margin] duration-300 ease-in-out'
@@ -573,19 +849,42 @@ export default function WorksheetContentPanel({
                       const isEditingName = editingPageId === page.id;
                       const thumbnail = editorDocument.pageThumbnails[page.id];
                       const canDeletePage = pages.length > 1;
+                      const isDragging = draggingPageId === page.id;
+                      const isDropBefore =
+                        dragOverTarget?.pageId === page.id && dragOverTarget.side === 'before' && !isDragging;
+                      const isDropAfter =
+                        dragOverTarget?.pageId === page.id && dragOverTarget.side === 'after' && !isDragging;
                       return (
-                        <div key={page.id} className='relative flex shrink-0 flex-col gap-1'>
+                        <div
+                          key={page.id}
+                          draggable={!readOnly && !isEditingName}
+                          onDragStart={(event) => handlePageDragStart(event, page.id)}
+                          onDragOver={(event) => handlePageDragOver(event, page.id)}
+                          onDrop={(event) => handlePageDrop(event, page.id)}
+                          onDragEnd={clearPageDragState}
+                          className={`relative flex shrink-0 flex-col gap-1 transition-[transform,box-shadow,opacity] duration-200 ease-out will-change-transform ${
+                            isDragging
+                              ? 'z-30 -translate-y-0.5 scale-[1.03] opacity-90 shadow-[0_10px_26px_rgba(15,23,42,0.24)]'
+                              : 'opacity-100'
+                          }`}
+                        >
                           <div
                             className='group/thumb relative'
                             style={{ width: THUMB_W, height: THUMB_H }}
                           >
+                            {isDropBefore && (
+                              <span className='pointer-events-none absolute top-1 bottom-1 -left-1 z-40 w-0.5 rounded-full bg-violet-500' />
+                            )}
+                            {isDropAfter && (
+                              <span className='pointer-events-none absolute top-1 -right-1 bottom-1 z-40 w-0.5 rounded-full bg-violet-500' />
+                            )}
                             <button
                               type='button'
                               onClick={() => {
                                 if (readOnly) return;
                                 updateDocument((prev) => ({ ...prev, activePageId: page.id }));
                               }}
-                              className={`relative h-full w-full cursor-pointer overflow-hidden rounded-md bg-white transition-all dark:bg-gray-900 ${
+                              className={`relative h-full w-full cursor-pointer overflow-hidden rounded-md bg-[#fafafa] transition-all dark:bg-gray-900 ${
                                 selectedId === page.id
                                   ? 'border-2 border-violet-500'
                                   : 'border border-gray-300 hover:border-gray-400 dark:border-gray-700 dark:hover:border-gray-500'
@@ -604,7 +903,7 @@ export default function WorksheetContentPanel({
                                 <img
                                   src={thumbnail}
                                   alt={`${page.label} 썸네일`}
-                                  className='h-full w-full object-cover'
+                                  className='h-full w-full object-contain'
                                 />
                               )}
                             </button>
@@ -676,7 +975,16 @@ export default function WorksheetContentPanel({
                       );
                     })}
 
-                    <div className='relative flex h-[112px] shrink-0 items-start' ref={addMenuRef}>
+                    <div
+                      className='relative flex h-[112px] shrink-0 items-start'
+                      ref={addMenuRef}
+                      onDragOver={handleEndDropZoneDragOver}
+                      onDrop={handleEndDropZoneDrop}
+                      onDragEnd={clearPageDragState}
+                    >
+                      {dragOverTarget?.pageId === null && draggingPageId && (
+                        <span className='pointer-events-none absolute top-1 right-[calc(100%+4px)] bottom-1 z-40 w-0.5 rounded-full bg-violet-500' />
+                      )}
                       <button
                         type='button'
                         disabled={readOnly}
@@ -724,6 +1032,19 @@ export default function WorksheetContentPanel({
         )}
 
         <div className='flex shrink-0 items-center gap-3'>
+          {selectedPage && isCanvasPageType(selectedPage.type) && (
+            <div className='shrink-0'>
+              <ToggleButton
+                label='주석 표시'
+                checked={showAnnotationOverlay}
+                onChange={() => {
+                  if (readOnly) return;
+                  setShowAnnotationOverlay((prev) => !prev);
+                }}
+              />
+            </div>
+          )}
+
           <div className='shrink-0'>
             <ToggleButton
               label='단축키 가이드'
@@ -786,7 +1107,7 @@ export default function WorksheetContentPanel({
       </div>
 
       {guideModeEnabled && (
-        <aside className='pointer-events-auto fixed top-[72px] right-3 z-[240] w-[320px] rounded-xl border border-gray-200 bg-white/70 p-3 opacity-70 shadow-lg backdrop-blur-[2px] transition-opacity duration-200 hover:opacity-100 dark:border-gray-700 dark:bg-gray-900/75'>
+        <aside className='pointer-events-auto fixed top-[96px] right-3 z-[240] w-[320px] rounded-xl border border-gray-200 bg-white/70 p-3 opacity-70 shadow-lg backdrop-blur-[2px] transition-opacity duration-200 hover:opacity-100 dark:border-gray-700 dark:bg-gray-900/75'>
           <h3 className='mb-2 text-sm font-semibold text-gray-800 dark:text-gray-100'>단축키 가이드</h3>
           <div className='max-h-[70vh] overflow-y-auto pr-1'>
             <div className='space-y-1.5'>

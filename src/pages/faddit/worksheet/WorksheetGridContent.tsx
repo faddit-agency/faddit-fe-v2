@@ -453,7 +453,7 @@ function DiagramPlaceholder({
           <ChevronLeft size={28} strokeWidth={2.2} />
         </button>
 
-        <div className='flex h-full w-full items-center justify-center overflow-hidden rounded-lg bg-transparent'>
+        <div className='flex h-full w-full items-center justify-center overflow-hidden rounded-lg bg-[#fafafa] dark:bg-gray-900'>
           {selectedSheet?.thumbnail ? (
             <img
               src={selectedSheet.thumbnail}
@@ -487,18 +487,18 @@ function DiagramPlaceholder({
                 <button
                   type='button'
                   onClick={() => onSelectSheet(sheet.id)}
-                  className={`flex w-full shrink-0 flex-col rounded-md border bg-white p-1.5 text-left transition-all duration-200 dark:bg-gray-900 ${
+                  className={`flex w-full shrink-0 flex-col rounded-md border bg-[#fafafa] p-1.5 text-left transition-all duration-200 dark:bg-gray-900 ${
                     isSelected
                       ? 'border-faddit'
                       : 'border-gray-200 hover:bg-gray-50 active:scale-[0.98] dark:border-gray-700 dark:hover:bg-gray-800'
                   }`}
                 >
-                  <div className='relative h-16 overflow-hidden rounded-sm bg-white dark:bg-gray-900'>
+                  <div className='relative h-16 overflow-hidden rounded-sm bg-[#fafafa] dark:bg-gray-900'>
                     {sheet.thumbnail ? (
                       <img
                         src={sheet.thumbnail}
                         alt={`${sheet.label} 썸네일`}
-                        className='h-full w-full object-cover'
+                        className='h-full w-full object-contain'
                       />
                     ) : null}
                     <span className='absolute right-1 bottom-0.5 text-[10px] font-semibold text-gray-700 dark:text-gray-200'>
