@@ -894,7 +894,7 @@ export default function WorksheetTemplateSidebar({
 
   const loadUploadedElementFiles = useCallback(
     async (targetFolderId: string) => {
-      const uploadedData = await getDriveAll(targetFolderId);
+      const uploadedData = await getDriveAll(targetFolderId, { includeHidden: true });
       const files = await toElementWorkspaceFiles(uploadedData.files, 'upload');
       setUploadedElementFiles(files);
     },
@@ -910,7 +910,7 @@ export default function WorksheetTemplateSidebar({
       return worksheetElementFolderId;
     }
 
-    const rootData = await getDriveAll(rootFolderId);
+    const rootData = await getDriveAll(rootFolderId, { includeHidden: true });
     const folderName = getWorksheetElementFolderName(worksheetId);
     const existingFolder = rootData.folders.find((folder) => folder.name === folderName);
 
@@ -922,9 +922,10 @@ export default function WorksheetTemplateSidebar({
     await createDriveFolder({
       parentId: rootFolderId,
       name: folderName,
+      visibilityScope: 'worksheet_upload',
     });
 
-    const refreshedRootData = await getDriveAll(rootFolderId);
+    const refreshedRootData = await getDriveAll(rootFolderId, { includeHidden: true });
     const createdFolder = refreshedRootData.folders.find((folder) => folder.name === folderName);
     if (!createdFolder) {
       return null;
@@ -963,6 +964,7 @@ export default function WorksheetTemplateSidebar({
           userId,
           files: uploadFiles,
           tags: uploadFiles.map(() => uploadTag),
+          visibilityScope: 'worksheet_upload',
         });
 
         const createdFiles = uploadResult.result
@@ -1126,7 +1128,7 @@ export default function WorksheetTemplateSidebar({
         setElementWorkspaceLoading(true);
         setElementWorkspaceError(null);
 
-        const workspaceData = await getDriveAll(rootFolderId);
+        const workspaceData = await getDriveAll(rootFolderId, { includeHidden: true });
         if (!isMounted) {
           return;
         }

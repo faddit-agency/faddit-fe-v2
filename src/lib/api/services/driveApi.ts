@@ -24,6 +24,7 @@ export type DriveNode = {
   recentActorName?: string;
   deletedAt?: string;
   worksheetThumbnail?: string;
+  visibilityScope?: DriveVisibilityScope;
 };
 
 export type DriveAllResponse = {
@@ -44,6 +45,7 @@ export type UpdateDriveItemsPayload = {
 export type CreateDriveFolderPayload = {
   parentId: string;
   name: string;
+  visibilityScope?: DriveVisibilityScope;
 };
 
 export type DeleteDriveItemsPayload = {
@@ -65,20 +67,22 @@ export type DriveUploadTag =
   | 'worksheet'
   | 'schematic'
   | 'etc'
+  | 'trim'
   | 'pattern'
   | 'print'
   | 'faddit'
   | 'fabric'
+  | 'rib_fabric'
   | 'label';
+
+export type DriveVisibilityScope = 'default' | 'worksheet_upload';
 
 export type DriveSearchCategory =
   | 'folder'
   | 'worksheet'
-  | 'schematic'
-  | 'etc'
-  | 'pattern'
-  | 'print'
-  | 'faddit'
+  | 'upload'
+  | 'trim'
+  | 'rib_fabric'
   | 'fabric'
   | 'label';
 
@@ -107,6 +111,7 @@ export type CreateDriveFilePayload = {
   userId: string;
   files: File[];
   tags: DriveUploadTag[];
+  visibilityScope?: DriveVisibilityScope;
 };
 
 export type CreateDriveFileResponse = {
@@ -130,9 +135,17 @@ export type CreateDriveFileResponse = {
   storageLimit: number;
 };
 
-export const getDriveAll = async (path: string) => {
+export const getDriveAll = async (
+  path: string,
+  options?: {
+    includeHidden?: boolean;
+  },
+) => {
   const response = await baseHttpClient.get<DriveAllResponse>(DRIVE_ENDPOINTS.all, {
-    params: { path },
+    params: {
+      path,
+      includeHidden: options?.includeHidden ? 'true' : undefined,
+    },
   });
   return response.data;
 };
@@ -193,6 +206,9 @@ export const createDriveFile = async (payload: CreateDriveFilePayload) => {
   });
   if (payload.parentId) {
     formData.append('parentId', payload.parentId);
+  }
+  if (payload.visibilityScope) {
+    formData.append('visibilityScope', payload.visibilityScope);
   }
   formData.append('userId', payload.userId);
 

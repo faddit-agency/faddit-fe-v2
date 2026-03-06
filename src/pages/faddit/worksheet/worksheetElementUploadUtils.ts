@@ -27,11 +27,17 @@ export const isWorksheetElementCategory = (
 export const mapWorksheetUploadCategoryToDriveTag = (
   category: WorksheetUploadCategory,
 ): DriveUploadTag => {
-  if (category === '원단' || category === '시보리원단') {
+  if (category === '원단') {
     return 'fabric';
+  }
+  if (category === '시보리원단') {
+    return 'rib_fabric';
   }
   if (category === '라벨') {
     return 'label';
+  }
+  if (category === '부자재') {
+    return 'trim';
   }
   if (category === '인쇄') {
     return 'print';

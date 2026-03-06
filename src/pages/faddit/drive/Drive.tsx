@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import * as PopoverPrimitive from '@radix-ui/react-popover';
-import { LayoutGrid, List, SlidersHorizontal } from 'lucide-react';
+import { LayoutGrid, List } from 'lucide-react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import DriveItemCard from '../../../components/DriveItemCard';
 import DriveEmptyPlaceholder from '../../../components/DriveEmptyPlaceholder';
@@ -55,6 +55,7 @@ type DriveListEntry = {
   date: string;
   size: string;
   isStarred?: boolean;
+  canMove: boolean;
 };
 
 type DragSelectionEntry = {
@@ -80,17 +81,32 @@ type ProcessingFeeFieldValue = {
 const SEARCH_CATEGORY_VALUES: DriveSearchCategory[] = [
   'folder',
   'worksheet',
-  'faddit',
-  'schematic',
   'label',
   'fabric',
-  'pattern',
-  'print',
-  'etc',
+  'rib_fabric',
+  'trim',
+  'upload',
 ];
 
 const isSearchCategory = (value: string): value is DriveSearchCategory => {
   return SEARCH_CATEGORY_VALUES.includes(value as DriveSearchCategory);
+};
+
+const WORKSHEET_UPLOAD_FOLDER_PREFIX = 'worksheet-elements-';
+const WORKSHEET_UPLOAD_PATH_SEGMENT = '/worksheet-elements-';
+
+const isWorksheetUploadMoveRestricted = (node: {
+  name?: string;
+  path?: string;
+  visibilityScope?: DriveNode['visibilityScope'];
+}) => {
+  const normalizedName = String(node.name || '').trim().toLowerCase();
+  const normalizedPath = String(node.path || '').trim().toLowerCase();
+  return (
+    node.visibilityScope === 'worksheet_upload' ||
+    normalizedName.startsWith(WORKSHEET_UPLOAD_FOLDER_PREFIX) ||
+    normalizedPath.includes(WORKSHEET_UPLOAD_PATH_SEGMENT)
+  );
 };
 
 const formatBytes = (value?: number) => {
@@ -142,6 +158,18 @@ const formatDriveItemSubtitle = (extension?: string) => {
     return raw.replace(/^\./, '');
   }
   return `.${normalized}`;
+};
+
+const resolveDriveNodeBadge = (node: Pick<DriveNode, 'type' | 'tag'>) => {
+  if (node.tag) {
+    return String(node.tag);
+  }
+
+  if (node.type === 'worksheet') {
+    return '작업지시서';
+  }
+
+  return '파일';
 };
 
 const toEditableAttributeValue = (value: unknown) => value;
@@ -1066,6 +1094,7 @@ const DriveFolderTile: React.FC<{
   onToggleSelect: (checked: boolean) => void;
   onPress: (event: React.MouseEvent<HTMLDivElement>) => void;
   onOpen: (folderId: string) => void;
+  canMove: boolean;
   onMoveFolder: (folderId: string) => void;
   onAddFavorite: (id: string, nextStarred: boolean) => void;
   onRenameFolder: (folderId: string, name: string) => void;
@@ -1078,6 +1107,7 @@ const DriveFolderTile: React.FC<{
   onToggleSelect,
   onPress,
   onOpen,
+  canMove,
   onMoveFolder,
   onAddFavorite,
   onRenameFolder,
@@ -1086,6 +1116,7 @@ const DriveFolderTile: React.FC<{
   const [menuOpen, setMenuOpen] = useState(false);
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: folder.id,
+    disabled: !canMove,
     data: {
       type: 'drive-folder',
       title: folder.name,
@@ -1128,7 +1159,9 @@ const DriveFolderTile: React.FC<{
       data-item-id={folder.id}
       onClick={onPress}
       onDoubleClick={() => onOpen(folder.id)}
-      className={`group relative flex cursor-grab touch-none items-center justify-between rounded-xl px-4 py-3 active:cursor-grabbing dark:bg-gray-800/70 ${
+      className={`group relative flex touch-none items-center justify-between rounded-xl px-4 py-3 dark:bg-gray-800/70 ${
+        canMove ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'
+      } ${
         isSelected
           ? 'bg-violet-100 ring-2 ring-violet-300 dark:bg-violet-500/20 dark:ring-violet-500/60'
           : isOver
@@ -1152,7 +1185,7 @@ const DriveFolderTile: React.FC<{
         />
       </label>
 
-      <div className='flex items-center gap-[8px]'>
+      <div className='flex min-w-0 flex-1 items-center gap-[8px] pr-2'>
         {folder.shared ? (
           <svg
             className='h-[25px] w-[25px] shrink-0 fill-gray-600 dark:fill-gray-300'
@@ -1170,7 +1203,15 @@ const DriveFolderTile: React.FC<{
             <path d='M2.5 4.75A2.25 2.25 0 0 1 4.75 2.5h3.21a2 2 0 0 1 1.41.59l.75.75c.19.19.44.29.71.29h4.42a2.25 2.25 0 0 1 2.25 2.25v6.87a2.25 2.25 0 0 1-2.25 2.25H4.75A2.25 2.25 0 0 1 2.5 13.25V4.75Z' />
           </svg>
         )}
-        <span className='text-[16px] font-semibold text-gray-800 dark:text-gray-100'>
+        <span
+          className='max-w-full overflow-hidden text-[16px] leading-5 font-semibold text-gray-800 dark:text-gray-100'
+          style={{
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+          }}
+          title={folder.name}
+        >
           {folder.name}
         </span>
         {folder.isStarred ? (
@@ -1212,16 +1253,18 @@ const DriveFolderTile: React.FC<{
               sideOffset={6}
               className='z-50 w-36 rounded-lg border border-gray-200 bg-white p-1.5 shadow-lg dark:border-gray-700/60 dark:bg-gray-800'
             >
-              <button
-                type='button'
-                className='w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
-                onClick={() => {
-                  setMenuOpen(false);
-                  onMoveFolder(folder.id);
-                }}
-              >
-                파일 이동
-              </button>
+              {canMove ? (
+                <button
+                  type='button'
+                  className='w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onMoveFolder(folder.id);
+                  }}
+                >
+                  파일 이동
+                </button>
+              ) : null}
               <button
                 type='button'
                 className='w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
@@ -1348,6 +1391,7 @@ const DriveListRow: React.FC<{
   const [kebabOpen, setKebabOpen] = useState(false);
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: entry.id,
+    disabled: !entry.canMove,
     data: {
       type: entry.kind === 'folder' ? 'drive-folder' : 'drive-item',
       title: entry.title,
@@ -1390,7 +1434,7 @@ const DriveListRow: React.FC<{
       data-item-id={entry.id}
       onClick={(event) => onRowClick(entry, event)}
       onDoubleClick={(event) => onRowDoubleClick(entry, event)}
-      className={`cursor-grab border-t active:cursor-grabbing dark:border-gray-700/60 ${
+      className={`${entry.canMove ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'} border-t dark:border-gray-700/60 ${
         isSelected || isActive
           ? 'border-violet-200 bg-violet-50/40 dark:border-violet-500/40 dark:bg-violet-500/10'
           : isOver && entry.kind === 'folder'
@@ -1480,16 +1524,18 @@ const DriveListRow: React.FC<{
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => event.stopPropagation()}
             >
-              <button
-                type='button'
-                className='w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
-                onClick={() => {
-                  setKebabOpen(false);
-                  onMoveToFolder(entry.id);
-                }}
-              >
-                파일 이동
-              </button>
+              {entry.canMove ? (
+                <button
+                  type='button'
+                  className='w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
+                  onClick={() => {
+                    setKebabOpen(false);
+                    onMoveToFolder(entry.id);
+                  }}
+                >
+                  파일 이동
+                </button>
+              ) : null}
               <button
                 type='button'
                 className='w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
@@ -1601,8 +1647,10 @@ const FadditDrive: React.FC = () => {
   const [editAttributes, setEditAttributes] = useState<Record<string, unknown>>({});
   const [deleteToastOpen, setDeleteToastOpen] = useState(false);
   const [searchTotalCount, setSearchTotalCount] = useState(0);
-  const [resultFilterOpen, setResultFilterOpen] = useState(false);
-  const [draftSearchCategories, setDraftSearchCategories] = useState<DriveSearchCategory[]>([]);
+  const [locationFilterCategories, setLocationFilterCategories] = useState<DriveSearchCategory[]>(
+    [],
+  );
+  const [mergedUploadItems, setMergedUploadItems] = useState<DriveItem[]>([]);
   const [searchInputValue, setSearchInputValue] = useState('');
   const [deletedMessage, setDeletedMessage] = useState('');
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
@@ -1623,7 +1671,6 @@ const FadditDrive: React.FC = () => {
   const editImageInputRef = useRef<HTMLInputElement | null>(null);
   const keepNextDetailEditModeRef = useRef(false);
   const lastTrackedViewFileIdRef = useRef<string>('');
-  const resultFilterRef = useRef<HTMLDivElement | null>(null);
   const resultSearchInputRef = useRef<HTMLInputElement | null>(null);
   const suppressBlankClearRef = useRef(false);
   const pendingUnsavedExitActionRef = useRef<(() => void) | null>(null);
@@ -1650,7 +1697,13 @@ const FadditDrive: React.FC = () => {
     [searchCategoriesParam],
   );
   const isSearchMode = searchModeParam === 'search' || Boolean(searchKeyword);
-  const isRecentMode = !isSearchMode && !folderId;
+  const activeCategories = isSearchMode ? searchCategories : locationFilterCategories;
+  const isUploadCategorySelected = locationFilterCategories.includes('upload');
+  const isGlobalUploadFilterMode =
+    !isSearchMode && isUploadCategorySelected && locationFilterCategories.length === 1;
+  const shouldMergeGlobalUploadWithLocationFilters =
+    !isSearchMode && isUploadCategorySelected && locationFilterCategories.length > 1;
+  const isRecentMode = !isSearchMode && !isGlobalUploadFilterMode && !folderId;
 
   const markRecentDocsDebug = useCallback(
     (recentData: { folders: DriveNode[]; files: DriveNode[] }) => {
@@ -1696,23 +1749,20 @@ const FadditDrive: React.FC = () => {
     label: '라벨',
     trim: '부자재',
     worksheet: '작업지시서',
-    schematic: '도식화',
-    pattern: '패턴',
-    print: '프린트',
-    etc: '부자재',
-    faddit: '파일',
+    print: '인쇄',
+    etc: '기타',
+    upload: '업로드',
+    faddit: '작업지시서',
   };
 
   const searchFilterLabelMap: Record<DriveSearchCategory, string> = {
     folder: '폴더',
     worksheet: '작업지시서',
-    schematic: '도식화',
-    etc: '기타',
-    pattern: '패턴',
-    print: '인쇄',
-    faddit: 'faddit',
     fabric: '원단',
+    rib_fabric: '시보리원단',
     label: '라벨',
+    trim: '부자재',
+    upload: '업로드',
   };
 
   const attributeLabelMap: Record<string, string> = {
@@ -1979,13 +2029,14 @@ const FadditDrive: React.FC = () => {
   );
 
   const effectiveRootFolderId = rootFolderId || rootFolderFromAuth || '';
+  const isRecentRouteView = !isSearchMode && !folderId;
   const isRootFolderView =
     !isSearchMode &&
-    !isRecentMode &&
+    !isRecentRouteView &&
     Boolean(effectiveRootFolderId) &&
     (folderId === effectiveRootFolderId || currentFolderId === effectiveRootFolderId);
 
-  const pageTitle = isRecentMode
+  const pageTitle = isRecentRouteView
     ? '최근 문서함'
     : isRootFolderView
       ? '내 워크스페이스'
@@ -1993,7 +2044,7 @@ const FadditDrive: React.FC = () => {
         ? '검색결과'
         : breadcrumbDisplayParts[breadcrumbDisplayParts.length - 1] || '내 워크스페이스';
 
-  const showDriveBreadcrumb = !isSearchMode && !isRecentMode && !isRootFolderView;
+  const showDriveBreadcrumb = !isSearchMode && !isRecentRouteView && !isRootFolderView;
 
   const favoriteFolderIdSet = useMemo(() => {
     const ids = new Set<string>();
@@ -2013,19 +2064,67 @@ const FadditDrive: React.FC = () => {
     return ids;
   }, [favorites]);
 
-  const currentLocationFolderId = !isSearchMode ? currentFolderId || effectiveRootFolderId : '';
+  const currentLocationFolderId =
+    !isSearchMode && !isRecentRouteView ? currentFolderId || effectiveRootFolderId : '';
   const canShowCurrentLocationMenu =
     Boolean(currentLocationFolderId) && currentLocationFolderId !== effectiveRootFolderId;
   const isCurrentLocationStarred = canShowCurrentLocationMenu
     ? favoriteFolderIdSet.has(currentLocationFolderId)
     : false;
+  const isMoveRestrictedById = useCallback(
+    (id: string) => {
+      const folder = driveFolders.find((candidate) => candidate.id === id);
+      if (folder) {
+        return isWorksheetUploadMoveRestricted({
+          name: folder.name,
+          path: folder.sourcePath,
+          visibilityScope: folder.visibilityScope,
+        });
+      }
 
-  useEffect(() => {
-    setDraftSearchCategories(searchCategories);
-    if (!isSearchMode) {
-      setResultFilterOpen(false);
+      const item = items.find((candidate) => candidate.id === id);
+      if (item) {
+        return isWorksheetUploadMoveRestricted({
+          name: item.title,
+          path: item.sourcePath,
+          visibilityScope: item.visibilityScope,
+        });
+      }
+
+      return false;
+    },
+    [driveFolders, items],
+  );
+  const isCurrentLocationMoveRestricted = useMemo(() => {
+    if (!canShowCurrentLocationMenu) {
+      return false;
     }
-  }, [searchCategories, isSearchMode]);
+
+    const currentFolder = driveFolders.find((folder) => folder.id === currentLocationFolderId);
+    if (currentFolder) {
+      return isWorksheetUploadMoveRestricted({
+        name: currentFolder.name,
+        path: currentFolder.sourcePath,
+        visibilityScope: currentFolder.visibilityScope,
+      });
+    }
+
+    const currentFolderName = breadcrumbDisplayParts[breadcrumbDisplayParts.length - 1] || pageTitle;
+    return isWorksheetUploadMoveRestricted({
+      name: currentFolderName,
+      path: currentFolderPath,
+      visibilityScope: undefined,
+    });
+  }, [
+    breadcrumbDisplayParts,
+    canShowCurrentLocationMenu,
+    currentFolderId,
+    currentFolderIdPath,
+    currentFolderPath,
+    currentLocationFolderId,
+    driveFolders,
+    pageTitle,
+  ]);
 
   useEffect(() => {
     setSearchInputValue(searchKeyword);
@@ -2040,6 +2139,13 @@ const FadditDrive: React.FC = () => {
 
     return () => window.clearTimeout(timer);
   }, [isSearchMode, searchKeyword]);
+
+  useEffect(() => {
+    if (isSearchMode) {
+      return;
+    }
+    setLocationFilterCategories([]);
+  }, [folderId, isSearchMode]);
 
   const navigateToFolder = (nextFolderId: string) => {
     const moveToFolder = () => {
@@ -2067,7 +2173,7 @@ const FadditDrive: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!isSearchMode) {
+    if (!isSearchMode && !isGlobalUploadFilterMode) {
       return;
     }
 
@@ -2084,28 +2190,31 @@ const FadditDrive: React.FC = () => {
     const runSearch = async () => {
       try {
         setSearchLoading(true);
+        const targetCategories = isSearchMode ? searchCategories : locationFilterCategories;
         const searchResult = await searchDriveItems({
-          search: searchKeyword || undefined,
+          search: isSearchMode ? searchKeyword || undefined : undefined,
           page: 1,
-          categories: searchCategories.length ? searchCategories : undefined,
-          category: searchCategories.length === 1 ? searchCategories[0] : undefined,
+          categories: targetCategories.length ? targetCategories : undefined,
+          category: targetCategories.length === 1 ? targetCategories[0] : undefined,
         });
 
         const hiddenRootFolderCount = searchResult.data.filter(
           (node) => node.type === 'folder' && node.isRoot,
         ).length;
 
-        const folders = searchResult.data
-          .filter((node) => node.type === 'folder' && !node.isRoot)
-          .map((node) => ({
-            id: node.fileSystemId,
-            name: node.name,
-            shared: false,
-            updatedAt: node.updatedAt || '',
-            creatorName: node.creatorName || '',
-            parentId: node.parentId,
-            isStarred: node.isStarred,
-          }));
+        const folders = isGlobalUploadFilterMode
+          ? []
+          : searchResult.data
+              .filter((node) => node.type === 'folder' && !node.isRoot)
+              .map((node) => ({
+                id: node.fileSystemId,
+                name: node.name,
+                shared: false,
+                updatedAt: node.updatedAt || '',
+                creatorName: node.creatorName || '',
+                parentId: node.parentId,
+                isStarred: node.isStarred,
+              }));
 
         const files = await Promise.all(
           searchResult.data
@@ -2123,7 +2232,7 @@ const FadditDrive: React.FC = () => {
                 imageAlt: node.name,
                 title: node.name,
                 subtitle: formatDriveItemSubtitle(node.mimetype),
-                badge: node.tag ? String(node.tag) : '파일',
+                badge: resolveDriveNodeBadge(node),
                 isStarred: node.isStarred,
                 owner: node.creatorName || undefined,
                 ownerProfileImg: node.creatorProfileImg || undefined,
@@ -2144,7 +2253,10 @@ const FadditDrive: React.FC = () => {
 
         setDriveFolders(folders);
         setItems(files);
-        setSearchTotalCount(Math.max(0, searchResult.count - hiddenRootFolderCount));
+        const nextTotalCount = isGlobalUploadFilterMode
+          ? files.length
+          : Math.max(0, searchResult.count - hiddenRootFolderCount);
+        setSearchTotalCount(nextTotalCount);
         clearSelectionEffects();
       } catch (error) {
         console.error('Failed to load search results', error);
@@ -2166,8 +2278,10 @@ const FadditDrive: React.FC = () => {
       cancelled = true;
     };
   }, [
+    isGlobalUploadFilterMode,
     isSearchMode,
     isSessionBootstrapped,
+    locationFilterCategories,
     searchCategories,
     searchKeyword,
     setDriveFolders,
@@ -2178,7 +2292,83 @@ const FadditDrive: React.FC = () => {
   ]);
 
   useEffect(() => {
-    if (isSearchMode) {
+    if (!shouldMergeGlobalUploadWithLocationFilters) {
+      setMergedUploadItems([]);
+      return;
+    }
+
+    if (!isSessionBootstrapped || !userId) {
+      setMergedUploadItems([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadGlobalUploadItems = async () => {
+      try {
+        const uploadSearchResult = await searchDriveItems({
+          page: 1,
+          categories: ['upload'],
+          category: 'upload',
+        });
+
+        const uploadItems = await Promise.all(
+          uploadSearchResult.data
+            .filter((node) => node.type !== 'folder')
+            .map(async (node) => {
+              const previewUrl = isImageFile(node.mimetype)
+                ? await getDriveFilePreviewUrl(node.fileSystemId).catch(() => '')
+                : '';
+
+              return {
+                id: node.fileSystemId,
+                worksheetId: node.worksheetId,
+                nodeType: node.type,
+                imageSrc: previewUrl || ChildClothImage,
+                imageAlt: node.name,
+                title: node.name,
+                subtitle: formatDriveItemSubtitle(node.mimetype),
+                badge: resolveDriveNodeBadge(node),
+                isStarred: node.isStarred,
+                owner: node.creatorName || undefined,
+                ownerProfileImg: node.creatorProfileImg || undefined,
+                recentActionType: node.recentActionType,
+                recentActorName: node.recentActorName || undefined,
+                date: formatKoreanDateTime(node.updatedAt),
+                size: formatBytes(node.size),
+                parentId: node.parentId,
+                sourcePath: node.path,
+                visibilityScope: node.visibilityScope,
+                stateStoreKey: 'Drive.upload-merge.items',
+              } as DriveItem;
+            }),
+        );
+
+        if (!cancelled) {
+          setMergedUploadItems(uploadItems);
+        }
+      } catch (error) {
+        console.error('Failed to load global upload items for merged location filters', error);
+        if (!cancelled) {
+          setMergedUploadItems([]);
+        }
+      }
+    };
+
+    void loadGlobalUploadItems();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isSearchMode,
+    isSessionBootstrapped,
+    shouldMergeGlobalUploadWithLocationFilters,
+    userId,
+  ]);
+
+  useEffect(() => {
+    if (isSearchMode || isGlobalUploadFilterMode) {
       return;
     }
 
@@ -2232,7 +2422,7 @@ const FadditDrive: React.FC = () => {
               imageAlt: node.name,
               title: node.name,
               subtitle: formatDriveItemSubtitle(node.mimetype),
-              badge: node.tag ? String(node.tag) : '파일',
+              badge: resolveDriveNodeBadge(node),
               isStarred: node.isStarred,
               owner: node.creatorName || undefined,
               ownerProfileImg: node.creatorProfileImg || undefined,
@@ -2305,6 +2495,7 @@ const FadditDrive: React.FC = () => {
   }, [
     clearMaterialsForFiles,
     folderId,
+    isGlobalUploadFilterMode,
     isRecentMode,
     isSessionBootstrapped,
     isSearchMode,
@@ -2424,10 +2615,6 @@ const FadditDrive: React.FC = () => {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        if (resultFilterOpen) {
-          setResultFilterOpen(false);
-          return;
-        }
         if (detailPanelEditMode && hasUnsavedDetailChanges) {
           pendingUnsavedExitActionRef.current = clearSelectionEffects;
           setUnsavedExitModalOpen(true);
@@ -2439,23 +2626,7 @@ const FadditDrive: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [detailPanelEditMode, hasUnsavedDetailChanges, resultFilterOpen]);
-
-  useEffect(() => {
-    if (!resultFilterOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (!resultFilterRef.current?.contains(target)) {
-        setResultFilterOpen(false);
-      }
-    };
-
-    window.addEventListener('mousedown', handlePointerDown);
-    return () => window.removeEventListener('mousedown', handlePointerDown);
-  }, [resultFilterOpen]);
+  }, [detailPanelEditMode, hasUnsavedDetailChanges]);
 
   useEffect(() => {
     const resolveBreakpoint = (width: number) => {
@@ -2655,6 +2826,10 @@ const FadditDrive: React.FC = () => {
   };
 
   const handleOpenMoveDialog = (id: string) => {
+    if (isMoveRestrictedById(id)) {
+      return;
+    }
+
     const effectiveRoot = rootFolderId || rootFolderFromAuth || '';
     setMoveSourceId(id);
     setMoveTargetFolderId(currentFolderId || effectiveRoot);
@@ -2831,40 +3006,105 @@ const FadditDrive: React.FC = () => {
 
   const activeItem = items.find((item) => item.id === activeItemId) || null;
 
+  const getItemSearchCategories = useCallback(
+    (item: Pick<DriveItem, 'id' | 'nodeType' | 'badge'>): DriveSearchCategory[] => {
+      const linkedMaterials = materialsByFileSystemId[item.id] || [];
+      const primaryMaterialCategory = linkedMaterials[0]?.category;
+
+      if (primaryMaterialCategory === 'fabric') {
+        return ['fabric'];
+      }
+      if (primaryMaterialCategory === 'rib_fabric') {
+        return ['rib_fabric'];
+      }
+      if (primaryMaterialCategory === 'label') {
+        return ['label'];
+      }
+      if (primaryMaterialCategory === 'trim') {
+        return ['trim'];
+      }
+
+      if (item.nodeType === 'worksheet') {
+        return ['worksheet'];
+      }
+
+      const normalizedTag = String(item.badge || '')
+        .trim()
+        .toLowerCase();
+
+      if (normalizedTag === 'worksheet' || normalizedTag === 'faddit') {
+        return ['worksheet'];
+      }
+      if (normalizedTag === 'fabric') {
+        return ['fabric'];
+      }
+      if (normalizedTag === 'rib_fabric' || normalizedTag === 'rib-fabric') {
+        return ['rib_fabric'];
+      }
+      if (normalizedTag === 'label') {
+        return ['label'];
+      }
+      if (normalizedTag === 'trim' || normalizedTag === 'etc') {
+        return ['trim'];
+      }
+
+      return [];
+    },
+    [materialsByFileSystemId],
+  );
+
   const displayedFolders = useMemo(() => {
-    if (isSearchMode || searchCategories.length === 0) {
+    if (isSearchMode || isGlobalUploadFilterMode || locationFilterCategories.length === 0) {
       return driveFolders;
     }
 
-    if (searchCategories.includes('folder')) {
+    if (locationFilterCategories.includes('folder')) {
       return driveFolders;
     }
 
     return [] as DriveFolder[];
-  }, [driveFolders, isSearchMode, searchCategories]);
+  }, [driveFolders, isGlobalUploadFilterMode, isSearchMode, locationFilterCategories]);
 
   const displayedItems = useMemo(() => {
-    if (isSearchMode || searchCategories.length === 0) {
+    if (isSearchMode || isGlobalUploadFilterMode || locationFilterCategories.length === 0) {
       return items;
     }
 
-    const normalizedCategories = searchCategories.map((value) => value.toLowerCase());
-    const hasWorksheetFilter =
-      normalizedCategories.includes('worksheet') || normalizedCategories.includes('faddit');
+    const selectedCategorySet = new Set(
+      locationFilterCategories.filter((category) => category !== 'upload'),
+    );
 
-    return items.filter((item) => {
-      const tag = (item.badge || '').toLowerCase();
-      if (!tag) {
+    const locationFilteredItems = items.filter((item) => {
+      const itemCategories = getItemSearchCategories(item);
+      if (itemCategories.length === 0) {
         return false;
       }
 
-      if (hasWorksheetFilter && (tag === 'worksheet' || tag === 'faddit')) {
-        return true;
-      }
-
-      return normalizedCategories.includes(tag);
+      return itemCategories.some((category) => selectedCategorySet.has(category));
     });
-  }, [isSearchMode, items, searchCategories]);
+
+    if (!shouldMergeGlobalUploadWithLocationFilters) {
+      return locationFilteredItems;
+    }
+
+    const mergedById = new Map<string, DriveItem>();
+    locationFilteredItems.forEach((item) => {
+      mergedById.set(item.id, item);
+    });
+    mergedUploadItems.forEach((item) => {
+      mergedById.set(item.id, item);
+    });
+
+    return Array.from(mergedById.values());
+  }, [
+    getItemSearchCategories,
+    isGlobalUploadFilterMode,
+    isSearchMode,
+    items,
+    locationFilterCategories,
+    mergedUploadItems,
+    shouldMergeGlobalUploadWithLocationFilters,
+  ]);
 
   const listEntries = useMemo<DriveListEntry[]>(
     () => [
@@ -2876,6 +3116,11 @@ const FadditDrive: React.FC = () => {
         date: formatKoreanDateTime(folder.updatedAt),
         size: '—',
         isStarred: folder.isStarred,
+        canMove: !isWorksheetUploadMoveRestricted({
+          name: folder.name,
+          path: folder.sourcePath,
+          visibilityScope: folder.visibilityScope,
+        }),
       })),
       ...displayedItems.map((item) => ({
         id: item.id,
@@ -2887,6 +3132,11 @@ const FadditDrive: React.FC = () => {
         date: item.date || '-',
         size: item.size || '-',
         isStarred: Boolean(item.isStarred),
+        canMove: !isWorksheetUploadMoveRestricted({
+          name: item.title,
+          path: item.sourcePath,
+          visibilityScope: item.visibilityScope,
+        }),
       })),
     ],
     [displayedItems, displayedFolders],
@@ -3155,40 +3405,55 @@ const FadditDrive: React.FC = () => {
     }
   };
 
-  const toggleDraftSearchCategory = (category: DriveSearchCategory) => {
-    setDraftSearchCategories((prev) =>
-      prev.includes(category) ? prev.filter((item) => item !== category) : [...prev, category],
-    );
-  };
+  const updateSearchCategoryQuery = useCallback(
+    (nextCategories: DriveSearchCategory[]) => {
+      const next = new URLSearchParams(searchParams);
+      if (nextCategories.length > 0) {
+        next.set('categories', nextCategories.join(','));
+      } else {
+        next.delete('categories');
+      }
 
-  const applySearchFilters = () => {
-    const next = new URLSearchParams(searchParams);
-    if (draftSearchCategories.length) {
-      next.set('categories', draftSearchCategories.join(','));
-    } else {
-      next.delete('categories');
-    }
+      if (isSearchMode) {
+        next.set('mode', 'search');
+      } else if (!searchKeyword) {
+        next.delete('mode');
+      }
 
-    if (isSearchMode) {
-      next.set('mode', 'search');
-    }
+      setSearchParams(next);
+    },
+    [isSearchMode, searchKeyword, searchParams, setSearchParams],
+  );
 
-    setSearchParams(next);
-    setResultFilterOpen(false);
-  };
+  const handleCategoryChipClick = useCallback(
+    (value: DriveSearchCategory | 'all') => {
+      if (!isSearchMode) {
+        if (value === 'all') {
+          setLocationFilterCategories([]);
+          return;
+        }
 
-  const clearSearchFilters = () => {
-    setDraftSearchCategories([]);
-    const next = new URLSearchParams(searchParams);
-    next.delete('categories');
+        setLocationFilterCategories((prev) =>
+          prev.includes(value)
+            ? prev.filter((category) => category !== value)
+            : [...prev, value],
+        );
+        return;
+      }
 
-    if (isSearchMode && !searchKeyword) {
-      next.delete('mode');
-    }
+      if (value === 'all') {
+        updateSearchCategoryQuery([]);
+        return;
+      }
 
-    setSearchParams(next);
-    setResultFilterOpen(false);
-  };
+      const nextCategories = searchCategories.includes(value)
+        ? searchCategories.filter((category) => category !== value)
+        : [...searchCategories, value];
+
+      updateSearchCategoryQuery(nextCategories);
+    },
+    [isSearchMode, searchCategories, updateSearchCategoryQuery],
+  );
 
   const submitResultSearch = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -3242,7 +3507,7 @@ const FadditDrive: React.FC = () => {
             imageAlt: node.name,
             title: node.name,
             subtitle: formatDriveItemSubtitle(node.mimetype),
-            badge: node.tag ? String(node.tag) : '파일',
+            badge: resolveDriveNodeBadge(node),
             isStarred: node.isStarred,
             owner: node.creatorName || undefined,
             ownerProfileImg: node.creatorProfileImg || undefined,
@@ -3324,9 +3589,9 @@ const FadditDrive: React.FC = () => {
       const parentId = currentFolderId ?? rootFolderId;
       const tagByCategory: Record<CreateMaterialFormValue['category'], DriveUploadTag> = {
         fabric: 'fabric',
-        rib_fabric: 'fabric',
+        rib_fabric: 'rib_fabric',
         label: 'label',
-        trim: 'etc',
+        trim: 'trim',
       };
 
       const uploadResult = await createDriveFile({
@@ -4072,10 +4337,12 @@ const FadditDrive: React.FC = () => {
   };
 
   const cardGridClass = detailPanelOpen
-    ? 'grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))]'
-    : 'grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))]';
+    ? 'grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))]'
+    : 'grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))]';
 
   const isDriveListLoading = driveLoading || searchLoading;
+  const totalVisibleResultCount = listEntries.length;
+  const shouldShowResultSummary = activeCategories.length > 0;
   const showDefaultEmptyPlaceholder =
     !isDriveListLoading &&
     !isSearchMode &&
@@ -4611,16 +4878,18 @@ const FadditDrive: React.FC = () => {
                         sideOffset={6}
                         className='z-50 w-36 rounded-lg border border-gray-200 bg-white p-1.5 shadow-lg dark:border-gray-700/60 dark:bg-gray-800'
                       >
-                        <button
-                          type='button'
-                          className='w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
-                          onClick={() => {
-                            setCurrentLocationMenuOpen(false);
-                            handleOpenMoveDialog(currentLocationFolderId);
-                          }}
-                        >
-                          파일 이동
-                        </button>
+                        {!isCurrentLocationMoveRestricted ? (
+                          <button
+                            type='button'
+                            className='w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
+                            onClick={() => {
+                              setCurrentLocationMenuOpen(false);
+                              handleOpenMoveDialog(currentLocationFolderId);
+                            }}
+                          >
+                            파일 이동
+                          </button>
+                        ) : null}
                         <button
                           type='button'
                           className='w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
@@ -4693,11 +4962,13 @@ const FadditDrive: React.FC = () => {
                     })}
                   </div>
                 )}
-                {isSearchMode && (
+                {shouldShowResultSummary ? (
                   <div className='mt-2 text-sm text-gray-500 dark:text-gray-400'>
-                    {searchLoading ? '검색 중...' : `총 ${searchTotalCount}개 결과`}
+                    {isDriveListLoading
+                      ? '검색 중...'
+                      : `총 ${totalVisibleResultCount}개의 검색결과`}
                   </div>
-                )}
+                ) : null}
                 {isSearchMode && (
                   <form onSubmit={submitResultSearch} className='mt-3 w-full max-w-[520px]'>
                     <div className='relative'>
@@ -4729,68 +5000,46 @@ const FadditDrive: React.FC = () => {
                     </div>
                   </form>
                 )}
+                <div className='mt-3 flex flex-wrap items-center gap-2'>
+                  <button
+                    type='button'
+                    onClick={() => handleCategoryChipClick('all')}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                      activeCategories.length === 0
+                        ? 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/50 dark:bg-violet-500/15 dark:text-violet-200'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-100 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    전체
+                  </button>
+                  {SEARCH_CATEGORY_VALUES.map((category) => {
+                    const active = activeCategories.includes(category);
+
+                    return (
+                      <button
+                        key={category}
+                        type='button'
+                        onClick={() => handleCategoryChipClick(category)}
+                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                          active
+                            ? 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/50 dark:bg-violet-500/15 dark:text-violet-200'
+                            : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-100 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
+                        }`}
+                      >
+                        {searchFilterLabelMap[category]}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className='grid grid-flow-col justify-start gap-2 sm:auto-cols-max sm:justify-end'>
                 <div className='flex flex-wrap'>
-                  <div ref={resultFilterRef} className='relative'>
-                    <GlobalTooltip content='필터' position='bottom'>
-                      <button
-                        type='button'
-                        onClick={() => setResultFilterOpen((prev) => !prev)}
-                        className='btn inline-flex h-[38px] w-[42px] cursor-pointer items-center justify-center rounded-r-none border-gray-200 bg-white p-0 text-gray-500 hover:bg-gray-50 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-900'
-                        aria-label='검색 필터'
-                      >
-                        <SlidersHorizontal className='h-4 w-4' strokeWidth={2} />
-                      </button>
-                    </GlobalTooltip>
-
-                    {resultFilterOpen && (
-                      <div className='absolute top-full left-0 z-20 mt-2 w-60 rounded-lg border border-gray-200 bg-white p-3 shadow-lg dark:border-gray-700/60 dark:bg-gray-900'>
-                        <div className='mb-2 text-xs font-semibold text-gray-400 uppercase'>
-                          Filters
-                        </div>
-                        <div className='space-y-2'>
-                          {SEARCH_CATEGORY_VALUES.map((category) => (
-                            <label
-                              key={category}
-                              className='flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200'
-                            >
-                              <input
-                                type='checkbox'
-                                className='form-checkbox'
-                                checked={draftSearchCategories.includes(category)}
-                                onChange={() => toggleDraftSearchCategory(category)}
-                              />
-                              <span>{searchFilterLabelMap[category]}</span>
-                            </label>
-                          ))}
-                        </div>
-                        <div className='mt-3 flex items-center justify-between'>
-                          <button
-                            type='button'
-                            className='btn-xs border-gray-200 bg-white text-red-500 hover:border-gray-300 dark:border-gray-700/60 dark:bg-gray-800 dark:hover:border-gray-600'
-                            onClick={clearSearchFilters}
-                          >
-                            리셋
-                          </button>
-                          <button
-                            type='button'
-                            className='btn border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-gray-700/60 dark:bg-gray-800 dark:text-gray-200'
-                            onClick={applySearchFilters}
-                          >
-                            적용하기
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
                   <GlobalTooltip content='리스트로 보기' position='bottom'>
                     <button
                       type='button'
                       onClick={() => setViewMode('list')}
-                      className={`btn -ml-px inline-flex h-[38px] w-[42px] cursor-pointer items-center justify-center rounded-none border-gray-200 p-0 dark:border-gray-700/60 ${
+                      className={`btn inline-flex h-[38px] w-[42px] cursor-pointer items-center justify-center rounded-r-none border-gray-200 p-0 dark:border-gray-700/60 ${
                         viewMode === 'list'
                           ? 'bg-white text-violet-500 dark:bg-gray-800'
                           : 'bg-white text-gray-500 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-900'
@@ -4924,6 +5173,7 @@ const FadditDrive: React.FC = () => {
                               onToggleSelect={(checked) => applySelection(folder.id, checked)}
                               onPress={(event) => handleFolderPress(folder.id, event)}
                               onOpen={navigateToFolder}
+                              canMove={!isMoveRestrictedById(folder.id)}
                               onMoveFolder={handleOpenMoveDialog}
                               onAddFavorite={handleAddFavoriteFromMenu}
                               onRenameFolder={handleOpenRenameFolderDialog}
@@ -4940,6 +5190,11 @@ const FadditDrive: React.FC = () => {
                           const primaryMaterial = linkedMaterials[0] || null;
                           const displayImageSrc = getDisplayImageSrc(item.id, item.imageSrc);
                           const categoryLabel = getCategoryLabel(item.id, item.badge);
+                          const showUploadSourceIcon = isWorksheetUploadMoveRestricted({
+                            name: item.title,
+                            path: item.sourcePath,
+                            visibilityScope: item.visibilityScope,
+                          });
                           const attributesCount = linkedMaterials.reduce((count, material) => {
                             const attrs = material.attributes || {};
                             return count + Object.keys(attrs).length;
@@ -4982,6 +5237,7 @@ const FadditDrive: React.FC = () => {
                               materialFetchedFromBackend={item.id in materialsByFileSystemId}
                               materialAttributesCount={attributesCount}
                               categoryLabel={categoryLabel}
+                              showUploadSourceIcon={showUploadSourceIcon}
                               summaryText={summaryText}
                               materialCardMeta={
                                 primaryMaterial
@@ -5015,6 +5271,7 @@ const FadditDrive: React.FC = () => {
                               onCardClick={handleFileCardClick}
                               onCardDoubleClick={handleFileCardDoubleClick}
                               onEdit={handleOpenFileEditPanel}
+                              canMoveToFolder={!isMoveRestrictedById(item.id)}
                               onMoveToFolder={handleOpenMoveDialog}
                               onAddFavorite={handleAddFavoriteFromMenu}
                               onDelete={(id) => handleDeleteSingleItem(id, item.title)}
@@ -5108,7 +5365,7 @@ const FadditDrive: React.FC = () => {
         </main>
 
         <aside
-          className={`hidden h-full overflow-hidden border-l border-gray-200 bg-[#f9f9f9] transition-all duration-300 ease-out lg:block dark:border-gray-700/60 dark:bg-gray-900 ${
+          className={`hidden h-full overflow-hidden border-l border-gray-200 bg-gray-100 transition-all duration-300 ease-out lg:block dark:border-gray-700/60 dark:bg-gray-900 ${
             detailPanelOpen && activeItem ? 'w-[36%] xl:w-[34%]' : 'w-0'
           }`}
         >
