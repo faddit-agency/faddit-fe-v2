@@ -18,7 +18,14 @@ import {
   loadSVGFromString,
 } from 'fabric';
 import { applyPathfinderOperation, type PathfinderOp } from './pathfinder';
-import type { WorksheetCanvasSpec } from './worksheetEditorSchema';
+import type { WorksheetCanvasAnnotationType, WorksheetCanvasSpec } from './worksheetEditorSchema';
+
+export type AnnotationToolType =
+  | 'annotation-card'
+  | 'annotation-pin'
+  | 'annotation-dimension'
+  | 'annotation-highlight'
+  | 'annotation-status';
 
 export type ToolType =
   | 'select'
@@ -28,8 +35,27 @@ export type ToolType =
   | 'triangle'
   | 'line'
   | 'arrow'
+  | AnnotationToolType
   | 'draw'
   | 'pen';
+
+export function isAnnotationTool(tool: ToolType | string): tool is AnnotationToolType {
+  return (
+    tool === 'annotation-card' ||
+    tool === 'annotation-pin' ||
+    tool === 'annotation-dimension' ||
+    tool === 'annotation-highlight' ||
+    tool === 'annotation-status'
+  );
+}
+
+export function annotationToolToAnnotationType(tool: AnnotationToolType): WorksheetCanvasAnnotationType {
+  if (tool === 'annotation-pin') return 'pin';
+  if (tool === 'annotation-dimension') return 'dimension';
+  if (tool === 'annotation-highlight') return 'highlight';
+  if (tool === 'annotation-status') return 'status';
+  return 'card';
+}
 
 export type AlignType = 'left' | 'centerH' | 'right' | 'top' | 'centerV' | 'bottom';
 

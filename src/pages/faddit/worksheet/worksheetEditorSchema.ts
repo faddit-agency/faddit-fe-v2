@@ -11,6 +11,32 @@ export interface WorksheetCanvasSpec {
   backgroundColor: string;
 }
 
+export interface WorksheetCanvasPoint {
+  x: number;
+  y: number;
+}
+
+export type WorksheetCanvasAnnotationType =
+  | 'card'
+  | 'pin'
+  | 'dimension'
+  | 'highlight'
+  | 'status';
+
+export type WorksheetCanvasAnnotationStatus = 'review' | 'update' | 'done';
+
+export interface WorksheetCanvasAnnotation {
+  id: string;
+  type: WorksheetCanvasAnnotationType;
+  anchor: WorksheetCanvasPoint;
+  label: WorksheetCanvasPoint;
+  text: string;
+  status?: WorksheetCanvasAnnotationStatus;
+  color?: string;
+  backgroundColor?: string;
+  textColor?: string;
+}
+
 export interface WorksheetEditorPage {
   id: string;
   label: string;
@@ -25,6 +51,7 @@ export interface WorksheetEditorDocument {
   zoom: number;
   pages: WorksheetEditorPage[];
   sketchPages: Record<string, string>;
+  pageAnnotations: Record<string, WorksheetCanvasAnnotation[]>;
   pageThumbnails: Record<string, string>;
 }
 
@@ -135,6 +162,7 @@ export function createDefaultWorksheetEditorDocument(): WorksheetEditorDocument 
     zoom: 100,
     pages,
     sketchPages: {},
+    pageAnnotations: {},
     pageThumbnails: {},
   };
 }
@@ -147,6 +175,34 @@ function isPageType(value: unknown): value is WorksheetEditorPageType {
     value === 'label' ||
     value === 'size-spec'
   );
+}
+
+export function isWorksheetCanvasAnnotationType(value: unknown): value is WorksheetCanvasAnnotationType {
+  return (
+    value === 'card' ||
+    value === 'pin' ||
+    value === 'dimension' ||
+    value === 'highlight' ||
+    value === 'status'
+  );
+}
+
+export function getDefaultAnnotationText(type: WorksheetCanvasAnnotationType): string {
+  if (type === 'pin') return '핀 주석';
+  if (type === 'dimension') return '치수 주석';
+  if (type === 'highlight') return '영역 주석';
+  if (type === 'status') return '확인 필요';
+  return '주석 입력';
+}
+
+function normalizeAnnotationStatus(
+  type: WorksheetCanvasAnnotationType,
+  value: unknown,
+): WorksheetCanvasAnnotationStatus | undefined {
+  if (value === 'review' || value === 'update' || value === 'done') {
+    return value;
+  }
+  return type === 'status' ? 'review' : undefined;
 }
 
 export function parseWorksheetEditorDocument(input: unknown): WorksheetEditorDocument {
@@ -198,6 +254,72 @@ export function parseWorksheetEditorDocument(input: unknown): WorksheetEditorDoc
         }, {})
       : {};
 
+  const pageAnnotations =
+    raw.pageAnnotations && typeof raw.pageAnnotations === 'object'
+      ? Object.entries(raw.pageAnnotations).reduce<Record<string, WorksheetCanvasAnnotation[]>>(
+          (acc, [pageId, value]) => {
+            if (!Array.isArray(value)) {
+              return acc;
+            }
+
+            const annotations = value
+              .map((entry, index) => {
+                if (!entry || typeof entry !== 'object') {
+                  return null;
+                }
+
+                const rawEntry = entry as Partial<WorksheetCanvasAnnotation>;
+                const anchorX = Number(rawEntry.anchor?.x);
+                const anchorY = Number(rawEntry.anchor?.y);
+                const labelX = Number(rawEntry.label?.x);
+                const labelY = Number(rawEntry.label?.y);
+                const annotationType = isWorksheetCanvasAnnotationType(rawEntry.type)
+                  ? rawEntry.type
+                  : 'card';
+
+                if (![anchorX, anchorY, labelX, labelY].every((number) => Number.isFinite(number))) {
+                  return null;
+                }
+
+                return {
+                  id:
+                    typeof rawEntry.id === 'string' && rawEntry.id.trim().length > 0
+                      ? rawEntry.id
+                      : `${pageId}-annotation-${index}`,
+                  type: annotationType,
+                  anchor: { x: anchorX, y: anchorY },
+                  label: { x: labelX, y: labelY },
+                  text:
+                    typeof rawEntry.text === 'string' && rawEntry.text.trim().length > 0
+                      ? rawEntry.text
+                      : getDefaultAnnotationText(annotationType),
+                  status: normalizeAnnotationStatus(annotationType, rawEntry.status),
+                  color:
+                    typeof rawEntry.color === 'string' && rawEntry.color.trim().length > 0
+                      ? rawEntry.color
+                      : undefined,
+                  backgroundColor:
+                    typeof rawEntry.backgroundColor === 'string' &&
+                    rawEntry.backgroundColor.trim().length > 0
+                      ? rawEntry.backgroundColor
+                      : undefined,
+                  textColor:
+                    typeof rawEntry.textColor === 'string' && rawEntry.textColor.trim().length > 0
+                      ? rawEntry.textColor
+                      : undefined,
+                } satisfies WorksheetCanvasAnnotation;
+              })
+              .filter((annotation): annotation is WorksheetCanvasAnnotation => annotation !== null);
+
+            if (annotations.length > 0) {
+              acc[pageId] = annotations;
+            }
+            return acc;
+          },
+          {},
+        )
+      : {};
+
   const pageThumbnails =
     raw.pageThumbnails && typeof raw.pageThumbnails === 'object'
       ? Object.entries(raw.pageThumbnails).reduce<Record<string, string>>((acc, [pageId, value]) => {
@@ -215,6 +337,7 @@ export function parseWorksheetEditorDocument(input: unknown): WorksheetEditorDoc
     zoom,
     pages: normalizedPages,
     sketchPages,
+    pageAnnotations,
     pageThumbnails,
   };
 }

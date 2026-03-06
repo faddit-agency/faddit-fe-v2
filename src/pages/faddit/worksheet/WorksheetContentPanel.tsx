@@ -3,8 +3,9 @@ import { Check, Minus, PenLine, Pencil, Plus, Scissors, Table, Tag, Trash2 } fro
 import ToggleButton from '../../../components/atoms/ToggleButton';
 import WorksheetSketchView from './WorksheetSketchView';
 import WorksheetSizeSpecView from './WorksheetSizeSpecView';
-import { useCanvas } from './CanvasProvider';
+import { isAnnotationTool, useCanvas } from './CanvasProvider';
 import type {
+  WorksheetCanvasAnnotation,
   WorksheetCanvasSpec,
   WorksheetEditorDocument,
   WorksheetEditorPage,
@@ -51,6 +52,7 @@ const GUIDE_MANUAL_ITEMS: Array<{ title: string; shortcut: string; usage: string
   { title: '삼각형', shortcut: 'Y', usage: '드래그로 삼각형 생성' },
   { title: '선', shortcut: 'L', usage: '드래그로 직선 생성' },
   { title: '화살표', shortcut: '-', usage: '드래그로 화살표 생성' },
+  { title: '주석 카드', shortcut: 'N', usage: '기준점에서 설명 카드까지 드래그해 주석 생성' },
   { title: '패스 편집', shortcut: 'A', usage: '선택한 패스를 직접 편집(더블클릭과 동일)' },
   { title: '패스 편집 종료', shortcut: 'Esc', usage: '패스 포인트 편집 모드를 종료' },
   { title: '그룹화', shortcut: 'Cmd/Ctrl+G', usage: '선택 객체 그룹화' },
@@ -299,6 +301,7 @@ export default function WorksheetContentPanel({
   );
   const previousSelectedIdRef = useRef<string>(selectedId);
   const sketchPagesRef = useRef(editorDocument.sketchPages);
+  const pageAnnotationsRef = useRef(editorDocument.pageAnnotations);
   const lastLoadedRef = useRef<{
     pageId: string | null;
     json: string | null;
@@ -310,6 +313,7 @@ export default function WorksheetContentPanel({
   });
 
   const {
+    activeTool,
     canvasRef,
     canvasSession,
     exportCanvasJson,
@@ -320,10 +324,27 @@ export default function WorksheetContentPanel({
   const orderedPages = pages;
 
   const selectedPage = pages.find((p) => p.id === selectedId) ?? pages[0];
+  const [currentAnnotations, setCurrentAnnotations] = useState<WorksheetCanvasAnnotation[]>([]);
+  const currentAnnotationsRef = useRef<WorksheetCanvasAnnotation[]>([]);
+  const [showAnnotationOverlay, setShowAnnotationOverlay] = useState(true);
 
   useEffect(() => {
     sketchPagesRef.current = editorDocument.sketchPages;
   }, [editorDocument.sketchPages]);
+
+  useEffect(() => {
+    pageAnnotationsRef.current = editorDocument.pageAnnotations;
+  }, [editorDocument.pageAnnotations]);
+
+  useEffect(() => {
+    currentAnnotationsRef.current = currentAnnotations;
+  }, [currentAnnotations]);
+
+  useEffect(() => {
+    if (isAnnotationTool(activeTool) && !showAnnotationOverlay) {
+      setShowAnnotationOverlay(true);
+    }
+  }, [activeTool, showAnnotationOverlay]);
 
   const updateDocument = useCallback(
     (updater: (prev: WorksheetEditorDocument) => WorksheetEditorDocument) => {
@@ -374,17 +395,46 @@ export default function WorksheetContentPanel({
     [pages, canvasRef, exportCanvasJson, updateDocument],
   );
 
+  const persistAnnotationSnapshot = useCallback(
+    (pageId: string | null | undefined, annotations: WorksheetCanvasAnnotation[]) => {
+      if (!pageId) return;
+
+      const targetPage = pages.find((page) => page.id === pageId);
+      if (!targetPage || !isCanvasPageType(targetPage.type)) {
+        return;
+      }
+
+      updateDocument((prev) => {
+        const previousAnnotations = prev.pageAnnotations[pageId] ?? [];
+        if (JSON.stringify(previousAnnotations) === JSON.stringify(annotations)) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          pageAnnotations: {
+            ...prev.pageAnnotations,
+            [pageId]: annotations,
+          },
+        };
+      });
+    },
+    [pages, updateDocument],
+  );
+
   const loadSelectedSketchPage = useCallback(async () => {
     const sessionKey = String(canvasSession ?? '');
 
     if (!selectedPage) {
       clearCanvas();
+      setCurrentAnnotations([]);
       lastLoadedRef.current = { pageId: null, json: null, session: sessionKey };
       return;
     }
 
     if (!isCanvasPageType(selectedPage.type)) {
       clearCanvas();
+      setCurrentAnnotations([]);
       lastLoadedRef.current = { pageId: selectedPage.id, json: null, session: sessionKey };
       return;
     }
@@ -406,6 +456,7 @@ export default function WorksheetContentPanel({
       if (canvasSpec) {
         setCanvasPageSpec(canvasSpec);
       }
+      setCurrentAnnotations(pageAnnotationsRef.current[selectedPage.id] ?? []);
       lastLoadedRef.current = { pageId: selectedPage.id, json: null, session: sessionKey };
       return;
     }
@@ -414,6 +465,7 @@ export default function WorksheetContentPanel({
     if (canvasSpec) {
       setCanvasPageSpec(canvasSpec);
     }
+    setCurrentAnnotations(pageAnnotationsRef.current[selectedPage.id] ?? []);
     lastLoadedRef.current = { pageId: selectedPage.id, json: savedJson, session: sessionKey };
   }, [selectedPage, importCanvasJson, clearCanvas, canvasSession, setCanvasPageSpec]);
 
@@ -423,18 +475,41 @@ export default function WorksheetContentPanel({
     const prev = previousSelectedIdRef.current;
     if (prev !== selectedId) {
       persistSketchPageSnapshot(prev);
+      persistAnnotationSnapshot(prev, currentAnnotationsRef.current);
     }
 
     previousSelectedIdRef.current = selectedId;
 
     void loadSelectedSketchPage();
-  }, [selectedId, selectedPage, persistSketchPageSnapshot, loadSelectedSketchPage, canvasSession]);
+  }, [
+    selectedId,
+    selectedPage,
+    persistSketchPageSnapshot,
+    persistAnnotationSnapshot,
+    loadSelectedSketchPage,
+    canvasSession,
+  ]);
 
   useEffect(() => {
     return () => {
       persistSketchPageSnapshot(previousSelectedIdRef.current);
+      persistAnnotationSnapshot(previousSelectedIdRef.current, currentAnnotationsRef.current);
     };
-  }, [persistSketchPageSnapshot]);
+  }, [persistSketchPageSnapshot, persistAnnotationSnapshot]);
+
+  useEffect(() => {
+    if (!selectedPage || !isCanvasPageType(selectedPage.type)) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      persistAnnotationSnapshot(selectedPage.id, currentAnnotations);
+    }, 120);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [currentAnnotations, selectedPage, persistAnnotationSnapshot]);
 
   useEffect(() => {
     if (!selectedPage || !isCanvasPageType(selectedPage.type)) {
@@ -585,11 +660,15 @@ export default function WorksheetContentPanel({
         const nextThumbnails = { ...prev.pageThumbnails };
         delete nextThumbnails[pageId];
 
+        const nextAnnotations = { ...prev.pageAnnotations };
+        delete nextAnnotations[pageId];
+
         return {
           ...prev,
           pages: nextPages,
           activePageId: nextActivePageId,
           sketchPages: nextSketchPages,
+          pageAnnotations: nextAnnotations,
           pageThumbnails: nextThumbnails,
         };
       });
@@ -733,6 +812,9 @@ export default function WorksheetContentPanel({
           <div className='absolute inset-0'>
             <WorksheetSketchView
               zoom={zoom}
+              annotations={currentAnnotations}
+              annotationsVisible={showAnnotationOverlay}
+              onAnnotationsChange={setCurrentAnnotations}
               onZoomChange={(nextZoom) => {
                 updateDocument((prev) => ({ ...prev, zoom: nextZoom }));
               }}
@@ -950,6 +1032,19 @@ export default function WorksheetContentPanel({
         )}
 
         <div className='flex shrink-0 items-center gap-3'>
+          {selectedPage && isCanvasPageType(selectedPage.type) && (
+            <div className='shrink-0'>
+              <ToggleButton
+                label='주석 표시'
+                checked={showAnnotationOverlay}
+                onChange={() => {
+                  if (readOnly) return;
+                  setShowAnnotationOverlay((prev) => !prev);
+                }}
+              />
+            </div>
+          )}
+
           <div className='shrink-0'>
             <ToggleButton
               label='단축키 가이드'

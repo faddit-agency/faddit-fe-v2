@@ -16,17 +16,23 @@ import {
   ChevronsRight,
   Circle,
   Check,
+  CircleAlert,
   Eye,
   EyeOff,
+  Highlighter,
   Italic,
   Layers,
   LayoutGrid,
   Lock,
+  MapPin,
+  MessageSquare,
   Minus,
   Paintbrush,
   Palette,
+  Pencil,
   PenTool,
   PencilRuler,
+  Ruler,
   Scissors,
   Search,
   Square,
@@ -50,7 +56,7 @@ import {
 import ThemeToggle from '../../../components/ThemeToggle';
 import FadditLogoOnly from '../../../images/icons/faddit-logo-only.svg';
 import { useThemeProvider } from '../../../utils/ThemeContext';
-import { useCanvas, type AlignType, type ToolType } from './CanvasProvider';
+import { isAnnotationTool, useCanvas, type AlignType, type ToolType } from './CanvasProvider';
 import type { PathfinderOp } from './pathfinder';
 import SketchColorPicker from './SketchColorPicker';
 
@@ -360,6 +366,11 @@ const SHAPE_ITEMS: { tool: ToolType; label: string; icon: React.ReactNode }[] = 
   { tool: 'triangle', label: '삼각형 (Y)', icon: <Triangle size={18} strokeWidth={1.5} /> },
   { tool: 'line', label: '선 (L)', icon: <Minus size={18} strokeWidth={1.5} /> },
   { tool: 'arrow', label: '화살표 (-)', icon: <ArrowRight size={18} strokeWidth={1.5} /> },
+  { tool: 'annotation-card', label: '주석 카드 (N)', icon: <MessageSquare size={18} strokeWidth={1.5} /> },
+  { tool: 'annotation-pin', label: '핀 주석', icon: <MapPin size={18} strokeWidth={1.5} /> },
+  { tool: 'annotation-dimension', label: '치수 주석', icon: <Ruler size={18} strokeWidth={1.5} /> },
+  { tool: 'annotation-highlight', label: '영역 주석', icon: <Highlighter size={18} strokeWidth={1.5} /> },
+  { tool: 'annotation-status', label: '검수 주석', icon: <CircleAlert size={18} strokeWidth={1.5} /> },
   { tool: 'draw', label: '브러쉬 (B)', icon: <Paintbrush size={18} strokeWidth={1.5} /> },
   { tool: 'pen', label: '펜 (P)', icon: <PenTool size={18} strokeWidth={1.5} /> },
 ];
@@ -378,6 +389,11 @@ const ELEMENT_CATEGORY_ITEMS: Array<{
     key: 'line',
     title: '선',
     items: SHAPE_ITEMS.filter((item) => item.tool === 'line' || item.tool === 'arrow'),
+  },
+  {
+    key: 'annotation',
+    title: '주석',
+    items: SHAPE_ITEMS.filter((item) => isAnnotationTool(item.tool)),
   },
   {
     key: 'draw',
