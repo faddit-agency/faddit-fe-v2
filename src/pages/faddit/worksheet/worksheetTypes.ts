@@ -21,6 +21,7 @@ export type CardVisibilityMap = Record<MenuTab, Record<CardId, boolean>>;
 export type TabLayoutsMap = Record<MenuTab, LayoutItem[]>;
 
 export type SizeSpecDisplayUnit = 'cm' | 'inch';
+export type FabricLengthUnit = 'yd' | 'm';
 
 export const WORKSHEET_ELEMENT_CATEGORIES = ['원단', '시보리원단', '라벨', '부자재'] as const;
 

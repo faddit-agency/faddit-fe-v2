@@ -1,10 +1,9 @@
 import React, { useEffect } from 'react';
-import { Routes, Route, useLocation } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import './css/style.css';
 
 // Import pages
-import Dashboard from './pages/Dashboard';
 import Analytics from './pages/Analytics';
 import Fintech from './pages/Fintech';
 import Customers from './pages/ecommerce/Customers';
@@ -111,7 +110,7 @@ function App() {
   return (
     <>
       <Routes>
-        <Route path='/' element={<Dashboard />} />
+        <Route path='/' element={<Navigate to='/faddit/sign/in' replace />} />
         {/* ... existing routes ... */}
         <Route path='/dashboard/analytics' element={<Analytics />} />
         <Route path='/dashboard/fintech' element={<Fintech />} />

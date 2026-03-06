@@ -7,6 +7,7 @@ import type {
   CardVisibilityMap,
   TabLayoutsMap,
   SizeSpecDisplayUnit,
+  FabricLengthUnit,
   WorksheetElementItem,
   WorksheetCostState,
   WorksheetModuleSheetState,
@@ -279,6 +280,29 @@ function cloneSheetState(state: WorksheetModuleSheetState): WorksheetModuleSheet
   };
 }
 
+function convertLengthCellValue(raw: string, factor: number): string {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return raw;
+  }
+
+  const normalized = trimmed.replace(/,/g, '');
+  if (!/^-?\d+(\.\d+)?$/.test(normalized)) {
+    return raw;
+  }
+
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) {
+    return raw;
+  }
+
+  const converted = parsed * factor;
+  const rounded = Number.isInteger(converted)
+    ? String(converted)
+    : converted.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+  return rounded;
+}
+
 function buildInitialModuleSheetStates(): Record<string, WorksheetModuleSheetState> {
   return {
     'fabric-info': cloneSheetState(FABRIC_INFO_STATE),
@@ -302,6 +326,7 @@ interface WorksheetState {
   draggingCardId: string | null;
   draggingElement: WorksheetElementItem | null;
   sizeSpecUnit: SizeSpecDisplayUnit;
+  fabricLengthUnit: FabricLengthUnit;
   worksheetTitle: string;
   isLoadingWorksheet: boolean;
   worksheetLoadError: string | null;
@@ -332,6 +357,7 @@ interface WorksheetState {
   setDraggingCardId: (cardId: string | null) => void;
   setDraggingElement: (item: WorksheetElementItem | null) => void;
   setSizeSpecUnit: (unit: SizeSpecDisplayUnit) => void;
+  setFabricLengthUnit: (unit: FabricLengthUnit) => void;
   setWorksheetTitle: (title: string) => void;
   setWorksheetLoading: (isLoading: boolean) => void;
   setWorksheetLoadError: (message: string | null) => void;
@@ -366,6 +392,7 @@ export const useWorksheetStore = create<WorksheetState>()(
       draggingCardId: null,
       draggingElement: null,
       sizeSpecUnit: 'cm',
+      fabricLengthUnit: 'yd',
       worksheetTitle: '작업지시서 명',
       isLoadingWorksheet: false,
       worksheetLoadError: null,
@@ -801,6 +828,51 @@ export const useWorksheetStore = create<WorksheetState>()(
 
       setSizeSpecUnit: (unit) => set({ sizeSpecUnit: unit }),
 
+      setFabricLengthUnit: (unit) =>
+        set((state) => {
+          if (state.fabricLengthUnit === unit) {
+            return state;
+          }
+
+          const factor =
+            state.fabricLengthUnit === 'yd' && unit === 'm'
+              ? 0.9144
+              : state.fabricLengthUnit === 'm' && unit === 'yd'
+                ? 1 / 0.9144
+                : 1;
+
+          const nextModuleSheetStates = {
+            ...state.moduleSheetStates,
+          };
+
+          (['fabric-info', 'rib-fabric-info'] as const).forEach((cardId) => {
+            const targetSheet = state.moduleSheetStates[cardId];
+            if (!targetSheet) {
+              return;
+            }
+
+            const nextRows = targetSheet.rows.map((row) => {
+              const nextRow = [...row];
+              [4, 5].forEach((columnIndex) => {
+                if (columnIndex < nextRow.length) {
+                  nextRow[columnIndex] = convertLengthCellValue(nextRow[columnIndex], factor);
+                }
+              });
+              return nextRow;
+            });
+
+            nextModuleSheetStates[cardId] = {
+              headers: [...targetSheet.headers],
+              rows: nextRows,
+            };
+          });
+
+          return {
+            fabricLengthUnit: unit,
+            moduleSheetStates: nextModuleSheetStates,
+          };
+        }),
+
       setWorksheetTitle: (title) => set({ worksheetTitle: title || '작업지시서 명' }),
 
       setWorksheetLoading: (isLoading) => set({ isLoadingWorksheet: isLoading }),
@@ -815,6 +887,7 @@ export const useWorksheetStore = create<WorksheetState>()(
             tabLayouts?: TabLayoutsMap;
             cardVisibility?: CardVisibilityMap;
             sizeSpecUnit?: SizeSpecDisplayUnit;
+            fabricLengthUnit?: FabricLengthUnit;
             moduleElements?: Record<string, WorksheetElementItem[]>;
             customCards?: Record<MenuTab, CardDefinition[]>;
             customCardContent?: Record<string, string>;
@@ -870,6 +943,10 @@ export const useWorksheetStore = create<WorksheetState>()(
                     : state.activeCardIdByTab.diagram,
               },
               sizeSpecUnit: parsed.sizeSpecUnit ?? state.sizeSpecUnit,
+              fabricLengthUnit:
+                parsed.fabricLengthUnit === 'm' || parsed.fabricLengthUnit === 'yd'
+                  ? parsed.fabricLengthUnit
+                  : state.fabricLengthUnit,
               moduleElements: parsed.moduleElements
                 ? {
                     ...state.moduleElements,

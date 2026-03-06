@@ -39,14 +39,24 @@ const LAYER_NAME_MAP: Record<string, string> = {
 };
 
 let objCounter = 0;
-function makeData(type: string) {
+function makeData(type: string, extra: Partial<ArrowObjectData> = {}): ArrowObjectData {
   objCounter += 1;
-  return { id: `${type}-${Date.now()}-${objCounter}`, name: LAYER_NAME_MAP[type] ?? type };
+  return {
+    id: `${type}-${Date.now()}-${objCounter}`,
+    name: LAYER_NAME_MAP[type] ?? type,
+    ...extra,
+  };
 }
 
 type Mat6 = [number, number, number, number, number, number];
 type ArrowPoint = { x: number; y: number };
-type ArrowObjectData = { id?: string; name?: string; kind?: string };
+type ArrowObjectData = {
+  id?: string;
+  name?: string;
+  kind?: string;
+  fill_pantone_code?: string | null;
+  stroke_pantone_code?: string | null;
+};
 type PenAnchor = {
   x: number;
   y: number;
@@ -501,6 +511,12 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     setActiveTool,
     fillColor,
     strokeColor,
+    fontSize,
+    fontFamily,
+    fontWeight,
+    fontStyle,
+    fillPantoneCode,
+    strokePantoneCode,
     strokeWidth,
     cornerRadius,
     showGrid,
@@ -511,6 +527,10 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     pasteClipboard,
     groupSelected,
     ungroupSelected,
+    bringSelectionForward,
+    sendSelectionBackward,
+    bringSelectionToFront,
+    sendSelectionToBack,
   } = useCanvas();
 
   const [localZoom, setLocalZoom] = useState(zoom);
@@ -532,6 +552,36 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     onZoomChangeRef.current(zoomPct);
     return clampedScale;
   }, []);
+
+  const buildObjectData = useCallback(
+    (
+      type: string,
+      options: {
+        includeFill?: boolean;
+        includeStroke?: boolean;
+        kind?: string;
+        name?: string;
+      } = {},
+    ) => {
+      const extra: Partial<ArrowObjectData> = {};
+
+      if (options.includeFill && fillPantoneCode) {
+        extra.fill_pantone_code = fillPantoneCode;
+      }
+      if (options.includeStroke && strokePantoneCode) {
+        extra.stroke_pantone_code = strokePantoneCode;
+      }
+      if (options.kind) {
+        extra.kind = options.kind;
+      }
+      if (options.name) {
+        extra.name = options.name;
+      }
+
+      return makeData(type, extra);
+    },
+    [fillPantoneCode, strokePantoneCode],
+  );
 
   const gridStyle = (() => {
     const canvas = fabricRef.current;
@@ -843,11 +893,15 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
             const text = new IText('텍스트', {
               left: point.x,
               top: point.y,
-              fontSize: 20,
+              fontSize,
               fill: fillColor,
-              fontFamily: 'sans-serif',
+              fontFamily,
+              fontWeight,
+              fontStyle,
             });
-            (text as unknown as { data: unknown }).data = makeData('i-text');
+            (text as unknown as { data: unknown }).data = buildObjectData('i-text', {
+              includeFill: true,
+            });
             currentCanvas.add(text);
             currentCanvas.setActiveObject(text);
             text.enterEditing();
@@ -900,7 +954,20 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       textTap.tracking = false;
       textTap.moved = false;
     };
-  }, [activeTool, fillColor, pathEditingPath, refreshLayers, saveHistory, setActiveTool, syncZoomState]);
+  }, [
+    activeTool,
+    buildObjectData,
+    fillColor,
+    fontFamily,
+    fontSize,
+    fontStyle,
+    fontWeight,
+    pathEditingPath,
+    refreshLayers,
+    saveHistory,
+    setActiveTool,
+    syncZoomState,
+  ]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -1095,6 +1162,18 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
       } else if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey && e.code === 'KeyG') {
         e.preventDefault();
         ungroupSelected();
+      } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.code === 'BracketRight') {
+        e.preventDefault();
+        bringSelectionForward();
+      } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.code === 'BracketLeft') {
+        e.preventDefault();
+        sendSelectionBackward();
+      } else if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey && e.code === 'BracketRight') {
+        e.preventDefault();
+        bringSelectionToFront();
+      } else if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey && e.code === 'BracketLeft') {
+        e.preventDefault();
+        sendSelectionToBack();
       } else if (!e.ctrlKey && !e.metaKey && !e.altKey) {
         if (e.code === 'ArrowLeft') {
           e.preventDefault();
@@ -1147,6 +1226,10 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     pasteClipboard,
     groupSelected,
     ungroupSelected,
+    bringSelectionForward,
+    sendSelectionBackward,
+    bringSelectionToFront,
+    sendSelectionToBack,
     pathEditingPath,
     setActiveTool,
     setPathEditingPath,
@@ -2000,11 +2083,15 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
         const text = new IText('텍스트', {
           left: pointer.x,
           top: pointer.y,
-          fontSize: 20,
+          fontSize,
           fill: fillColor,
-          fontFamily: 'sans-serif',
+          fontFamily,
+          fontWeight,
+          fontStyle,
         });
-        (text as unknown as { data: unknown }).data = makeData('i-text');
+        (text as unknown as { data: unknown }).data = buildObjectData('i-text', {
+          includeFill: true,
+        });
         canvas.add(text);
         canvas.setActiveObject(text);
         text.enterEditing();
@@ -2031,7 +2118,10 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
           rx: cornerRadius,
           ry: cornerRadius,
         });
-        (rect as unknown as { data: unknown }).data = makeData('rect');
+        (rect as unknown as { data: unknown }).data = buildObjectData('rect', {
+          includeFill: true,
+          includeStroke: true,
+        });
         activeShapeRef.current = rect;
         canvas.add(rect);
         canvas.renderAll();
@@ -2050,7 +2140,10 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
           strokeWidth,
           strokeUniform: true,
         });
-        (ellipse as unknown as { data: unknown }).data = makeData('ellipse');
+        (ellipse as unknown as { data: unknown }).data = buildObjectData('ellipse', {
+          includeFill: true,
+          includeStroke: true,
+        });
         activeShapeRef.current = ellipse;
         canvas.add(ellipse);
         canvas.renderAll();
@@ -2070,7 +2163,10 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
           strokeUniform: true,
           strokeLineJoin: cornerRadius > 0 ? 'round' : 'miter',
         });
-        (tri as unknown as { data: unknown }).data = makeData('triangle');
+        (tri as unknown as { data: unknown }).data = buildObjectData('triangle', {
+          includeFill: true,
+          includeStroke: true,
+        });
         activeShapeRef.current = tri;
         canvas.add(tri);
         canvas.renderAll();
@@ -2089,7 +2185,9 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
           strokeLineCap: cornerRadius > 0 ? 'round' : 'butt',
           strokeLineJoin: cornerRadius > 0 ? 'round' : 'miter',
         });
-        (line as unknown as { data: unknown }).data = makeData('line');
+        (line as unknown as { data: unknown }).data = buildObjectData('line', {
+          includeStroke: true,
+        });
         setupLineEndpointEditing(line);
         activeShapeRef.current = line;
         canvas.add(line);
@@ -2238,7 +2336,10 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
           padding: 0,
           strokeUniform: true,
         });
-        (arrow as unknown as { data: unknown }).data = { ...makeData('arrow'), kind: 'arrow' };
+        (arrow as unknown as { data: unknown }).data = buildObjectData('arrow', {
+          includeStroke: true,
+          kind: 'arrow',
+        });
         setupArrowEndpointEditing(arrow);
         canvas.add(arrow);
         canvas.setActiveObject(arrow);
@@ -2272,6 +2373,16 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
             strokeLineCap: cornerRadius > 0 ? 'round' : 'butt',
             strokeLineJoin: cornerRadius > 0 ? 'round' : 'miter',
           });
+          const currentData = (path as unknown as { data?: ArrowObjectData }).data;
+          (path as unknown as { data: ArrowObjectData }).data =
+            currentData?.id !== undefined
+              ? {
+                  ...currentData,
+                  ...(strokePantoneCode
+                    ? { stroke_pantone_code: strokePantoneCode }
+                    : { stroke_pantone_code: null }),
+                }
+              : buildObjectData('path', { includeStroke: true, name: '브러쉬' });
           path.setCoords();
         }
         saveHistory();
@@ -2519,7 +2630,10 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
           strokeLineCap: cornerRadius > 0 ? 'round' : 'butt',
           strokeLineJoin: cornerRadius > 0 ? 'round' : 'miter',
         });
-        (finalPath as unknown as { data: unknown }).data = { ...makeData('path'), name: '펜' };
+        (finalPath as unknown as { data: unknown }).data = buildObjectData('path', {
+          includeStroke: true,
+          name: '펜',
+        });
 
         resetPenState();
         canvas.add(finalPath);
@@ -2743,9 +2857,15 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
     };
   }, [
     activeTool,
+    buildObjectData,
     pathEditingPath,
     fillColor,
+    fontFamily,
+    fontSize,
+    fontStyle,
+    fontWeight,
     strokeColor,
+    strokePantoneCode,
     strokeWidth,
     cornerRadius,
     saveHistory,
@@ -2772,7 +2892,7 @@ export default function WorksheetSketchView({ zoom, onZoomChange }: WorksheetSke
           onDone={handlePathEditDone}
         />
       )}
-      <SketchBottomBar zoom={localZoom} onZoomChange={handleZoomChange} />
+      <SketchBottomBar onZoomReset={() => handleZoomChange(100)} />
     </div>
   );
 }

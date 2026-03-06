@@ -8,6 +8,7 @@ import DriveItemCard from '../../../components/DriveItemCard';
 import DriveEmptyPlaceholder from '../../../components/DriveEmptyPlaceholder';
 import GlobalTooltip from '../../../components/ui/GlobalTooltip';
 import Notification from '../../../components/Notification';
+import DropdownButton from '../../../components/atoms/DropdownButton';
 import { useDrive, DriveItem, DriveFolder, SidebarItem } from '../../../context/DriveContext';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { useDriveStore } from '../../../store/useDriveStore';
@@ -22,6 +23,7 @@ import {
   createMaterial,
   getMaterialFieldDefs,
   getMaterialsByFileSystem,
+  MaterialCategory,
   MaterialFieldDef,
   updateMaterial,
 } from '../../../lib/api/materialApi';
@@ -59,6 +61,20 @@ type DragSelectionEntry = {
   id: string;
   type: 'file' | 'folder';
   name: string;
+};
+
+type CurrencyCode = string;
+
+type CurrencyOption = {
+  code: CurrencyCode;
+  flag: string;
+  label: string;
+  symbol: string;
+};
+
+type ProcessingFeeFieldValue = {
+  amount?: number | string;
+  currency?: CurrencyCode;
 };
 
 const SEARCH_CATEGORY_VALUES: DriveSearchCategory[] = [
@@ -157,9 +173,148 @@ const shouldShowMaterialField = (fieldDef: MaterialFieldDef, values: Record<stri
   return fieldDef.show_if.in.includes(compareValue);
 };
 
+const MATERIAL_FIELD_DISPLAY_ORDER_BY_CATEGORY: Partial<Record<MaterialCategory, string[]>> = {
+  fabric: [
+    'code_internal',
+    'vendor_name',
+    'item_name',
+    'origin_country',
+    'material_position',
+    'weave',
+    'pattern',
+    'width',
+    'weight',
+    'blend_ratio',
+    'stretch',
+    'shrinkage_pct',
+    'processing',
+    'moq',
+    'price_per_unit',
+    'processing_fee',
+  ],
+  rib_fabric: [
+    'code_internal',
+    'vendor_name',
+    'item_name',
+    'origin_country',
+    'rib_type',
+    'width_type',
+    'weave',
+    'pattern',
+    'rib_spec',
+    'rib_direction',
+    'grain_direction',
+    'weight',
+    'blend_ratio',
+    'moq',
+    'price_per_unit',
+    'processing_fee',
+  ],
+  label: [
+    'code_internal',
+    'vendor_name',
+    'item_name',
+    'origin_country',
+    'type',
+    'material',
+    'size_spec',
+    'thickness_mm',
+    'finishing',
+    'print_method',
+    'color',
+    'moq',
+    'price_per_unit',
+    'processing_fee',
+  ],
+  trim: [
+    'code_internal',
+    'vendor_name',
+    'item_name',
+    'origin_country',
+    'type',
+    'material',
+    'size_spec',
+    'gauge_no',
+    'thickness_mm',
+    'finishing',
+    'post_processing',
+    'moq',
+    'price_per_unit',
+  ],
+};
+
+const sortMaterialFieldDefsByCategory = (
+  fieldDefs: MaterialFieldDef[],
+  materialCategory?: MaterialCategory,
+) => {
+  if (!materialCategory) {
+    return [...fieldDefs];
+  }
+
+  const displayOrder = MATERIAL_FIELD_DISPLAY_ORDER_BY_CATEGORY[materialCategory];
+  if (!displayOrder || displayOrder.length === 0) {
+    return [...fieldDefs];
+  }
+
+  const orderByFieldKey = new Map(displayOrder.map((fieldKey, index) => [fieldKey, index]));
+  return [...fieldDefs].sort((left, right) => {
+    const leftOrder = orderByFieldKey.get(left.field_key);
+    const rightOrder = orderByFieldKey.get(right.field_key);
+
+    if (leftOrder !== undefined && rightOrder !== undefined && leftOrder !== rightOrder) {
+      return leftOrder - rightOrder;
+    }
+    if (leftOrder !== undefined) {
+      return -1;
+    }
+    if (rightOrder !== undefined) {
+      return 1;
+    }
+
+    if (left.sort_order !== right.sort_order) {
+      return left.sort_order - right.sort_order;
+    }
+    return left.id - right.id;
+  });
+};
+
+const dedupeStringList = (items: unknown[]) => {
+  const seen = new Set<string>();
+  return items
+    .map((item) => String(item).trim())
+    .filter((item) => {
+      if (!item || seen.has(item)) {
+        return false;
+      }
+      seen.add(item);
+      return true;
+    });
+};
+
+const toDropdownOptions = (values: string[], placeholder?: string) => {
+  const options = values.map((value, index) => ({
+    id: `${value}-${index}`,
+    value,
+    label: value,
+  }));
+
+  if (placeholder === undefined) {
+    return options;
+  }
+
+  return [
+    {
+      id: '__placeholder__',
+      value: '',
+      label: placeholder,
+    },
+    ...options,
+  ];
+};
+
 const getSelectOptions = (fieldDef: MaterialFieldDef) => {
   if (Array.isArray(fieldDef.options)) {
-    return fieldDef.options.map((option) => String(option));
+    return dedupeStringList(fieldDef.options);
   }
   if (
     fieldDef.options &&
@@ -168,7 +323,7 @@ const getSelectOptions = (fieldDef: MaterialFieldDef) => {
   ) {
     const optionsRaw = (fieldDef.options as { options?: unknown }).options;
     if (Array.isArray(optionsRaw)) {
-      return optionsRaw.map((option) => String(option));
+      return dedupeStringList(optionsRaw);
     }
   }
   return [];
@@ -182,10 +337,25 @@ const getUnitOptions = (fieldDef: MaterialFieldDef) => {
   ) {
     const unitsRaw = (fieldDef.options as { units?: unknown }).units;
     if (Array.isArray(unitsRaw)) {
-      return unitsRaw.map((unit) => String(unit));
+      const deduped = dedupeStringList(unitsRaw);
+      const meterUnit = deduped.find((unit) => unit.trim().toLowerCase() === 'm');
+      const yardUnit = deduped.find((unit) => unit.trim().toLowerCase() === 'yd');
+      if (meterUnit && yardUnit) {
+        return [
+          meterUnit,
+          yardUnit,
+          ...deduped.filter((unit) => unit !== meterUnit && unit !== yardUnit),
+        ];
+      }
+      return deduped;
     }
   }
   return [];
+};
+
+const formatPriceUnitOptionLabel = (unit: string) => {
+  const normalized = formatUnitForDisplay(unit);
+  return normalized ? `/${normalized}` : '/';
 };
 
 const getNumberPairLabels = (fieldDef: MaterialFieldDef) => {
@@ -215,15 +385,86 @@ const getNumberPairKind = (fieldDef: MaterialFieldDef) => {
   return 'width_height';
 };
 
+const getPriceQuantityUnitOptions = (
+  fieldDef: MaterialFieldDef,
+  materialCategory?: MaterialCategory | null,
+  currentValue?: unknown,
+) => {
+  let options: string[] = [];
+
+  if (
+    fieldDef.options &&
+    typeof fieldDef.options === 'object' &&
+    !Array.isArray(fieldDef.options)
+  ) {
+    const unitsRaw = (fieldDef.options as { units?: unknown }).units;
+    if (Array.isArray(unitsRaw)) {
+      options = dedupeStringList(unitsRaw);
+      const meterUnit = options.find((unit) => unit.trim().toLowerCase() === 'm');
+      const yardUnit = options.find((unit) => unit.trim().toLowerCase() === 'yd');
+      if (meterUnit && yardUnit) {
+        options = [
+          meterUnit,
+          yardUnit,
+          ...options.filter((unit) => unit !== meterUnit && unit !== yardUnit),
+        ];
+      }
+    }
+  }
+
+  if (options.length === 0) {
+    if (materialCategory === 'label' || materialCategory === 'trim') {
+      options = ['ea'];
+    } else {
+      options = ['ea'];
+    }
+  }
+
+  const currentText = String(currentValue ?? '').trim();
+  if (currentText && !options.includes(currentText)) {
+    options = [currentText, ...options];
+  }
+
+  return options.length > 0 ? options : ['ea'];
+};
+
+const normalizePriceQuantityUnit = (value: unknown, unitOptions: string[]) => {
+  const normalized = String(value ?? '').trim();
+  if (normalized && unitOptions.includes(normalized)) {
+    return normalized;
+  }
+  return unitOptions[0] ?? 'ea';
+};
+
 const getDefaultEditFieldValue = (fieldDef: MaterialFieldDef): unknown => {
+  if (fieldDef.field_key === 'processing_fee') {
+    return {
+      amount: undefined,
+      currency: getDefaultCurrencyCode(fieldDef),
+    } as ProcessingFeeFieldValue;
+  }
+
   if (fieldDef.input_type === 'option_with_other') {
     return { selected: '', customText: '' };
   }
   if (fieldDef.input_type === 'number_with_option') {
     const units = getUnitOptions(fieldDef);
+    if (fieldDef.field_key === 'price_per_unit') {
+      return {
+        unit: units[0] ?? '',
+        currency: getDefaultCurrencyCode(fieldDef),
+      };
+    }
     return { unit: units[0] ?? '' };
   }
   if (fieldDef.input_type === 'number_pair') {
+    if (fieldDef.field_key === 'price_per_unit') {
+      const unitOptions = getPriceQuantityUnitOptions(fieldDef, null);
+      return {
+        currency: getDefaultCurrencyCode(fieldDef),
+        second: unitOptions[0] ?? 'ea',
+      };
+    }
     return {};
   }
   return '';
@@ -232,6 +473,20 @@ const getDefaultEditFieldValue = (fieldDef: MaterialFieldDef): unknown => {
 const hasMeaningfulEditValue = (fieldDef: MaterialFieldDef, value: unknown) => {
   if (value === '' || value === null || value === undefined) {
     return false;
+  }
+
+  if (fieldDef.field_key === 'moq') {
+    if (typeof value === 'object' && value !== null) {
+      const raw = (value as { value?: unknown }).value;
+      return toNumberOrUndefined(raw) !== undefined;
+    }
+
+    return toNumberOrUndefined(value) !== undefined;
+  }
+
+  if (fieldDef.field_key === 'processing_fee') {
+    const normalized = normalizeProcessingFeeFieldValue(value, fieldDef);
+    return normalized.amount !== undefined;
   }
 
   if (fieldDef.input_type === 'option_with_other') {
@@ -247,7 +502,10 @@ const hasMeaningfulEditValue = (fieldDef: MaterialFieldDef, value: unknown) => {
   }
 
   if (fieldDef.input_type === 'number') {
-    return toNumberOrUndefined(value) !== undefined;
+    if (typeof value === 'number') {
+      return !Number.isNaN(value);
+    }
+    return parseNumericOnlyNumber(String(value ?? '')) !== undefined;
   }
 
   if (fieldDef.input_type === 'number_with_option') {
@@ -263,10 +521,12 @@ const hasMeaningfulEditValue = (fieldDef: MaterialFieldDef, value: unknown) => {
       const first = (value as { first?: unknown }).first;
       const second = (value as { second?: unknown }).second;
       const pairKind = getNumberPairKind(fieldDef);
+      const firstNumber = toNumberOrUndefined(first);
+      const secondNumber = toNumberOrUndefined(second);
       if (pairKind === 'price_quantity') {
-        return toNumberOrUndefined(first) !== undefined && String(second ?? '').trim() !== '';
+        return firstNumber !== undefined && String(second ?? '').trim() !== '';
       }
-      return toNumberOrUndefined(first) !== undefined && toNumberOrUndefined(second) !== undefined;
+      return firstNumber !== undefined && secondNumber !== undefined;
     }
     return false;
   }
@@ -338,6 +598,38 @@ const formatUnitForDisplay = (unit: string) =>
       .join('');
   });
 
+const normalizeUnitToken = (value: string) =>
+  value
+    .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g, (digit) => {
+      const digitBySuperscript: Record<string, string> = {
+        '⁰': '0',
+        '¹': '1',
+        '²': '2',
+        '³': '3',
+        '⁴': '4',
+        '⁵': '5',
+        '⁶': '6',
+        '⁷': '7',
+        '⁸': '8',
+        '⁹': '9',
+      };
+      return digitBySuperscript[digit] ?? digit;
+    })
+    .replace(/\^(\d+)/g, '$1')
+    .replace(/\s+/g, '')
+    .replace(/[()]/g, '')
+    .toLowerCase();
+
+const shouldShowUnitSuffix = (fieldDef: MaterialFieldDef, unit: string) => {
+  const normalizedUnit = normalizeUnitToken(unit);
+  if (!normalizedUnit) {
+    return false;
+  }
+
+  const normalizedLabel = normalizeUnitToken(fieldDef.label);
+  return !normalizedLabel.includes(normalizedUnit);
+};
+
 const getNumericInputValue = (value: unknown) => {
   if (typeof value === 'number') {
     return formatNumberWithCommas(value);
@@ -374,6 +666,10 @@ const formatDualLengthText = (value: unknown) => {
 
   const cmText = cm !== undefined ? `${formatNumberWithCommas(cm)} cm` : '-';
   const inchText = inch !== undefined ? `${formatNumberWithCommas(inch)} inch` : '-';
+  const normalizedUnit = unit.trim().toLowerCase();
+  if (normalizedUnit === 'inch') {
+    return `${inchText} / ${cmText}`;
+  }
   return `${cmText} / ${inchText}`;
 };
 
@@ -399,7 +695,142 @@ const getObjectMemberText = (obj: Record<string, unknown>, keys: string[]): stri
   return '';
 };
 
-const formatKrw = (value: number) => `₩${formatNumberWithCommas(value)}`;
+const DEFAULT_CURRENCY_CODE: CurrencyCode = 'KRW';
+const DEFAULT_CURRENCY_CODES: CurrencyCode[] = ['KRW', 'USD', 'EUR', 'JPY', 'CNY', 'GBP', 'VND'];
+const CURRENCY_META_BY_CODE: Record<string, Omit<CurrencyOption, 'code'>> = {
+  KRW: { flag: '🇰🇷', label: '원화', symbol: '₩' },
+  USD: { flag: '🇺🇸', label: '달러', symbol: '$' },
+  EUR: { flag: '🇪🇺', label: '유로', symbol: '€' },
+  JPY: { flag: '🇯🇵', label: '엔', symbol: '¥' },
+  CNY: { flag: '🇨🇳', label: '위안', symbol: '¥' },
+  GBP: { flag: '🇬🇧', label: '파운드', symbol: '£' },
+  VND: { flag: '🇻🇳', label: '동', symbol: '₫' },
+};
+
+const normalizeCurrencyCodeToken = (value: unknown) => {
+  const raw = String(value ?? '').trim().toUpperCase();
+  if (!raw) {
+    return '';
+  }
+  if (raw === '$') {
+    return 'USD';
+  }
+  if (raw === '₩') {
+    return 'KRW';
+  }
+  return raw;
+};
+
+const dedupeCurrencyCodes = (values: unknown[]) => {
+  const seen = new Set<string>();
+  return values
+    .map((value) => normalizeCurrencyCodeToken(value))
+    .filter((code) => {
+      if (!code || seen.has(code)) {
+        return false;
+      }
+      seen.add(code);
+      return true;
+    });
+};
+
+const getCurrencyCodes = (fieldDef?: MaterialFieldDef) => {
+  if (!fieldDef || !fieldDef.options || typeof fieldDef.options !== 'object' || Array.isArray(fieldDef.options)) {
+    return DEFAULT_CURRENCY_CODES;
+  }
+
+  const currenciesRaw = (fieldDef.options as { currencies?: unknown }).currencies;
+  if (!Array.isArray(currenciesRaw)) {
+    return DEFAULT_CURRENCY_CODES;
+  }
+
+  const deduped = dedupeCurrencyCodes(currenciesRaw);
+  return deduped.length > 0 ? deduped : DEFAULT_CURRENCY_CODES;
+};
+
+const getDefaultCurrencyCode = (fieldDef?: MaterialFieldDef) => {
+  const currencyCodes = getCurrencyCodes(fieldDef);
+  const fallback = currencyCodes[0] ?? DEFAULT_CURRENCY_CODE;
+
+  if (!fieldDef || !fieldDef.options || typeof fieldDef.options !== 'object' || Array.isArray(fieldDef.options)) {
+    return fallback;
+  }
+
+  const defaultRaw = (fieldDef.options as { default_currency?: unknown }).default_currency;
+  const normalized = normalizeCurrencyCodeToken(defaultRaw);
+  if (normalized && currencyCodes.includes(normalized)) {
+    return normalized;
+  }
+  return fallback;
+};
+
+const normalizeCurrencyCode = (
+  value: unknown,
+  allowedCodes: CurrencyCode[] = DEFAULT_CURRENCY_CODES,
+  fallbackCode: CurrencyCode = DEFAULT_CURRENCY_CODE,
+): CurrencyCode => {
+  const normalized = normalizeCurrencyCodeToken(value);
+  if (!normalized) {
+    return fallbackCode;
+  }
+  if (allowedCodes.includes(normalized)) {
+    return normalized;
+  }
+  if (/^[A-Z]{3}$/.test(normalized)) {
+    return normalized;
+  }
+  return fallbackCode;
+};
+
+const extractCurrencyCodeFromText = (text: string): CurrencyCode => {
+  const upper = text.toUpperCase();
+  const codeMatch = upper.match(/\b(KRW|USD|EUR|JPY|CNY|GBP|VND)\b/);
+  if (codeMatch?.[1]) {
+    return codeMatch[1];
+  }
+  if (upper.includes('₩')) return 'KRW';
+  if (upper.includes('$')) return 'USD';
+  if (upper.includes('€')) return 'EUR';
+  if (upper.includes('£')) return 'GBP';
+  if (upper.includes('₫')) return 'VND';
+  if (upper.includes('¥')) return 'JPY';
+  return DEFAULT_CURRENCY_CODE;
+};
+
+const toCurrencyOption = (code: CurrencyCode): CurrencyOption => {
+  const meta = CURRENCY_META_BY_CODE[code];
+  if (meta) {
+    return { code, ...meta };
+  }
+  return {
+    code,
+    flag: '🌐',
+    label: code,
+    symbol: code,
+  };
+};
+
+const getCurrencyOptionLabel = (option: CurrencyOption) => `${option.flag} ${option.label} (${option.symbol})`;
+
+const formatCurrencyAmount = (value: number, currency?: unknown) => {
+  const code = normalizeCurrencyCode(currency);
+  if (code === 'USD') {
+    return `$${formatNumberWithCommas(value)}`;
+  }
+  if (code === 'EUR') {
+    return `€${formatNumberWithCommas(value)}`;
+  }
+  if (code === 'JPY' || code === 'CNY') {
+    return `¥${formatNumberWithCommas(value)}`;
+  }
+  if (code === 'GBP') {
+    return `£${formatNumberWithCommas(value)}`;
+  }
+  if (code === 'VND') {
+    return `₫${formatNumberWithCommas(value)}`;
+  }
+  return `₩${formatNumberWithCommas(value)}`;
+};
 
 const toNumberOrUndefined = (value: unknown) => {
   if (typeof value === 'number' && !Number.isNaN(value)) return value;
@@ -408,6 +839,216 @@ const toNumberOrUndefined = (value: unknown) => {
     return Number.isNaN(parsed) ? undefined : parsed;
   }
   return undefined;
+};
+
+const MOQ_UNITS_BY_CATEGORY: Partial<Record<MaterialCategory, string[]>> = {
+  fabric: ['m', 'yd'],
+  rib_fabric: ['m', 'yd'],
+  label: ['ea'],
+  trim: ['ea'],
+};
+
+const sanitizeNumericInput = (raw: string) => {
+  const withoutCommas = raw.replace(/,/g, '');
+  const kept = withoutCommas.replace(/[^\d.]/g, '');
+  const [whole, ...decimalParts] = kept.split('.');
+
+  if (decimalParts.length === 0) {
+    return whole;
+  }
+
+  return `${whole}.${decimalParts.join('')}`;
+};
+
+const parseNumericOnlyNumber = (raw: string) =>
+  toNumberOrUndefined(sanitizeNumericInput(raw));
+
+const getMoqUnitOptions = (category?: MaterialCategory | null) => {
+  if (!category) {
+    return ['ea'];
+  }
+
+  return MOQ_UNITS_BY_CATEGORY[category] ?? ['ea'];
+};
+
+const getMoqLengthUnits = (category?: MaterialCategory | null) => {
+  const unitOptions = getMoqUnitOptions(category);
+  const meterUnit = unitOptions.find((unit) => unit.trim().toLowerCase() === 'm');
+  const yardUnit = unitOptions.find((unit) => unit.trim().toLowerCase() === 'yd');
+  return { meterUnit, yardUnit };
+};
+
+const YARD_TO_METER = 0.9144;
+
+const roundTo = (value: number, digits = 4) => {
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+};
+
+const convertLengthAmountValue = (
+  rawValue: unknown,
+  fromUnit: string,
+  toUnit: string,
+): number | undefined => {
+  const value = toNumberOrUndefined(rawValue);
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const from = fromUnit.trim().toLowerCase();
+  const to = toUnit.trim().toLowerCase();
+  if (!from || !to || from === to) {
+    return value;
+  }
+  if (from === 'yd' && to === 'm') {
+    return roundTo(value * YARD_TO_METER);
+  }
+  if (from === 'm' && to === 'yd') {
+    return roundTo(value / YARD_TO_METER);
+  }
+
+  return value;
+};
+
+const normalizeMoqFieldValue = (
+  value: unknown,
+  category?: MaterialCategory | null,
+): { value?: number; unit: string; value_m?: number; value_yd?: number } => {
+  const unitOptions = getMoqUnitOptions(category);
+  const defaultUnit = unitOptions[0] ?? 'ea';
+  const { meterUnit, yardUnit } = getMoqLengthUnits(category);
+  const supportsDualLength = Boolean(meterUnit && yardUnit);
+
+  const normalizePayload = (payload: {
+    value?: unknown;
+    unit?: unknown;
+    value_m?: unknown;
+    value_yd?: unknown;
+  }) => {
+    const normalizedUnitRaw = String(payload.unit ?? defaultUnit).trim();
+    const unit = unitOptions.includes(normalizedUnitRaw) ? normalizedUnitRaw : defaultUnit;
+    const numericValue = toNumberOrUndefined(payload.value);
+
+    if (!supportsDualLength || !meterUnit || !yardUnit) {
+      return {
+        value: numericValue,
+        unit,
+      };
+    }
+
+    let valueMeter = toNumberOrUndefined(payload.value_m);
+    let valueYard = toNumberOrUndefined(payload.value_yd);
+    if (numericValue !== undefined) {
+      if (unit === meterUnit) {
+        valueMeter = numericValue;
+        valueYard = convertLengthAmountValue(numericValue, meterUnit, yardUnit);
+      } else if (unit === yardUnit) {
+        valueYard = numericValue;
+        valueMeter = convertLengthAmountValue(numericValue, yardUnit, meterUnit);
+      }
+    }
+
+    if (valueMeter !== undefined && valueYard === undefined) {
+      valueYard = convertLengthAmountValue(valueMeter, meterUnit, yardUnit);
+    }
+    if (valueYard !== undefined && valueMeter === undefined) {
+      valueMeter = convertLengthAmountValue(valueYard, yardUnit, meterUnit);
+    }
+
+    return {
+      value: numericValue,
+      unit,
+      value_m: valueMeter,
+      value_yd: valueYard,
+    };
+  };
+
+  if (typeof value === 'object' && value !== null) {
+    return normalizePayload(value as { value?: unknown; unit?: unknown; value_m?: unknown; value_yd?: unknown });
+  }
+
+  const rawText = String(value ?? '').trim();
+  if (!rawText) {
+    return normalizePayload({
+      value: undefined,
+      unit: defaultUnit,
+    });
+  }
+
+  const detectedUnit =
+    unitOptions.find((unit) => rawText.toLowerCase().includes(unit.toLowerCase())) ?? defaultUnit;
+
+  return normalizePayload({
+    value: parseNumericOnlyNumber(rawText),
+    unit: detectedUnit,
+  });
+};
+
+const formatMoqDualLengthText = (value: unknown, category?: MaterialCategory | null) => {
+  const { meterUnit, yardUnit } = getMoqLengthUnits(category);
+  if (!meterUnit || !yardUnit) {
+    return null;
+  }
+
+  const normalized = normalizeMoqFieldValue(value, category);
+  const meterValue = toNumberOrUndefined(normalized.value_m);
+  const yardValue = toNumberOrUndefined(normalized.value_yd);
+  if (meterValue === undefined && yardValue === undefined) {
+    return null;
+  }
+
+  const meterText = meterValue !== undefined ? `${formatNumberWithCommas(meterValue)} ${meterUnit}` : '-';
+  const yardText = yardValue !== undefined ? `${formatNumberWithCommas(yardValue)} ${yardUnit}` : '-';
+  const normalizedUnit = String(normalized.unit ?? '').trim().toLowerCase();
+  if (normalizedUnit === yardUnit.trim().toLowerCase()) {
+    return `${yardText} / ${meterText}`;
+  }
+  return `${meterText} / ${yardText}`;
+};
+
+const formatMoqForSubmit = (value: unknown, category?: MaterialCategory | null) => {
+  const normalized = normalizeMoqFieldValue(value, category);
+  if (normalized.value === undefined) {
+    return '';
+  }
+
+  return `${normalized.value} ${normalized.unit}`.trim();
+};
+
+const normalizeProcessingFeeFieldValue = (
+  value: unknown,
+  fieldDef?: MaterialFieldDef,
+): { amount?: number; currency: CurrencyCode } => {
+  const currencyCodes = getCurrencyCodes(fieldDef);
+  const fallbackCurrency = getDefaultCurrencyCode(fieldDef);
+
+  if (typeof value === 'object' && value !== null) {
+    const payload = value as { amount?: unknown; value?: unknown; currency?: unknown; unit?: unknown };
+    return {
+      amount: toNumberOrUndefined(payload.amount ?? payload.value),
+      currency: normalizeCurrencyCode(payload.currency ?? payload.unit, currencyCodes, fallbackCurrency),
+    };
+  }
+
+  const rawText = String(value ?? '').trim();
+  if (!rawText) {
+    return { amount: undefined, currency: fallbackCurrency };
+  }
+
+  const currency = normalizeCurrencyCode(rawText.match(/([A-Za-z]{3})/)?.[1], currencyCodes, fallbackCurrency);
+  return {
+    amount: parseNumericOnlyNumber(rawText),
+    currency,
+  };
+};
+
+const formatProcessingFeeForSubmit = (value: unknown, fieldDef?: MaterialFieldDef) => {
+  const normalized = normalizeProcessingFeeFieldValue(value, fieldDef);
+  if (normalized.amount === undefined) {
+    return '';
+  }
+
+  return `${normalized.currency} ${normalized.amount}`;
 };
 
 type MarqueeRect = {
@@ -1161,7 +1802,7 @@ const FadditDrive: React.FC = () => {
     }
     if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
       if (typeof value === 'number' && isPriceField) {
-        return formatKrw(value);
+        return formatCurrencyAmount(value, 'KRW');
       }
       if (typeof value === 'number') {
         return formatNumberWithCommas(value);
@@ -1169,7 +1810,7 @@ const FadditDrive: React.FC = () => {
       if (typeof value === 'string' && isPriceField) {
         const numeric = toNumberOrUndefined(value);
         if (numeric !== undefined) {
-          return formatKrw(numeric);
+          return formatCurrencyAmount(numeric, extractCurrencyCodeFromText(value));
         }
       }
       return toDisplayText(value);
@@ -1183,37 +1824,92 @@ const FadditDrive: React.FC = () => {
       if ('selected' in objectValue || 'option' in objectValue) {
         const selected = getObjectMemberText(objectValue, ['selected', 'option']);
         const customText = getObjectMemberText(objectValue, ['customText', 'custom_text']);
-        if (selected === '기타') {
-          return customText || '기타';
+        if (customText) {
+          return customText;
         }
+        if (selected === '기타') return '기타';
         return selected || '-';
+      }
+
+      if ('amount' in objectValue || 'currency' in objectValue || 'currency_code' in objectValue) {
+        const rawAmount = objectValue.amount ?? objectValue.value;
+        const rawCurrency = objectValue.currency ?? objectValue.currency_code;
+        if (typeof rawAmount === 'number') {
+          return formatCurrencyAmount(rawAmount, rawCurrency);
+        }
+        const amountText = toDisplayText(rawAmount);
+        const currencyText = toDisplayText(rawCurrency);
+        if (amountText && currencyText) {
+          return `${currencyText} ${amountText}`;
+        }
+        return amountText || currencyText || '-';
       }
 
       if ('value' in objectValue || 'unit' in objectValue) {
         const rawValue = objectValue.value;
         const rawUnit = objectValue.unit;
+        const rawCurrency = objectValue.currency ?? objectValue.currency_code;
         const valueText =
           typeof rawValue === 'number'
             ? isPriceField
-              ? formatKrw(rawValue)
+              ? formatCurrencyAmount(rawValue, rawCurrency)
               : formatNumberWithCommas(rawValue)
             : toDisplayText(rawValue);
         const unitText = formatUnitForDisplay(toDisplayText(rawUnit));
+        const normalizedRawUnit = normalizeUnitToken(toDisplayText(rawUnit));
+
+        const convertedUnitParts = Object.entries(objectValue)
+          .filter(([key]) => key.startsWith('value_'))
+          .map(([key, nestedValue]) => {
+            const numeric = toNumberOrUndefined(nestedValue);
+            if (numeric === undefined) {
+              return null;
+            }
+
+            const unitTokenRaw = key.slice('value_'.length);
+            const unitToken = unitTokenRaw.replace(/_/g, '/');
+            const unitDisplay = formatUnitForDisplay(unitToken);
+            return {
+              unitToken,
+              valueText: `${formatNumberWithCommas(numeric)} ${unitDisplay}`,
+            };
+          })
+          .filter((item): item is { unitToken: string; valueText: string } => Boolean(item));
+
+        if (convertedUnitParts.length > 0) {
+          const prioritized = [...convertedUnitParts].sort((left, right) => {
+            const leftIsSelected =
+              normalizedRawUnit !== '' && normalizeUnitToken(left.unitToken) === normalizedRawUnit;
+            const rightIsSelected =
+              normalizedRawUnit !== '' && normalizeUnitToken(right.unitToken) === normalizedRawUnit;
+            if (leftIsSelected === rightIsSelected) {
+              return 0;
+            }
+            return leftIsSelected ? -1 : 1;
+          });
+          return prioritized.map((part) => part.valueText).join(' / ');
+        }
+
+        const valueWithCurrency = valueText;
         if (valueText && unitText) {
-          return `${valueText}/${unitText}`;
+          if (isPriceField || toDisplayText(rawCurrency)) {
+            return `${valueWithCurrency}/${unitText}`;
+          }
+          return `${valueWithCurrency} ${unitText}`;
         }
         if (valueText) {
-          return valueText;
+          return valueWithCurrency;
         }
       }
 
       if ('first' in objectValue || 'second' in objectValue) {
         const firstRaw = objectValue.first;
         const secondRaw = objectValue.second;
+        const rawCurrency = objectValue.currency ?? objectValue.currency_code;
         const firstText =
           typeof firstRaw === 'number'
             ? isPriceField
-              ? formatKrw(firstRaw)
+              ? formatCurrencyAmount(firstRaw, rawCurrency)
               : formatNumberWithCommas(firstRaw)
             : toDisplayText(firstRaw);
         const secondText =
@@ -2349,6 +3045,25 @@ const FadditDrive: React.FC = () => {
 
           if (fieldDef) {
             if (hasMeaningfulEditValue(fieldDef, value)) {
+              if (fieldDef.field_key === 'moq') {
+                const moqText = formatMoqForSubmit(value, primaryActiveMaterial.category);
+                nextAttributes[key] = moqText || null;
+                return;
+              }
+
+              if (fieldDef.field_key === 'processing_fee') {
+                const processingFeeText = formatProcessingFeeForSubmit(value, fieldDef);
+                nextAttributes[key] = processingFeeText || null;
+                return;
+              }
+
+              if (fieldDef.input_type === 'number') {
+                const normalizedNumber =
+                  typeof value === 'number' ? value : parseNumericOnlyNumber(String(value ?? ''));
+                nextAttributes[key] = normalizedNumber ?? null;
+                return;
+              }
+
               nextAttributes[key] = value;
               return;
             }
@@ -2835,12 +3550,15 @@ const FadditDrive: React.FC = () => {
     : [];
 
   const visibleEditMaterialFieldDefs = useMemo(
-    () =>
-      editMaterialFieldDefs
+    () => {
+      const filtered = editMaterialFieldDefs
         .filter((fieldDef) => fieldDef.input_type !== 'group')
         .filter((fieldDef) => !MATERIAL_TOP_FIELDS.has(fieldDef.field_key))
-        .filter((fieldDef) => shouldShowMaterialField(fieldDef, editAttributes)),
-    [editAttributes, editMaterialFieldDefs],
+        .filter((fieldDef) => shouldShowMaterialField(fieldDef, editAttributes));
+
+      return sortMaterialFieldDefsByCategory(filtered, primaryActiveMaterial?.category);
+    },
+    [editAttributes, editMaterialFieldDefs, primaryActiveMaterial?.category],
   );
 
   const editableAttributeKeys = useMemo(() => {
@@ -2874,6 +3592,7 @@ const FadditDrive: React.FC = () => {
   const renderEditAttributeInput = (key: string) => {
     const fieldDef = materialFieldDefByKey.get(key);
     const value = editAttributes[key];
+    const materialCategory = primaryActiveMaterial?.category;
 
     if (!fieldDef) {
       const normalized = formatAttributeValue(value, key);
@@ -2887,26 +3606,147 @@ const FadditDrive: React.FC = () => {
       );
     }
 
+    if (fieldDef.field_key === 'moq') {
+      const unitOptions = getMoqUnitOptions(materialCategory);
+      const moqValue = normalizeMoqFieldValue(value, materialCategory);
+      const moqDualLengthText = formatMoqDualLengthText(moqValue, materialCategory);
+
+      return (
+        <div className='space-y-2'>
+          <div className='grid grid-cols-[minmax(0,1fr)_7.25rem] gap-2'>
+            <input
+              type='text'
+              inputMode='decimal'
+              className='form-input w-full'
+              value={getNumericInputValue(moqValue.value)}
+              onChange={(event) =>
+                handleEditAttributeChange(
+                  key,
+                  normalizeMoqFieldValue(
+                    {
+                      ...moqValue,
+                      value: parseNumericOnlyNumber(event.target.value),
+                    },
+                    materialCategory,
+                  ),
+                )
+              }
+            />
+            <DropdownButton
+              options={unitOptions.map((unit, index) => ({
+                id: `${unit}-${index}`,
+                value: unit,
+                label: formatUnitForDisplay(unit),
+              }))}
+              value={moqValue.unit}
+              size='form'
+              onChange={(nextUnit) =>
+                handleEditAttributeChange(
+                  key,
+                  normalizeMoqFieldValue(
+                    {
+                      ...moqValue,
+                      unit: nextUnit,
+                    },
+                    materialCategory,
+                  ),
+                )
+              }
+            />
+          </div>
+          {moqDualLengthText ? (
+            <div className='text-xs text-gray-500 dark:text-gray-400'>{moqDualLengthText}</div>
+          ) : null}
+        </div>
+      );
+    }
+
+    if (fieldDef.field_key === 'processing_fee') {
+      const currencyCodes = getCurrencyCodes(fieldDef);
+      const defaultCurrency = getDefaultCurrencyCode(fieldDef);
+      const processingFee = normalizeProcessingFeeFieldValue(value, fieldDef);
+      const selectedCurrency = normalizeCurrencyCode(
+        processingFee.currency,
+        currencyCodes,
+        defaultCurrency,
+      );
+      const currencyOptionCodes = currencyCodes.includes(selectedCurrency)
+        ? currencyCodes
+        : [selectedCurrency, ...currencyCodes];
+      const currencyOptions = currencyOptionCodes.map((code) => toCurrencyOption(code));
+
+      return (
+        <div className='grid grid-cols-[minmax(0,1fr)_7.25rem] gap-2'>
+          <input
+            type='text'
+            inputMode='decimal'
+            className='form-input w-full'
+            value={getNumericInputValue(processingFee.amount)}
+            onChange={(event) =>
+              handleEditAttributeChange(key, {
+                amount: parseNumericOnlyNumber(event.target.value),
+                currency: selectedCurrency,
+              } as ProcessingFeeFieldValue)
+            }
+          />
+          <DropdownButton
+            options={currencyOptions.map((option) => ({
+              id: option.code,
+              value: option.code,
+              label: getCurrencyOptionLabel(option),
+            }))}
+            value={selectedCurrency}
+            size='form'
+            onChange={(nextCurrency) =>
+              handleEditAttributeChange(key, {
+                amount: processingFee.amount,
+                currency: normalizeCurrencyCode(nextCurrency, currencyCodes, defaultCurrency),
+              } as ProcessingFeeFieldValue)
+            }
+          />
+        </div>
+      );
+    }
+
     if (fieldDef.input_type === 'number') {
-      const unitText = formatUnitForDisplay(String(fieldDef.unit ?? '').trim());
+      const rawUnitText = String(fieldDef.unit ?? '').trim();
+      const shouldPreserveDecimalInput = fieldDef.field_key === 'thickness_mm';
       const inputElement = (
         <input
           type='text'
           inputMode='decimal'
           value={getNumericInputValue(value)}
-          onChange={(event) => handleEditAttributeChange(key, event.target.value)}
+          onChange={(event) =>
+            handleEditAttributeChange(
+              key,
+              shouldPreserveDecimalInput
+                ? sanitizeNumericInput(event.target.value)
+                : parseNumericOnlyNumber(event.target.value),
+            )
+          }
           className='form-input w-full'
         />
       );
 
-      if (!unitText) {
+      if (!rawUnitText) {
         return inputElement;
       }
 
       return (
-        <div className='flex items-center gap-2'>
-          <div className='min-w-0 flex-1'>{inputElement}</div>
-          <span className='text-sm text-gray-500 dark:text-gray-400'>{unitText}</span>
+        <div className='grid grid-cols-[minmax(0,1fr)_7.25rem] gap-2'>
+          {inputElement}
+          <DropdownButton
+            options={[
+              {
+                id: rawUnitText,
+                value: rawUnitText,
+                label: formatUnitForDisplay(rawUnitText),
+              },
+            ]}
+            value={rawUnitText}
+            size='form'
+              onChange={() => undefined}
+          />
         </div>
       );
     }
@@ -2919,23 +3759,17 @@ const FadditDrive: React.FC = () => {
           : ({ selected: '', customText: '' } as { selected?: string; customText?: string });
       return (
         <div className='space-y-2'>
-          <select
-            className='form-select w-full'
+          <DropdownButton
+            options={toDropdownOptions(options, '선택')}
             value={optionValue.selected ?? ''}
-            onChange={(event) =>
+            size='form'
+            onChange={(nextValue) =>
               handleEditAttributeChange(key, {
                 ...optionValue,
-                selected: event.target.value,
+                selected: nextValue,
               })
             }
-          >
-            <option value=''>선택</option>
-            {options.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
+          />
           {optionValue.selected === '기타' ? (
             <input
               type='text'
@@ -2959,39 +3793,94 @@ const FadditDrive: React.FC = () => {
         typeof value === 'object' && value !== null
           ? (value as { value?: number; unit?: string })
           : ({ value: undefined, unit: units[0] ?? '' } as { value?: number; unit?: string });
+      const showCurrencySelector = fieldDef.field_key === 'price_per_unit';
+      const currencyCodes = showCurrencySelector ? getCurrencyCodes(fieldDef) : [];
+      const defaultCurrency = showCurrencySelector ? getDefaultCurrencyCode(fieldDef) : DEFAULT_CURRENCY_CODE;
+      const selectedCurrency = showCurrencySelector
+        ? normalizeCurrencyCode(
+            (numberWithUnit as { currency?: unknown }).currency,
+            currencyCodes,
+            defaultCurrency,
+          )
+        : defaultCurrency;
+      const currencyOptionCodes = showCurrencySelector
+        ? currencyCodes.includes(selectedCurrency)
+          ? currencyCodes
+          : [selectedCurrency, ...currencyCodes]
+        : [];
+      const currencyOptions = currencyOptionCodes.map((code) => toCurrencyOption(code));
+      const amountInput = (
+        <input
+          type='text'
+          inputMode='decimal'
+          className='form-input w-full'
+          value={getNumericInputValue(numberWithUnit.value)}
+          onChange={(event) =>
+            handleEditAttributeChange(key, {
+              ...numberWithUnit,
+              value: parseNumericOnlyNumber(event.target.value),
+              ...(showCurrencySelector ? { currency: selectedCurrency } : {}),
+            })
+          }
+        />
+      );
+      const currencyDropdown = showCurrencySelector ? (
+        <DropdownButton
+          options={currencyOptions.map((option) => ({
+            id: option.code,
+            value: option.code,
+            label: getCurrencyOptionLabel(option),
+          }))}
+          value={selectedCurrency}
+          size='form'
+          onChange={(nextCurrency) =>
+            handleEditAttributeChange(key, {
+              ...numberWithUnit,
+              value:
+                typeof numberWithUnit.value === 'number'
+                  ? numberWithUnit.value
+                  : parseNumericOnlyNumber(String(numberWithUnit.value ?? '')),
+              currency: normalizeCurrencyCode(nextCurrency, currencyCodes, defaultCurrency),
+            })
+          }
+        />
+      ) : null;
+      const unitDropdown = (
+        <DropdownButton
+          options={units.map((unit, index) => ({
+            id: `${unit}-${index}`,
+            value: unit,
+            label: showCurrencySelector ? formatPriceUnitOptionLabel(unit) : formatUnitForDisplay(unit),
+          }))}
+          value={numberWithUnit.unit ?? ''}
+          size='form'
+          onChange={(nextUnit) =>
+            handleEditAttributeChange(key, {
+              ...numberWithUnit,
+              value: numberWithUnit.value,
+              unit: nextUnit,
+              ...(showCurrencySelector ? { currency: selectedCurrency } : {}),
+            })
+          }
+        />
+      );
       const dualLengthText = formatDualLengthText(numberWithUnit);
       return (
         <div className='space-y-2'>
-          <div className='grid grid-cols-3 gap-2'>
-            <input
-              type='text'
-              inputMode='decimal'
-              className='form-input col-span-2 w-full'
-              value={getNumericInputValue(numberWithUnit.value)}
-              onChange={(event) =>
-                handleEditAttributeChange(key, {
-                  ...numberWithUnit,
-                  value: event.target.value,
-                })
-              }
-            />
-            <select
-              className='form-select w-full'
-              value={numberWithUnit.unit ?? ''}
-              onChange={(event) =>
-                handleEditAttributeChange(key, {
-                  ...numberWithUnit,
-                  unit: event.target.value,
-                })
-              }
-            >
-              {units.map((unit) => (
-                <option key={unit} value={unit}>
-                  {formatUnitForDisplay(unit)}
-                </option>
-              ))}
-            </select>
-          </div>
+          {showCurrencySelector ? (
+            <div className='grid grid-cols-2 gap-2'>
+              <div className='grid grid-cols-[minmax(0,1fr)_7.25rem] gap-2'>
+                {amountInput}
+                {currencyDropdown}
+              </div>
+              {unitDropdown}
+            </div>
+          ) : (
+            <div className='grid grid-cols-[minmax(0,1fr)_7.25rem] gap-2'>
+              {amountInput}
+              {unitDropdown}
+            </div>
+          )}
           {dualLengthText ? (
             <div className='text-xs text-gray-500 dark:text-gray-400'>{dualLengthText}</div>
           ) : null}
@@ -3009,44 +3898,146 @@ const FadditDrive: React.FC = () => {
             });
       const { firstLabel, secondLabel } = getNumberPairLabels(fieldDef);
       const pairKind = getNumberPairKind(fieldDef);
-      return (
-        <div className='grid grid-cols-2 gap-2'>
+      const firstNumericValue =
+        typeof pair.first === 'number' ? pair.first : parseNumericOnlyNumber(String(pair.first ?? ''));
+      const showCurrencySelector = fieldDef.field_key === 'price_per_unit' && pairKind === 'price_quantity';
+      const currencyCodes = showCurrencySelector ? getCurrencyCodes(fieldDef) : [];
+      const defaultCurrency = showCurrencySelector ? getDefaultCurrencyCode(fieldDef) : DEFAULT_CURRENCY_CODE;
+      const pairCurrency = showCurrencySelector
+        ? normalizeCurrencyCode((pair as { currency?: unknown }).currency, currencyCodes, defaultCurrency)
+        : defaultCurrency;
+      const currencyOptionCodes = showCurrencySelector
+        ? currencyCodes.includes(pairCurrency)
+          ? currencyCodes
+          : [pairCurrency, ...currencyCodes]
+        : [];
+      const currencyOptions = currencyOptionCodes.map((code) => toCurrencyOption(code));
+      const unitOptions =
+        pairKind === 'price_quantity'
+          ? getPriceQuantityUnitOptions(fieldDef, materialCategory, pair.second)
+          : [];
+      const selectedPairUnit =
+        pairKind === 'price_quantity'
+          ? normalizePriceQuantityUnit(pair.second, unitOptions)
+          : '';
+      const secondNumericValue =
+        pairKind === 'price_quantity'
+          ? undefined
+          : typeof pair.second === 'number'
+            ? pair.second
+            : parseNumericOnlyNumber(String(pair.second ?? ''));
+      const pairUnitText =
+        pairKind === 'width_height' ? String(fieldDef.unit ?? '').trim() : '';
+
+      const secondInput =
+        pairKind === 'price_quantity' ? (
+          <DropdownButton
+            options={unitOptions.map((unit, index) => ({
+              id: `${unit}-${index}`,
+              value: unit,
+              label: showCurrencySelector ? formatPriceUnitOptionLabel(unit) : formatUnitForDisplay(unit),
+            }))}
+            value={selectedPairUnit}
+            size='form'
+            onChange={(nextUnit) =>
+              handleEditAttributeChange(key, {
+                ...pair,
+                second: nextUnit,
+                ...(showCurrencySelector ? { currency: pairCurrency } : {}),
+              })
+            }
+          />
+        ) : (
           <input
             type='text'
             inputMode='decimal'
             className='form-input w-full'
-            value={getNumericInputValue(pair.first)}
+            placeholder={secondLabel}
+            value={getNumericInputValue(secondNumericValue)}
             onChange={(event) =>
               handleEditAttributeChange(key, {
                 ...pair,
-                first: event.target.value,
+                second: parseNumericOnlyNumber(event.target.value),
+                ...(showCurrencySelector ? { currency: pairCurrency } : {}),
               })
             }
           />
-          <input
-            type='text'
-            inputMode={pairKind === 'price_quantity' ? undefined : 'decimal'}
-            className='form-input w-full'
-            value={
-              pairKind === 'price_quantity'
-                ? String(pair.second ?? '')
-                : getNumericInputValue(pair.second)
-            }
-            onChange={(event) =>
-              handleEditAttributeChange(key, {
-                ...pair,
-                second:
-                  pairKind === 'price_quantity'
-                    ? event.target.value
-                    : event.target.value,
-              })
-            }
-          />
+        );
+
+      const firstInput = (
+        <input
+          type='text'
+          inputMode='decimal'
+          className='form-input w-full'
+          placeholder={firstLabel}
+          value={getNumericInputValue(firstNumericValue)}
+          onChange={(event) =>
+            handleEditAttributeChange(key, {
+              ...pair,
+              first: parseNumericOnlyNumber(event.target.value),
+              ...(showCurrencySelector ? { currency: pairCurrency } : {}),
+            })
+          }
+        />
+      );
+
+      if (showCurrencySelector) {
+        return (
+          <div className='grid grid-cols-2 gap-2'>
+            <div className='grid grid-cols-[minmax(0,1fr)_7.25rem] gap-2'>
+              {firstInput}
+              <DropdownButton
+                options={currencyOptions.map((option) => ({
+                  id: option.code,
+                  value: option.code,
+                  label: getCurrencyOptionLabel(option),
+                }))}
+                value={pairCurrency}
+                size='form'
+                onChange={(nextCurrency) =>
+                  handleEditAttributeChange(key, {
+                    ...pair,
+                    first: firstNumericValue,
+                    second: pairKind === 'price_quantity' ? selectedPairUnit : secondNumericValue,
+                    currency: normalizeCurrencyCode(nextCurrency, currencyCodes, defaultCurrency),
+                  })
+                }
+              />
+            </div>
+            {secondInput}
+          </div>
+        );
+      }
+
+      return (
+        <div
+          className={
+            pairUnitText
+              ? 'grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7.25rem] gap-2'
+              : 'grid grid-cols-2 gap-2'
+          }
+        >
+          {firstInput}
+          {secondInput}
+          {pairUnitText ? (
+            <DropdownButton
+              options={[
+                {
+                  id: pairUnitText,
+                  value: pairUnitText,
+                  label: formatUnitForDisplay(pairUnitText),
+                },
+              ]}
+              value={pairUnitText}
+              size='form'
+              onChange={() => undefined}
+            />
+          ) : null}
         </div>
       );
     }
 
-    const unitText = formatUnitForDisplay(String(fieldDef.unit ?? '').trim());
+    const rawUnitText = String(fieldDef.unit ?? '').trim();
     const normalized = formatAttributeValue(value, key);
     const inputElement = (
       <input
@@ -3057,14 +4048,25 @@ const FadditDrive: React.FC = () => {
       />
     );
 
-    if (!unitText) {
+    if (!rawUnitText) {
       return inputElement;
     }
 
     return (
-      <div className='flex items-center gap-2'>
-        <div className='min-w-0 flex-1'>{inputElement}</div>
-        <span className='text-sm text-gray-500 dark:text-gray-400'>{unitText}</span>
+      <div className='grid grid-cols-[minmax(0,1fr)_7.25rem] gap-2'>
+        {inputElement}
+        <DropdownButton
+          options={[
+            {
+              id: rawUnitText,
+              value: rawUnitText,
+              label: formatUnitForDisplay(rawUnitText),
+            },
+          ]}
+          value={rawUnitText}
+          size='form'
+              onChange={() => undefined}
+        />
       </div>
     );
   };
@@ -3096,7 +4098,9 @@ const FadditDrive: React.FC = () => {
         if (cancelled) {
           return;
         }
-        setEditMaterialFieldDefs(defs);
+        setEditMaterialFieldDefs(
+          sortMaterialFieldDefsByCategory(defs, primaryActiveMaterial.category),
+        );
       })
       .catch((error) => {
         console.error('Failed to load material field defs in detail panel', error);
@@ -3517,9 +4521,12 @@ const FadditDrive: React.FC = () => {
                       <div className='text-right text-sm text-gray-800 dark:text-gray-100'>
                         {(() => {
                           const formatted = formatAttributeValue(value, key);
-                          const unitText = formatUnitForDisplay(
-                            String(materialFieldDefByKey.get(key)?.unit ?? '').trim(),
-                          );
+                          const fieldDef = materialFieldDefByKey.get(key);
+                          const rawUnitText = String(fieldDef?.unit ?? '').trim();
+                          const unitText =
+                            fieldDef && shouldShowUnitSuffix(fieldDef, rawUnitText)
+                              ? formatUnitForDisplay(rawUnitText)
+                              : '';
                           if (!unitText || formatted === '-' || formatted.endsWith(unitText)) {
                             return formatted;
                           }
@@ -4396,7 +5403,7 @@ const FadditDrive: React.FC = () => {
         onCreateFolder={handleCreateFolder}
         onCreateMaterial={handleCreateMaterial}
         onCreateWorksheet={handleCreateWorksheet}
-        hiddenTemplateKeys={['folder', 'worksheet']}
+        hiddenTemplateKeys={['folder', 'worksheet', 'schematic', 'pattern', 'print', 'etc']}
       />
     </div>
   );

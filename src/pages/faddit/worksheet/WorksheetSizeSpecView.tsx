@@ -21,6 +21,9 @@ type WorksheetSizeSpecViewProps = {
   showColumnActions?: boolean;
   showRowDeleteButton?: boolean;
   showTotals?: boolean;
+  lockedColumnCount?: number;
+  headerLabelOverrides?: Record<number, string>;
+  readOnlyHeaderColumns?: number[];
   onDeleteRow?: (rowIndex: number) => void;
   onMoveRow?: (fromIndex: number, toIndex: number) => void;
   rowValuePatches?: Record<number, string[]>;
@@ -252,6 +255,9 @@ export default function WorksheetSizeSpecView({
   showColumnActions = true,
   showRowDeleteButton = true,
   showTotals = false,
+  lockedColumnCount = 0,
+  headerLabelOverrides,
+  readOnlyHeaderColumns = [],
   onDeleteRow,
   onMoveRow,
   rowValuePatches,
@@ -282,6 +288,11 @@ export default function WorksheetSizeSpecView({
   const hasLeadingImageColumn = Boolean(leadingImageColumn);
   const showRowActionRail = !showRowHeader;
   const showTrailingActionColumn = showAddColumnButton;
+  const normalizedLockedColumnCount = Math.max(0, lockedColumnCount);
+  const readOnlyHeaderColumnSet = useMemo(
+    () => new Set(readOnlyHeaderColumns),
+    [readOnlyHeaderColumns],
+  );
 
   const shouldConvertColumn = useCallback(
     (colIndex: number) => enableUnitConversion && showRowHeader && colIndex > 0,
@@ -541,12 +552,16 @@ export default function WorksheetSizeSpecView({
 
   const deleteColumn = useCallback(
     (colIndex: number) => {
+      if (colIndex < normalizedLockedColumnCount) {
+        return;
+      }
+
       updateSpec((draft) => {
         draft.headers.splice(colIndex, 1);
         draft.rows.forEach((row) => row.splice(colIndex, 1));
       });
     },
-    [updateSpec],
+    [normalizedLockedColumnCount, updateSpec],
   );
 
   const triggerLeadingImageUpload = useCallback(
@@ -609,7 +624,12 @@ export default function WorksheetSizeSpecView({
   const handleColumnDrop = useCallback(
     (targetIndex: number, side: 'before' | 'after') => {
       if (!dragItem || dragItem.type !== 'column') return;
-      const insertIndex = side === 'before' ? targetIndex : targetIndex + 1;
+      if (dragItem.index < normalizedLockedColumnCount) {
+        return;
+      }
+
+      const insertIndexRaw = side === 'before' ? targetIndex : targetIndex + 1;
+      const insertIndex = Math.max(normalizedLockedColumnCount, insertIndexRaw);
       const finalIndex = getFinalIndex(dragItem.index, insertIndex);
       updateSpec((draft) => {
         draft.headers = moveByInsertIndex(draft.headers, dragItem.index, insertIndex);
@@ -619,7 +639,7 @@ export default function WorksheetSizeSpecView({
       setDragItem(null);
       setDragOver(null);
     },
-    [dragItem, updateSpec],
+    [dragItem, normalizedLockedColumnCount, updateSpec],
   );
 
   const handleRowDrop = useCallback(
@@ -709,6 +729,9 @@ export default function WorksheetSizeSpecView({
                 )}
                 {spec.headers.slice(dataHeaderStart).map((header, visibleIndex) => {
                   const colIndex = visibleIndex + dataHeaderStart;
+                  const displayHeaderLabel = headerLabelOverrides?.[colIndex] ?? header;
+                  const isLockedColumn = colIndex < normalizedLockedColumnCount;
+                  const isReadOnlyHeader = readOnlyHeaderColumnSet.has(colIndex);
                   const isDragOver = dragOver?.type === 'column' && dragOver.index === colIndex;
                   const isDragged = dragItem?.type === 'column' && dragItem.index === colIndex;
                   const xShift = getColumnShift(colIndex);
@@ -733,6 +756,7 @@ export default function WorksheetSizeSpecView({
                       }
                       onDragOver={(e) => {
                         if (dragItem?.type !== 'column') return;
+                        if (dragItem.index < normalizedLockedColumnCount) return;
                         e.preventDefault();
                         const rect = e.currentTarget.getBoundingClientRect();
                         const side = e.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
@@ -740,6 +764,7 @@ export default function WorksheetSizeSpecView({
                       }}
                       onDrop={(e) => {
                         if (dragItem?.type !== 'column') return;
+                        if (dragItem.index < normalizedLockedColumnCount) return;
                         e.preventDefault();
                         const rect = e.currentTarget.getBoundingClientRect();
                         const side = e.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
@@ -758,44 +783,86 @@ export default function WorksheetSizeSpecView({
                             }}
                           />
                         )}
-                        <input
-                          value={header}
-                          onChange={(e) => handleHeaderChange(colIndex, e.target.value)}
-                          placeholder='사이즈'
-                          className={`relative z-0 w-full border-0 py-1.5 text-center text-xs font-semibold text-slate-600 outline-none focus:bg-blue-50 ${isDragOver ? 'bg-blue-50/50' : 'bg-transparent'}`}
-                          style={{
-                            ...getMotionStyle(xShift, 0, isDragged, isDragOver && !isDragged),
-                            paddingLeft: `${hoveredDataCol === colIndex ? DATA_HEADER_EXPANDED_PADDING : DATA_HEADER_COMPACT_PADDING}px`,
-                            paddingRight: `${hoveredDataCol === colIndex ? DATA_HEADER_EXPANDED_PADDING : DATA_HEADER_COMPACT_PADDING}px`,
-                            transition:
-                              'padding-left 220ms ease, padding-right 220ms ease, transform 220ms cubic-bezier(0.2, 0.9, 0.25, 1), box-shadow 180ms ease, opacity 180ms ease',
-                            boxShadow:
-                              dropFlash?.type === 'column' && dropFlash.index === colIndex
-                                ? 'inset 0 0 0 1px rgba(59,130,246,0.45), inset 0 0 24px rgba(59,130,246,0.14)'
-                                : getMotionStyle(xShift, 0, isDragged, isDragOver && !isDragged)
-                                    .boxShadow,
-                          }}
-                        />
+                        {isReadOnlyHeader ? (
+                          <div
+                            className={`relative z-0 w-full py-1.5 text-center text-xs font-semibold text-slate-600 ${
+                              isDragOver ? 'bg-blue-50/50' : 'bg-transparent'
+                            }`}
+                            style={{
+                              ...getMotionStyle(xShift, 0, isDragged, isDragOver && !isDragged),
+                              paddingLeft: `${
+                                hoveredDataCol === colIndex
+                                  ? DATA_HEADER_EXPANDED_PADDING
+                                  : DATA_HEADER_COMPACT_PADDING
+                              }px`,
+                              paddingRight: `${
+                                hoveredDataCol === colIndex
+                                  ? DATA_HEADER_EXPANDED_PADDING
+                                  : DATA_HEADER_COMPACT_PADDING
+                              }px`,
+                              transition:
+                                'padding-left 220ms ease, padding-right 220ms ease, transform 220ms cubic-bezier(0.2, 0.9, 0.25, 1), box-shadow 180ms ease, opacity 180ms ease',
+                              boxShadow:
+                                dropFlash?.type === 'column' && dropFlash.index === colIndex
+                                  ? 'inset 0 0 0 1px rgba(59,130,246,0.45), inset 0 0 24px rgba(59,130,246,0.14)'
+                                  : getMotionStyle(xShift, 0, isDragged, isDragOver && !isDragged)
+                                      .boxShadow,
+                            }}
+                          >
+                            {displayHeaderLabel}
+                          </div>
+                        ) : (
+                          <input
+                            value={displayHeaderLabel}
+                            onChange={(e) => handleHeaderChange(colIndex, e.target.value)}
+                            placeholder='사이즈'
+                            className={`relative z-0 w-full border-0 py-1.5 text-center text-xs font-semibold text-slate-600 outline-none focus:bg-blue-50 ${isDragOver ? 'bg-blue-50/50' : 'bg-transparent'}`}
+                            style={{
+                              ...getMotionStyle(xShift, 0, isDragged, isDragOver && !isDragged),
+                              paddingLeft: `${
+                                hoveredDataCol === colIndex
+                                  ? DATA_HEADER_EXPANDED_PADDING
+                                  : DATA_HEADER_COMPACT_PADDING
+                              }px`,
+                              paddingRight: `${
+                                hoveredDataCol === colIndex
+                                  ? DATA_HEADER_EXPANDED_PADDING
+                                  : DATA_HEADER_COMPACT_PADDING
+                              }px`,
+                              transition:
+                                'padding-left 220ms ease, padding-right 220ms ease, transform 220ms cubic-bezier(0.2, 0.9, 0.25, 1), box-shadow 180ms ease, opacity 180ms ease',
+                              boxShadow:
+                                dropFlash?.type === 'column' && dropFlash.index === colIndex
+                                  ? 'inset 0 0 0 1px rgba(59,130,246,0.45), inset 0 0 24px rgba(59,130,246,0.14)'
+                                  : getMotionStyle(xShift, 0, isDragged, isDragOver && !isDragged)
+                                      .boxShadow,
+                            }}
+                          />
+                        )}
                         {showColumnActions && (
                           <>
-                            <button
-                              type='button'
-                              draggable
-                              onDragStart={(e) => handleDragStart(e, 'column', colIndex)}
-                              onDragEnd={handleDragEnd}
-                              className={`${LEFT_ACTION_REVEAL_CLASS} cursor-grab active:cursor-grabbing ${MOVE_ACTION_BUTTON_CLASS}`}
-                              title='열 이동'
-                            >
-                              <GripHorizontal size={12} strokeWidth={2.2} />
-                            </button>
-                            <button
-                              type='button'
-                              onClick={() => deleteColumn(colIndex)}
-                              className={`${RIGHT_ACTION_REVEAL_CLASS} cursor-pointer ${DELETE_ACTION_BUTTON_CLASS}`}
-                              title='열 삭제'
-                            >
-                              <Trash2 size={11} strokeWidth={2.1} />
-                            </button>
+                            {!isLockedColumn ? (
+                              <>
+                                <button
+                                  type='button'
+                                  draggable
+                                  onDragStart={(e) => handleDragStart(e, 'column', colIndex)}
+                                  onDragEnd={handleDragEnd}
+                                  className={`${LEFT_ACTION_REVEAL_CLASS} cursor-grab active:cursor-grabbing ${MOVE_ACTION_BUTTON_CLASS}`}
+                                  title='열 이동'
+                                >
+                                  <GripHorizontal size={12} strokeWidth={2.2} />
+                                </button>
+                                <button
+                                  type='button'
+                                  onClick={() => deleteColumn(colIndex)}
+                                  className={`${RIGHT_ACTION_REVEAL_CLASS} cursor-pointer ${DELETE_ACTION_BUTTON_CLASS}`}
+                                  title='열 삭제'
+                                >
+                                  <Trash2 size={11} strokeWidth={2.1} />
+                                </button>
+                              </>
+                            ) : null}
                           </>
                         )}
                       </div>
@@ -1027,7 +1094,10 @@ export default function WorksheetSizeSpecView({
 
                     {row.slice(dataHeaderStart).map((cell, visibleColIndex) => {
                       const colIndex = visibleColIndex + dataHeaderStart;
-                      const columnTooltipTitle = spec.headers[colIndex]?.trim() || '사이즈';
+                      const columnTooltipTitle =
+                        headerLabelOverrides?.[colIndex]?.trim() ||
+                        spec.headers[colIndex]?.trim() ||
+                        '사이즈';
                       const isDraggedColumn =
                         dragItem?.type === 'column' && dragItem.index === colIndex;
                       const isColumnDropTarget =

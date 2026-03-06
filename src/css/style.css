@@ -1,5 +1,3 @@
-@import url('https://cdn.jsdelivr.net/npm/pretendard/dist/web/static/pretendard.css');
-
 @import 'tailwindcss';
 @import './additional-styles/utility-patterns.css' layer(components);
 

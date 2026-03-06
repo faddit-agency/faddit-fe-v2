@@ -1,24 +1,17 @@
-import { useMemo } from 'react';
 import { ChevronDown, WandSparkles } from 'lucide-react';
+import { useMemo } from 'react';
 
 import { useWorksheetStore } from './useWorksheetStore';
 
 type MaterialSectionKey = 'fabric' | 'label' | 'trim';
 
 type MaterialLine = {
-  id: string;
   name: string;
   quantity: number;
   unitPrice: number;
   perUnitCost: number;
   totalCost: number;
-};
-
-type ProcessingLine = {
-  key: string;
-  name: string;
-  unitCost: number;
-  totalCost: number;
+  totalRequiredQuantity?: number;
 };
 
 type MaterialSection = {
@@ -27,114 +20,201 @@ type MaterialSection = {
   lines: MaterialLine[];
 };
 
-const MATERIAL_SECTION_ORDER: MaterialSectionKey[] = ['fabric', 'label', 'trim'];
+type ProcessingLine = {
+  key: string;
+  name: string;
+  perUnitCost: number;
+  totalCost: number;
+};
 
-const PROCESSING_ROWS: Array<{ key: string; name: string }> = [
+const PROCESSING_ITEMS: Array<{ key: string; name: string }> = [
   { key: 'cutting', name: '재단' },
   { key: 'sewing', name: '봉제' },
   { key: 'washing', name: '워싱' },
   { key: 'qc_packaging', name: 'QC(검사 및 포장)' },
 ];
 
-const getNumericValue = (raw: string | undefined) => {
-  if (!raw) return 0;
-  const normalized = String(raw).replace(/,/g, '').trim();
-  if (!normalized) return 0;
-  const parsed = Number(normalized);
-  return Number.isNaN(parsed) ? 0 : parsed;
-};
+const normalizeLabel = (value: string) => value.toLowerCase().replace(/\s+/g, '');
 
-const formatCount = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}장`;
-const formatKrw = (value: number) => `₩ ${Math.round(value).toLocaleString('ko-KR')}`;
-const formatQty = (value: number) => {
-  if (!Number.isFinite(value) || value <= 0) return '-';
-  return value % 1 === 0 ? value.toLocaleString('ko-KR') : value.toLocaleString('ko-KR', { maximumFractionDigits: 3 });
-};
-
-const getUsageQuantity = (cardId: string, row: string[] | undefined) => {
-  if (!row) return 1;
-  if (cardId === 'fabric-info' || cardId === 'rib-fabric-info') {
-    const value = getNumericValue(row[4]);
-    return value > 0 ? value : 1;
+const parseNumber = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
   }
 
-  const value = getNumericValue(row[1]);
-  return value > 0 ? value : 1;
+  const raw = String(value ?? '').trim();
+  if (!raw) {
+    return 0;
+  }
+
+  const normalized = raw.replace(/,/g, '').replace(/[^\d.-]/g, '');
+  if (!normalized || normalized === '-' || normalized === '.') {
+    return 0;
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const findHeaderIndex = (
+  headers: string[],
+  includeKeywords: string[],
+  excludeKeywords: string[] = [],
+) => {
+  const includes = includeKeywords.map((keyword) => normalizeLabel(keyword));
+  const excludes = excludeKeywords.map((keyword) => normalizeLabel(keyword));
+
+  return headers.findIndex((header) => {
+    const normalized = normalizeLabel(header);
+    if (!normalized) {
+      return false;
+    }
+
+    if (excludes.some((keyword) => normalized.includes(keyword))) {
+      return false;
+    }
+
+    return includes.some((keyword) => normalized.includes(keyword));
+  });
+};
+
+const formatKrw = (value: number) => `₩ ${Math.round(value).toLocaleString('ko-KR')}`;
+
+const formatProductionCount = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}장`;
+
+const formatQuantity = (value: number) => {
+  if (!Number.isFinite(value)) {
+    return '-';
+  }
+
+  if (Math.abs(value - Math.round(value)) < 0.000001) {
+    return Math.round(value).toLocaleString('ko-KR');
+  }
+
+  return value.toLocaleString('ko-KR', { maximumFractionDigits: 3 });
 };
 
 export default function WorksheetCostView() {
-  const worksheetTitle = useWorksheetStore((s) => s.worksheetTitle);
-  const moduleElements = useWorksheetStore((s) => s.moduleElements);
-  const moduleSheetStates = useWorksheetStore((s) => s.moduleSheetStates);
-  const costState = useWorksheetStore((s) => s.costState);
-  const setCostElementUnitPrice = useWorksheetStore((s) => s.setCostElementUnitPrice);
-  const setCostProcessingUnitCost = useWorksheetStore((s) => s.setCostProcessingUnitCost);
+  const moduleSheetStates = useWorksheetStore((state) => state.moduleSheetStates);
+  const costState = useWorksheetStore((state) => state.costState);
+  const fabricLengthUnit = useWorksheetStore((state) => state.fabricLengthUnit);
 
-  const colorSizeState = moduleSheetStates['color-size-qty'];
   const totalProductionQty = useMemo(() => {
-    const rows = colorSizeState?.rows ?? [];
-    return rows.reduce((sum, row) => {
-      const rowTotal = row.slice(1).reduce((acc, value) => acc + getNumericValue(value), 0);
-      return sum + rowTotal;
+    const rows = moduleSheetStates['color-size-qty']?.rows ?? [];
+    return rows.reduce((total, row) => {
+      const rowTotal = row.slice(1).reduce((sum, value) => sum + parseNumber(value), 0);
+      return total + rowTotal;
     }, 0);
-  }, [colorSizeState?.rows]);
-
-  const colorCount = (colorSizeState?.rows ?? []).length;
+  }, [moduleSheetStates]);
 
   const materialSections = useMemo<MaterialSection[]>(() => {
-    const fabricElements = [...(moduleElements['fabric-info'] ?? []), ...(moduleElements['rib-fabric-info'] ?? [])];
-    const labelElements = moduleElements['label-sheet'] ?? [];
-    const trimElements = moduleElements['trim-sheet'] ?? [];
-
-    const source: Record<MaterialSectionKey, { title: string; cardIds: string[]; elements: typeof fabricElements }> = {
-      fabric: {
+    const sectionConfigs: Array<{
+      key: MaterialSectionKey;
+      title: string;
+      cardIds: string[];
+      defaultQuantity: number;
+      quantityKeywords: string[];
+    }> = [
+      {
+        key: 'fabric',
         title: '원단',
         cardIds: ['fabric-info', 'rib-fabric-info'],
-        elements: fabricElements,
+        defaultQuantity: 0,
+        quantityKeywords: ['총 필요 원단량', '요척', '소요량'],
       },
-      label: {
+      {
+        key: 'label',
         title: '라벨',
         cardIds: ['label-sheet'],
-        elements: labelElements,
+        defaultQuantity: 1,
+        quantityKeywords: ['사용 수량', '소요량'],
       },
-      trim: {
+      {
+        key: 'trim',
         title: '부자재',
         cardIds: ['trim-sheet'],
-        elements: trimElements,
+        defaultQuantity: 1,
+        quantityKeywords: ['사용 수량', '소요량'],
       },
-    };
+    ];
 
-    return MATERIAL_SECTION_ORDER.map((key) => {
-      const section = source[key];
-      const lines = section.elements.map((element, index) => {
-        const cardId = section.cardIds.length === 2 && index >= (moduleElements['fabric-info'] ?? []).length
-          ? 'rib-fabric-info'
-          : section.cardIds[0];
-        const localRowIndex =
-          cardId === 'rib-fabric-info' ? index - (moduleElements['fabric-info'] ?? []).length : index;
-        const row = moduleSheetStates[cardId]?.rows?.[localRowIndex];
-        const quantity = getUsageQuantity(cardId, row);
-        const unitPrice = getNumericValue(costState.elementUnitPrices[element.id]);
-        const perUnitCost = unitPrice * quantity;
-        const totalCost = perUnitCost * totalProductionQty;
+    return sectionConfigs.map((sectionConfig) => {
+      const lines: MaterialLine[] = [];
 
-        return {
-          id: element.id,
-          name: element.name,
-          quantity,
-          unitPrice,
-          perUnitCost,
-          totalCost,
-        };
+      sectionConfig.cardIds.forEach((cardId) => {
+        const sheet = moduleSheetStates[cardId];
+        const headers = sheet?.headers ?? [];
+        const rows = sheet?.rows ?? [];
+
+        const totalRequiredIndex =
+          sectionConfig.key === 'fabric'
+            ? findHeaderIndex(headers, ['총 필요 원단량'])
+            : -1;
+        const quantityIndex =
+          sectionConfig.key === 'fabric'
+            ? findHeaderIndex(headers, ['요척', '소요량'], ['총 필요 원단량'])
+            : findHeaderIndex(headers, sectionConfig.quantityKeywords);
+        const unitPriceIndex = findHeaderIndex(
+          headers,
+          ['단위당 원가', '단가 (원)', '단가', '원단 단가', 'price'],
+          ['총', '벌당'],
+        );
+        const perUnitCostIndex = findHeaderIndex(headers, ['벌당 원가', '1벌당', '개별 원가']);
+
+        rows.forEach((row, rowIndex) => {
+          const isEmptyRow = row.every((cell) => String(cell ?? '').trim() === '');
+          if (isEmptyRow) {
+            return;
+          }
+
+          const rowName = String(row[0] ?? '').trim() || `항목 ${rowIndex + 1}`;
+          const quantityFromRow = quantityIndex >= 0 ? parseNumber(row[quantityIndex]) : 0;
+          const totalRequiredFromRow =
+            sectionConfig.key === 'fabric' && totalRequiredIndex >= 0
+              ? parseNumber(row[totalRequiredIndex])
+              : 0;
+          const quantity =
+            quantityFromRow > 0
+              ? quantityFromRow
+              : sectionConfig.key === 'fabric' && totalRequiredFromRow > 0 && totalProductionQty > 0
+                ? totalRequiredFromRow / totalProductionQty
+                : sectionConfig.defaultQuantity;
+
+          const unitPriceFromRow = unitPriceIndex >= 0 ? parseNumber(row[unitPriceIndex]) : 0;
+          const perUnitCostFromRow = perUnitCostIndex >= 0 ? parseNumber(row[perUnitCostIndex]) : 0;
+
+          const perUnitCost =
+            perUnitCostFromRow > 0 ? perUnitCostFromRow : unitPriceFromRow * quantity;
+
+          const unitPrice =
+            unitPriceFromRow > 0
+              ? unitPriceFromRow
+              : quantity > 0 && perUnitCostFromRow > 0
+                ? perUnitCostFromRow / quantity
+                : 0;
+
+          lines.push({
+            name: rowName,
+            quantity,
+            unitPrice,
+            perUnitCost,
+            totalCost: perUnitCost * totalProductionQty,
+            totalRequiredQuantity:
+              sectionConfig.key === 'fabric'
+                ? totalRequiredFromRow > 0
+                  ? totalRequiredFromRow
+                  : quantity * totalProductionQty
+                : undefined,
+          });
+        });
       });
 
       return {
-        key,
-        title: section.title,
+        key: sectionConfig.key,
+        title: sectionConfig.title,
         lines,
       };
     });
-  }, [costState.elementUnitPrices, moduleElements, moduleSheetStates, totalProductionQty]);
+  }, [moduleSheetStates, totalProductionQty]);
 
   const materialSubtotalPerUnit = useMemo(
     () => materialSections.reduce((sum, section) => sum + section.lines.reduce((acc, line) => acc + line.perUnitCost, 0), 0),
@@ -142,63 +222,67 @@ export default function WorksheetCostView() {
   );
 
   const processingLines = useMemo<ProcessingLine[]>(() => {
-    return PROCESSING_ROWS.map((item) => {
-      const unitCost = getNumericValue(costState.processingUnitCosts[item.key]);
+    return PROCESSING_ITEMS.map((item) => {
+      const perUnitCost = parseNumber(costState.processingUnitCosts[item.key]);
       return {
         key: item.key,
         name: item.name,
-        unitCost,
-        totalCost: unitCost * totalProductionQty,
+        perUnitCost,
+        totalCost: perUnitCost * totalProductionQty,
       };
     });
   }, [costState.processingUnitCosts, totalProductionQty]);
 
   const processingSubtotalPerUnit = useMemo(
-    () => processingLines.reduce((sum, line) => sum + line.unitCost, 0),
+    () => processingLines.reduce((sum, line) => sum + line.perUnitCost, 0),
     [processingLines],
   );
 
   const perUnitManufacturingCost = materialSubtotalPerUnit + processingSubtotalPerUnit;
   const totalManufacturingCost = perUnitManufacturingCost * totalProductionQty;
 
-  const representativeUsage = useMemo(() => {
-    const firstFabric = materialSections.find((section) => section.key === 'fabric')?.lines[0];
-    return firstFabric?.quantity ?? 0;
-  }, [materialSections]);
+  const checklist = useMemo(() => {
+    const fabricLines = materialSections.find((section) => section.key === 'fabric')?.lines ?? [];
+    const labelLines = materialSections.find((section) => section.key === 'label')?.lines ?? [];
+    const trimLines = materialSections.find((section) => section.key === 'trim')?.lines ?? [];
+
+    const mapLineTotal = (line: MaterialLine, sectionKey: MaterialSectionKey) => {
+      if (sectionKey === 'fabric' && line.totalRequiredQuantity && line.totalRequiredQuantity > 0) {
+        return line.totalRequiredQuantity;
+      }
+
+      return line.quantity * totalProductionQty;
+    };
+
+    return {
+      fabric: {
+        total: fabricLines.reduce((sum, line) => sum + mapLineTotal(line, 'fabric'), 0),
+        lines: fabricLines.map((line) => ({
+          name: line.name,
+          value: mapLineTotal(line, 'fabric'),
+        })),
+      },
+      label: {
+        total: labelLines.reduce((sum, line) => sum + mapLineTotal(line, 'label'), 0),
+        lines: labelLines.map((line) => ({
+          name: line.name,
+          value: mapLineTotal(line, 'label'),
+        })),
+      },
+      trim: {
+        total: trimLines.reduce((sum, line) => sum + mapLineTotal(line, 'trim'), 0),
+        lines: trimLines.map((line) => ({
+          name: line.name,
+          value: mapLineTotal(line, 'trim'),
+        })),
+      },
+    };
+  }, [materialSections, totalProductionQty]);
 
   return (
-    <div className='h-full overflow-y-auto bg-[#f6f6f7] p-3'>
+    <div className='h-full overflow-y-auto bg-[#f6f6f7] p-2'>
       <div className='grid min-h-full grid-cols-12 gap-3'>
         <div className='col-span-8 space-y-3'>
-          <div className='grid grid-cols-6 overflow-hidden rounded-xl border border-gray-200 bg-white'>
-            <div className='border-r border-gray-200 px-3 py-2'>
-              <p className='text-[11px] text-gray-400'>작업지시서명</p>
-              <p className='mt-1 truncate text-sm font-semibold text-gray-800'>{worksheetTitle}</p>
-            </div>
-            <div className='border-r border-gray-200 px-3 py-2'>
-              <p className='text-[11px] text-gray-400'>총 생산 수량</p>
-              <p className='mt-1 text-sm font-semibold text-gray-800'>{formatCount(totalProductionQty)}</p>
-            </div>
-            <div className='border-r border-gray-200 px-3 py-2'>
-              <p className='text-[11px] text-gray-400'>색상수</p>
-              <p className='mt-1 text-sm font-semibold text-gray-800'>{colorCount.toLocaleString('ko-KR')} 컬러</p>
-            </div>
-            <div className='border-r border-gray-200 px-3 py-2'>
-              <p className='text-[11px] text-gray-400'>메인원단 평균 소요량</p>
-              <p className='mt-1 text-sm font-semibold text-gray-800'>
-                {representativeUsage > 0 ? `${formatQty(representativeUsage)}yd` : '-'}
-              </p>
-            </div>
-            <div className='border-r border-gray-200 px-3 py-2'>
-              <p className='text-[11px] text-gray-400'>벌당 총 원가</p>
-              <p className='mt-1 text-sm font-semibold text-gray-800'>{formatKrw(perUnitManufacturingCost)}</p>
-            </div>
-            <div className='px-3 py-2'>
-              <p className='text-[11px] text-gray-400'>총 생산 비용</p>
-              <p className='mt-1 text-sm font-semibold text-gray-800'>{formatKrw(totalManufacturingCost)}</p>
-            </div>
-          </div>
-
           <section className='rounded-xl border border-gray-200 bg-white p-4'>
             <div className='mb-3 flex items-center gap-2 text-[26px] font-semibold text-gray-800'>
               <ChevronDown size={18} className='text-gray-500' />
@@ -229,25 +313,13 @@ export default function WorksheetCostView() {
                           </td>
                         </tr>
                       ) : (
-                        section.lines.map((line) => (
-                          <tr key={line.id} className='border-t border-gray-100'>
+                        section.lines.map((line, lineIndex) => (
+                          <tr key={`${section.key}-${lineIndex}`} className='border-t border-gray-100'>
                             <td className='px-4 py-2 text-gray-800'>{line.name}</td>
-                            <td className='px-3 py-2'>
-                              <input
-                                type='text'
-                                inputMode='numeric'
-                                value={costState.elementUnitPrices[line.id] ?? ''}
-                                onChange={(event) =>
-                                  setCostElementUnitPrice(
-                                    line.id,
-                                    event.target.value.replace(/[^\d]/g, ''),
-                                  )
-                                }
-                                className='form-input h-8 w-[120px] text-right text-sm'
-                                placeholder='0'
-                              />
+                            <td className='px-3 py-2 text-right text-gray-800'>
+                              {formatQuantity(line.unitPrice)}
                             </td>
-                            <td className='px-3 py-2 text-right text-gray-700'>{formatQty(line.quantity)}</td>
+                            <td className='px-3 py-2 text-right text-gray-700'>{formatQuantity(line.quantity)}</td>
                             <td className='px-3 py-2 text-right text-gray-800'>{formatKrw(line.perUnitCost)}</td>
                             <td className='px-4 py-2 text-right font-medium text-gray-900'>
                               {formatKrw(line.totalCost)}
@@ -288,22 +360,10 @@ export default function WorksheetCostView() {
                   {processingLines.map((line) => (
                     <tr key={line.key} className='border-t border-gray-100'>
                       <td className='px-4 py-2 text-gray-800'>{line.name}</td>
-                      <td className='px-3 py-2'>
-                        <input
-                          type='text'
-                          inputMode='numeric'
-                          value={costState.processingUnitCosts[line.key] ?? ''}
-                          onChange={(event) =>
-                            setCostProcessingUnitCost(
-                              line.key,
-                              event.target.value.replace(/[^\d]/g, ''),
-                            )
-                          }
-                          className='form-input h-8 w-[140px] text-right text-sm'
-                          placeholder='0'
-                        />
+                      <td className='px-3 py-2 text-right text-gray-800'>{formatQuantity(line.perUnitCost)}</td>
+                      <td className='px-4 py-2 text-right font-medium text-gray-900'>
+                        {formatKrw(line.totalCost)}
                       </td>
-                      <td className='px-4 py-2 text-right font-medium text-gray-900'>{formatKrw(line.totalCost)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -323,36 +383,38 @@ export default function WorksheetCostView() {
           <aside className='rounded-xl bg-zinc-800 p-4 text-white'>
             <h3 className='text-lg font-semibold'>제조 원가 요약</h3>
 
-            <div className='mt-4 space-y-3 text-sm'>
-              <div className='flex items-center justify-between'>
+            <div className='mt-5 space-y-4'>
+              <div className='flex items-center justify-between text-sm'>
                 <span className='text-zinc-300'>자재비 소계</span>
-                <span className='text-xl font-semibold'>{formatKrw(materialSubtotalPerUnit)}</span>
+                <span className='text-3xl font-semibold'>{formatKrw(materialSubtotalPerUnit)}</span>
               </div>
-              <div className='flex items-center justify-between'>
+              <div className='flex items-center justify-between text-sm'>
                 <span className='text-zinc-300'>가공 및 공임 소계</span>
-                <span className='text-xl font-semibold'>{formatKrw(processingSubtotalPerUnit)}</span>
+                <span className='text-3xl font-semibold'>{formatKrw(processingSubtotalPerUnit)}</span>
               </div>
-              <div className='border-t border-zinc-600 pt-3' />
-              <div className='flex items-center justify-between'>
+              <div className='border-t border-zinc-600' />
+              <div className='flex items-center justify-between text-sm'>
                 <span className='text-zinc-300'>벌당 총 제조 원가</span>
-                <span className='text-3xl font-semibold'>{formatKrw(perUnitManufacturingCost)}</span>
+                <span className='text-4xl font-semibold'>{formatKrw(perUnitManufacturingCost)}</span>
               </div>
             </div>
 
-            <div className='mt-6 rounded-xl border border-violet-400/60 bg-zinc-700/60 p-3'>
-              <div className='grid grid-cols-3 items-center gap-2 text-center text-xs'>
+            <div className='mt-6 rounded-xl border border-violet-500/60 bg-zinc-700/60 p-3'>
+              <div className='grid grid-cols-3 items-center gap-2 text-center'>
                 <div>
-                  <p className='text-zinc-400'>벌당 제조 원가</p>
-                  <p className='mt-1 text-lg font-semibold'>{formatKrw(perUnitManufacturingCost)}</p>
+                  <p className='text-[11px] text-zinc-400'>벌당 제조 원가</p>
+                  <p className='mt-1 text-2xl font-semibold'>{formatKrw(perUnitManufacturingCost)}</p>
                 </div>
+                <div className='text-zinc-400'>x</div>
                 <div>
-                  <p className='text-zinc-400'>총 생산 수량</p>
-                  <p className='mt-1 text-lg font-semibold'>{formatCount(totalProductionQty)}</p>
+                  <p className='text-[11px] text-zinc-400'>총 생산 수량</p>
+                  <p className='mt-1 text-2xl font-semibold'>{formatProductionCount(totalProductionQty)}</p>
                 </div>
-                <div>
-                  <p className='text-zinc-400'>총 소요 예산</p>
-                  <p className='mt-1 text-2xl font-semibold'>{formatKrw(totalManufacturingCost)}</p>
-                </div>
+              </div>
+
+              <div className='mt-2 border-t border-zinc-500/50 pt-2 text-center'>
+                <p className='text-[11px] text-zinc-400'>총 소요 예산</p>
+                <p className='mt-1 text-[36px] font-semibold leading-tight'>{formatKrw(totalManufacturingCost)}</p>
               </div>
             </div>
 
@@ -361,13 +423,68 @@ export default function WorksheetCostView() {
               className='mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-violet-700 to-indigo-600 text-base font-semibold text-white transition-opacity hover:opacity-90'
             >
               <WandSparkles size={16} />
-              생산 의뢰하기?
+              생산 의뢰하기
             </button>
           </aside>
 
           <section className='rounded-xl border border-gray-200 bg-white p-4'>
             <h4 className='text-lg font-semibold text-gray-800'>생산 체크리스트</h4>
-            <div className='mt-3 h-[420px] rounded-lg border border-dashed border-gray-200 bg-gray-50' />
+
+            <div className='mt-4 space-y-4 text-sm text-gray-700'>
+              <div>
+                <div className='flex items-center justify-between font-semibold'>
+                  <span>원단 총 필요량</span>
+                  <span>
+                    {formatQuantity(checklist.fabric.total)} {fabricLengthUnit}
+                  </span>
+                </div>
+                <ul className='mt-1 space-y-1 text-gray-500'>
+                  {checklist.fabric.lines.map((line) => (
+                    <li key={`fabric-${line.name}`} className='flex items-center justify-between'>
+                      <span>↳ {line.name}</span>
+                      <span>
+                        {formatQuantity(line.value)} {fabricLengthUnit}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div>
+                <div className='flex items-center justify-between font-semibold'>
+                  <span>라벨 총 필요량</span>
+                  <span>{formatQuantity(checklist.label.total)}개</span>
+                </div>
+                <ul className='mt-1 space-y-1 text-gray-500'>
+                  {checklist.label.lines.map((line) => (
+                    <li key={`label-${line.name}`} className='flex items-center justify-between'>
+                      <span>↳ {line.name}</span>
+                      <span>{formatQuantity(line.value)}개</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div>
+                <div className='flex items-center justify-between font-semibold'>
+                  <span>부자재 총 필요량</span>
+                  <span>{formatQuantity(checklist.trim.total)}개</span>
+                </div>
+                <ul className='mt-1 space-y-1 text-gray-500'>
+                  {checklist.trim.lines.map((line) => (
+                    <li key={`trim-${line.name}`} className='flex items-center justify-between'>
+                      <span>↳ {line.name}</span>
+                      <span>{formatQuantity(line.value)}개</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </section>
+
+          <section className='rounded-xl border border-gray-200 bg-white p-4'>
+            <h4 className='text-lg font-semibold text-gray-800'>기타 주의사항</h4>
+            <div className='mt-3 h-[160px] rounded-lg border border-dashed border-gray-200 bg-gray-50' />
           </section>
         </div>
       </div>

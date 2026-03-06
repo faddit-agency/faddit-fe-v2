@@ -2,6 +2,7 @@ import React, {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useRef,
   useState,
   type MutableRefObject,
@@ -12,7 +13,7 @@ import {
   FabricImage,
   FabricObject,
   Group,
-  IText,
+  cache,
   loadSVGFromString,
 } from 'fabric';
 import { applyPathfinderOperation, type PathfinderOp } from './pathfinder';
@@ -51,8 +52,12 @@ interface CanvasCtx {
   setActiveTool: (t: ToolType) => void;
   strokeColor: string;
   setStrokeColor: (c: string) => void;
+  strokePantoneCode: string | null;
+  setStrokePantoneCode: (code: string | null) => void;
   fillColor: string;
   setFillColor: (c: string) => void;
+  fillPantoneCode: string | null;
+  setFillPantoneCode: (code: string | null) => void;
   strokeWidth: number;
   setStrokeWidth: (w: number) => void;
   fontSize: number;
@@ -61,6 +66,8 @@ interface CanvasCtx {
   setFontFamily: (font: string) => void;
   fontWeight: string;
   setFontWeight: (weight: string) => void;
+  fontStyle: string;
+  setFontStyle: (style: string) => void;
   cornerRadius: number;
   setCornerRadius: (radius: number) => void;
   selectedType: string | null;
@@ -81,6 +88,12 @@ interface CanvasCtx {
   toggleLayerExpanded: (id: string) => void;
   moveLayerUp: (id: string) => void;
   moveLayerDown: (id: string) => void;
+  moveLayerToFront: (id: string) => void;
+  moveLayerToBack: (id: string) => void;
+  bringSelectionForward: () => void;
+  sendSelectionBackward: () => void;
+  bringSelectionToFront: () => void;
+  sendSelectionToBack: () => void;
   alignSelected: (type: AlignType) => void;
   uploadToCanvas: (file: File) => void;
   activeLayerId: string | null;
@@ -109,7 +122,192 @@ const LAYER_NAME_MAP: Record<string, string> = {
   group: '그룹',
 };
 
-type ObjWithData = FabricObject & { data?: { id?: string; name?: string; kind?: string } };
+type ObjectData = {
+  id?: string;
+  name?: string;
+  kind?: string;
+  fill_pantone_code?: string | null;
+  stroke_pantone_code?: string | null;
+};
+
+type ObjWithData = FabricObject & { data?: ObjectData };
+
+type CanvasTextObject = FabricObject & {
+  text?: string;
+  fontFamily?: string;
+  fontWeight?: string | number;
+  fontStyle?: string;
+  fontSize?: number;
+  styles?: Record<string, Record<string, Record<string, unknown>>>;
+  initDimensions: () => void;
+};
+
+const FONT_FAMILY_ALIASES: Record<string, string> = {
+  'spoqahan sans neo': 'Spoqa Han Sans Neo',
+  'spoqa han sans neo': 'Spoqa Han Sans Neo',
+  pretendard: 'Pretendard',
+  suit: 'SUIT',
+  'noto sans kr': 'Noto Sans KR',
+};
+
+const FONT_PRELOAD_FAMILIES = [
+  'Pretendard',
+  'SUIT',
+  'Spoqa Han Sans Neo',
+  'Noto Sans KR',
+  'Noto Serif KR',
+  'IBM Plex Sans KR',
+  'IBM Plex Serif KR',
+  'Nanum Gothic',
+  'Nanum Myeongjo',
+  'Nanum Pen Script',
+  'Nanum Brush Script',
+  'Black Han Sans',
+  'Gowun Dodum',
+  'Gowun Batang',
+  'Do Hyeon',
+  'Jua',
+  'Sunflower',
+  'Song Myung',
+  'Poor Story',
+  'Hi Melody',
+  'Gamja Flower',
+  'Yeon Sung',
+  'Inter',
+  'Roboto',
+  'Open Sans',
+  'Lato',
+  'Montserrat',
+  'Poppins',
+  'Nunito',
+  'Raleway',
+  'Work Sans',
+  'Manrope',
+  'DM Sans',
+  'Source Sans 3',
+  'Source Serif 4',
+  'Merriweather',
+  'Playfair Display',
+  'PT Sans',
+  'Rubik',
+  'Quicksand',
+  'Space Grotesk',
+  'Oswald',
+  'Barlow',
+  'Fira Sans',
+  'Fira Mono',
+  'JetBrains Mono',
+  'Inconsolata',
+  'Helvetica Neue',
+  'Arial',
+  'Georgia',
+  'Times New Roman',
+  'Courier New',
+  'Trebuchet MS',
+  'Impact',
+  'Malgun Gothic',
+  'Apple SD Gothic Neo',
+] as const;
+
+function resolveFontFamilyAlias(font: string): string {
+  const normalized = String(font ?? '')
+    .trim()
+    .replace(/^['"]+|['"]+$/g, '');
+  const key = normalized.toLowerCase();
+  return FONT_FAMILY_ALIASES[key] ?? normalized;
+}
+
+function getFontLoadCandidates(font: string): string[] {
+  const resolved = resolveFontFamilyAlias(font);
+  const candidates = new Set<string>([resolved]);
+  if (resolved === 'Spoqa Han Sans Neo') {
+    candidates.add('SpoqaHan Sans Neo');
+  }
+  if (resolved === 'Pretendard') {
+    candidates.add('Pretendard Variable');
+  }
+  if (resolved === 'SUIT') {
+    candidates.add('SUIT Variable');
+  }
+  return [...candidates];
+}
+
+function isTextObject(obj: FabricObject | null | undefined): obj is CanvasTextObject {
+  if (!obj) {
+    return false;
+  }
+  const type = String(obj.type ?? '').toLowerCase();
+  return type === 'i-text' || type === 'textbox' || type === 'text';
+}
+
+function syncInlineFontStyles(target: CanvasTextObject): boolean {
+  const styleMap = target.styles;
+  if (!styleMap) {
+    return false;
+  }
+
+  const desiredFamily = resolveFontFamilyAlias(target.fontFamily ?? '');
+  const desiredWeight = target.fontWeight ?? undefined;
+  const desiredStyle = target.fontStyle ?? undefined;
+  const desiredSize = target.fontSize ?? undefined;
+
+  let changed = false;
+  Object.values(styleMap).forEach((lineStyles) => {
+    if (!lineStyles || typeof lineStyles !== 'object') {
+      return;
+    }
+
+    Object.values(lineStyles).forEach((charStyle) => {
+      if (!charStyle || typeof charStyle !== 'object') {
+        return;
+      }
+      const mutableStyle = charStyle as Record<string, unknown>;
+
+      if (desiredFamily && mutableStyle.fontFamily !== desiredFamily) {
+        mutableStyle.fontFamily = desiredFamily;
+        changed = true;
+      }
+      if (desiredWeight !== undefined && mutableStyle.fontWeight !== desiredWeight) {
+        mutableStyle.fontWeight = desiredWeight;
+        changed = true;
+      }
+      if (desiredStyle !== undefined && mutableStyle.fontStyle !== desiredStyle) {
+        mutableStyle.fontStyle = desiredStyle;
+        changed = true;
+      }
+      if (desiredSize !== undefined && mutableStyle.fontSize !== desiredSize) {
+        mutableStyle.fontSize = desiredSize;
+        changed = true;
+      }
+    });
+  });
+
+  return changed;
+}
+
+function clearAllInlineTextStyles(target: CanvasTextObject): boolean {
+  const styleMap = target.styles;
+  if (!styleMap || Object.keys(styleMap).length === 0) {
+    return false;
+  }
+  target.styles = {};
+  return true;
+}
+
+function normalizeTextForFontChange(target: CanvasTextObject): void {
+  clearAllInlineTextStyles(target);
+
+  const styleOps = target as CanvasTextObject & {
+    removeStyle?: (prop: 'fontFamily' | 'fontWeight' | 'fontStyle' | 'fontSize') => void;
+  };
+  styleOps.removeStyle?.('fontFamily');
+  styleOps.removeStyle?.('fontWeight');
+  styleOps.removeStyle?.('fontStyle');
+  styleOps.removeStyle?.('fontSize');
+
+  // Force Fabric to rebuild grapheme/style internals.
+  target.set({ text: `${target.text ?? ''}` });
+}
 
 function isArrowObject(obj: FabricObject): boolean {
   const data = (obj as ObjWithData).data;
@@ -157,24 +355,25 @@ function buildLayerTree(
       const currentData = (obj as ObjWithData).data;
       const fallbackId = `obj-${Date.now()}-${counter.n}`;
       const fallbackName = LAYER_NAME_MAP[type] ?? type;
-    const normalizedData = {
-      id: currentData?.id ?? fallbackId,
-      name: currentData?.name ?? fallbackName,
-    };
+      const normalizedData = {
+        ...(currentData ?? {}),
+        id: currentData?.id ?? fallbackId,
+        name: currentData?.name ?? fallbackName,
+      };
 
-    if (!currentData?.id || !currentData?.name) {
-      (obj as ObjWithData).data = normalizedData;
-    }
+      if (!currentData?.id || !currentData?.name) {
+        (obj as ObjWithData).data = normalizedData;
+      }
 
-    const id = normalizedData.id;
-    const name = normalizedData.name;
-    const isGroup = obj instanceof Group;
-    const isExpanded = expandedIds.has(id);
+      const id = normalizedData.id;
+      const name = normalizedData.name;
+      const isGroup = obj instanceof Group;
+      const isExpanded = expandedIds.has(id);
 
-    const children: LayerItem[] =
-      isGroup && isExpanded
-        ? buildLayerTree((obj as Group).getObjects(), depth + 1, expandedIds, counter)
-        : [];
+      const children: LayerItem[] =
+        isGroup && isExpanded
+          ? buildLayerTree((obj as Group).getObjects(), depth + 1, expandedIds, counter)
+          : [];
 
       return {
         obj,
@@ -232,11 +431,14 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
 
   const [activeTool, setActiveTool] = useState<ToolType>('select');
   const [strokeColor, setStrokeColorState] = useState('#000000');
+  const [strokePantoneCode, setStrokePantoneCodeState] = useState<string | null>(null);
   const [fillColor, setFillColorState] = useState('#ffffff');
-  const [strokeWidth, setStrokeWidthState] = useState(2);
+  const [fillPantoneCode, setFillPantoneCodeState] = useState<string | null>(null);
+  const [strokeWidth, setStrokeWidthState] = useState(1);
   const [fontSize, setFontSizeState] = useState(20);
   const [fontFamily, setFontFamilyState] = useState('Arial');
   const [fontWeight, setFontWeightState] = useState('normal');
+  const [fontStyle, setFontStyleState] = useState('normal');
   const [cornerRadius, setCornerRadiusState] = useState(0);
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
@@ -245,6 +447,25 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
   const [canRedo, setCanRedo] = useState(false);
   const [layers, setLayers] = useState<LayerItem[]>([]);
   const [canvasSession, setCanvasSession] = useState(0);
+
+  useEffect(() => {
+    const fontFaceSet = (document as Document & { fonts?: FontFaceSet }).fonts;
+    if (!fontFaceSet) {
+      return;
+    }
+
+    const preloadSampleText = '텍스트 가나다라마바사 ABC 123';
+    FONT_PRELOAD_FAMILIES.forEach((family) => {
+      const candidates = getFontLoadCandidates(family);
+      candidates.forEach((candidate) => {
+        const jobs = [
+          fontFaceSet.load(`400 16px "${candidate}"`, preloadSampleText),
+          fontFaceSet.load(`700 16px "${candidate}"`, preloadSampleText),
+        ];
+        void Promise.allSettled(jobs);
+      });
+    });
+  }, []);
 
   const syncUndoRedo = useCallback(() => {
     setCanUndo(historyIdxRef.current > 0);
@@ -285,10 +506,33 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
     [refreshLayers],
   );
 
+  const normalizeTextScale = useCallback((obj: FabricObject) => {
+    if (!isTextObject(obj)) {
+      return false;
+    }
+
+    const scaleX = obj.scaleX ?? 1;
+    const scaleY = obj.scaleY ?? 1;
+    if (Math.abs(scaleX - 1) < 0.001 && Math.abs(scaleY - 1) < 0.001) {
+      return false;
+    }
+
+    const nextFontSize = Math.max(1, Math.round((obj.fontSize ?? 20) * Math.max(scaleX, scaleY)));
+    obj.set({
+      fontSize: nextFontSize,
+      scaleX: 1,
+      scaleY: 1,
+    });
+    obj.setCoords();
+    return true;
+  }, []);
+
   const syncSelectionProps = useCallback((obj: FabricObject | null) => {
     if (!obj) {
       setSelectedType(null);
       setActiveLayerId(null);
+      setFillPantoneCodeState(null);
+      setStrokePantoneCodeState(null);
       return;
     }
     setSelectedType(obj.type ?? null);
@@ -296,17 +540,29 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
     if (typeof fill === 'string' && fill) setFillColorState(fill);
     const stroke = obj.get('stroke');
     if (typeof stroke === 'string' && stroke) setStrokeColorState(stroke);
-    if (obj instanceof IText) {
+    if (isTextObject(obj)) {
       setFontSizeState(obj.fontSize ?? 20);
-      setFontFamilyState(obj.fontFamily ?? 'Arial');
+      setFontFamilyState(resolveFontFamilyAlias(obj.fontFamily ?? 'Arial'));
       setFontWeightState((obj.fontWeight as string) ?? 'normal');
+      setFontStyleState(obj.fontStyle ?? 'normal');
     }
     if (obj.type === 'rect') {
       setCornerRadiusState(((obj as unknown as { rx?: number }).rx ?? 0) as number);
     } else {
       setCornerRadiusState(0);
     }
-    setActiveLayerId((obj as ObjWithData).data?.id ?? null);
+    const data = (obj as ObjWithData).data;
+    setFillPantoneCodeState(
+      typeof data?.fill_pantone_code === 'string' && data.fill_pantone_code.trim() !== ''
+        ? data.fill_pantone_code
+        : null,
+    );
+    setStrokePantoneCodeState(
+      typeof data?.stroke_pantone_code === 'string' && data.stroke_pantone_code.trim() !== ''
+        ? data.stroke_pantone_code
+        : null,
+    );
+    setActiveLayerId(data?.id ?? null);
   }, []);
 
   const exportCanvasJson = useCallback(() => {
@@ -367,12 +623,47 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
       c.on('object:scaling', (e) => {
         const obj = e.target;
         if (!obj) return;
-        if (obj.type !== 'i-text' && obj.type !== 'image') {
+        if (isTextObject(obj)) {
+          const previewFontSize = Math.max(
+            1,
+            Math.round((obj.fontSize ?? 20) * Math.max(obj.scaleX ?? 1, obj.scaleY ?? 1)),
+          );
+          setFontSizeState(previewFontSize);
+          return;
+        }
+        if (obj.type !== 'image') {
           obj.set({ strokeUniform: true });
         }
       });
       c.on('object:removed', refreshLayers);
-      c.on('object:modified', refreshLayers);
+      c.on('object:modified', (e) => {
+        const obj = e.target;
+        if (obj && normalizeTextScale(obj)) {
+          c.renderAll();
+        }
+        refreshLayers();
+        syncSelectionProps(obj ?? c.getActiveObject() ?? null);
+      });
+      c.on('text:changed', (e) => {
+        const obj = e.target;
+        if (!isTextObject(obj)) {
+          return;
+        }
+
+        if (syncInlineFontStyles(obj)) {
+          const resolvedFamily = resolveFontFamilyAlias(obj.fontFamily ?? '');
+          if (resolvedFamily) {
+            cache.clearFontCache(resolvedFamily);
+          }
+          obj.initDimensions();
+          obj.dirty = true;
+          obj.setCoords();
+          c.requestRenderAll();
+        }
+
+        syncSelectionProps(obj);
+        refreshLayers();
+      });
       c.on('selection:created', (e) => syncSelectionProps(e.selected?.[0] ?? null));
       c.on('selection:updated', (e) => syncSelectionProps(e.selected?.[0] ?? null));
       c.on('selection:cleared', () => syncSelectionProps(null));
@@ -391,25 +682,73 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
         });
       });
     },
-    [saveHistory, refreshLayers, syncSelectionProps],
+    [saveHistory, refreshLayers, syncSelectionProps, normalizeTextScale],
   );
 
   const setFillColor = useCallback((c: string) => {
     setFillColorState(c);
+    setFillPantoneCodeState(null);
     const obj = canvasRef.current?.getActiveObject();
     if (obj) {
       obj.set('fill', c);
+      const objWithData = obj as ObjWithData;
+      const currentData = objWithData.data ?? {};
+      const nextData: ObjectData = { ...currentData };
+      delete nextData.fill_pantone_code;
+      objWithData.data = nextData;
       canvasRef.current?.renderAll();
     }
   }, []);
 
+  const setFillPantoneCode = useCallback((code: string | null) => {
+    setFillPantoneCodeState(code);
+    const obj = canvasRef.current?.getActiveObject() as ObjWithData | undefined;
+    if (!obj) {
+      return;
+    }
+
+    const currentData = obj.data ?? {};
+    const nextData: ObjectData = { ...currentData };
+    if (code && code.trim() !== '') {
+      nextData.fill_pantone_code = code;
+    } else {
+      delete nextData.fill_pantone_code;
+    }
+    obj.data = nextData;
+    canvasRef.current?.renderAll();
+  }, []);
+
   const setStrokeColor = useCallback((c: string) => {
     setStrokeColorState(c);
+    setStrokePantoneCodeState(null);
     const obj = canvasRef.current?.getActiveObject();
     if (obj) {
       obj.set('stroke', c);
+      const objWithData = obj as ObjWithData;
+      const currentData = objWithData.data ?? {};
+      const nextData: ObjectData = { ...currentData };
+      delete nextData.stroke_pantone_code;
+      objWithData.data = nextData;
       canvasRef.current?.renderAll();
     }
+  }, []);
+
+  const setStrokePantoneCode = useCallback((code: string | null) => {
+    setStrokePantoneCodeState(code);
+    const obj = canvasRef.current?.getActiveObject() as ObjWithData | undefined;
+    if (!obj) {
+      return;
+    }
+
+    const currentData = obj.data ?? {};
+    const nextData: ObjectData = { ...currentData };
+    if (code && code.trim() !== '') {
+      nextData.stroke_pantone_code = code;
+    } else {
+      delete nextData.stroke_pantone_code;
+    }
+    obj.data = nextData;
+    canvasRef.current?.renderAll();
   }, []);
 
   const setStrokeWidth = useCallback((w: number) => {
@@ -421,30 +760,134 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const setFontSize = useCallback((size: number) => {
-    setFontSizeState(size);
-    const obj = canvasRef.current?.getActiveObject();
-    if (obj instanceof IText) {
-      obj.set('fontSize', size);
-      canvasRef.current?.renderAll();
-    }
-  }, []);
+  const setFontSize = useCallback(
+    (size: number) => {
+      setFontSizeState(size);
+      const activeObj = canvasRef.current?.getActiveObject();
+      const target = isTextObject(activeObj) ? activeObj : null;
+      if (target) {
+        clearAllInlineTextStyles(target);
+        target.set({ fontSize: size });
+        target.initDimensions();
+        target.dirty = true;
+        target.setCoords();
+        canvasRef.current?.renderAll();
+        saveHistory();
+      }
+    },
+    [saveHistory],
+  );
 
-  const setFontFamily = useCallback((font: string) => {
-    setFontFamilyState(font);
-    const obj = canvasRef.current?.getActiveObject();
-    if (obj instanceof IText) {
-      obj.set('fontFamily', font);
-      canvasRef.current?.renderAll();
-    }
-  }, []);
+  const setFontFamily = useCallback(
+    (font: string) => {
+      const resolvedFamily = resolveFontFamilyAlias(font);
+      setFontFamilyState(resolvedFamily);
+
+      const activeObj = canvasRef.current?.getActiveObject();
+      const target = isTextObject(activeObj) ? activeObj : null;
+
+      if (target) {
+        const previousFamily = resolveFontFamilyAlias(target.fontFamily ?? '');
+        if (previousFamily) {
+          cache.clearFontCache(previousFamily);
+        }
+        cache.clearFontCache(resolvedFamily);
+        normalizeTextForFontChange(target);
+        target.set({ fontFamily: resolvedFamily });
+        target.initDimensions();
+        target.dirty = true;
+        target.setCoords();
+        canvasRef.current?.renderAll();
+        saveHistory();
+      }
+
+      const fontFaceSet = (document as Document & { fonts?: FontFaceSet }).fonts;
+      if (fontFaceSet) {
+        const sampleText = (target?.text && target.text.trim()) || '텍스트';
+        const loadJobs = getFontLoadCandidates(resolvedFamily).flatMap((candidate) => [
+          fontFaceSet.load(`400 16px "${candidate}"`, sampleText),
+        ]);
+        const maybeBold =
+          target && target.fontWeight && target.fontWeight !== 'normal' && target.fontWeight !== '400';
+        if (maybeBold) {
+          getFontLoadCandidates(resolvedFamily).forEach((candidate) => {
+            loadJobs.push(fontFaceSet.load(`700 16px "${candidate}"`, sampleText));
+          });
+        }
+
+        void Promise.allSettled(loadJobs).then(() => {
+          if (!target || target.canvas !== canvasRef.current) {
+            return;
+          }
+
+          if (resolveFontFamilyAlias(target.fontFamily ?? '') !== resolvedFamily) {
+            return;
+          }
+
+          normalizeTextForFontChange(target);
+          target.set({ fontFamily: resolvedFamily });
+          cache.clearFontCache(resolvedFamily);
+          target.initDimensions();
+          target.dirty = true;
+          target.setCoords();
+          canvasRef.current?.requestRenderAll();
+        });
+      }
+    },
+    [saveHistory],
+  );
 
   const setFontWeight = useCallback(
     (weight: string) => {
       setFontWeightState(weight);
-      const obj = canvasRef.current?.getActiveObject();
-      if (obj instanceof IText) {
-        obj.set('fontWeight', weight);
+      const activeObj = canvasRef.current?.getActiveObject();
+      const target = isTextObject(activeObj) ? activeObj : null;
+      if (target) {
+        cache.clearFontCache(target.fontFamily ?? undefined);
+        clearAllInlineTextStyles(target);
+        target.set({ fontWeight: weight });
+        target.initDimensions();
+        target.dirty = true;
+        target.setCoords();
+        canvasRef.current?.renderAll();
+        saveHistory();
+
+        const fontFaceSet = (document as Document & { fonts?: FontFaceSet }).fonts;
+        const resolvedFamily = resolveFontFamilyAlias(target.fontFamily ?? '');
+        if (fontFaceSet && resolvedFamily) {
+          const numericWeight = weight === 'bold' ? 700 : Number(weight) || 400;
+          const sampleText = (target.text && target.text.trim()) || '텍스트';
+          const loadJobs = getFontLoadCandidates(resolvedFamily).map((candidate) =>
+            fontFaceSet.load(`${numericWeight} 16px "${candidate}"`, sampleText),
+          );
+          void Promise.allSettled(loadJobs).then(() => {
+            if (!target || target.canvas !== canvasRef.current) {
+              return;
+            }
+            cache.clearFontCache(resolvedFamily);
+            target.initDimensions();
+            target.dirty = true;
+            target.setCoords();
+            canvasRef.current?.requestRenderAll();
+          });
+        }
+      }
+    },
+    [saveHistory],
+  );
+
+  const setFontStyle = useCallback(
+    (style: string) => {
+      setFontStyleState(style);
+      const activeObj = canvasRef.current?.getActiveObject();
+      const target = isTextObject(activeObj) ? activeObj : null;
+      if (target) {
+        cache.clearFontCache(target.fontFamily ?? undefined);
+        clearAllInlineTextStyles(target);
+        target.set({ fontStyle: style });
+        target.initDimensions();
+        target.dirty = true;
+        target.setCoords();
         canvasRef.current?.renderAll();
         saveHistory();
       }
@@ -519,33 +962,88 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
     [findLayerById, refreshLayers],
   );
 
-  const moveLayerUp = useCallback(
-    (id: string) => {
+  const reorderObject = useCallback(
+    (target: FabricObject, direction: 'forward' | 'backward' | 'front' | 'back') => {
       const canvas = canvasRef.current;
-      if (!canvas) return;
-      const item = findLayerById(id);
-      if (!item) return;
-      canvas.bringObjectForward(item.obj);
+      if (!canvas) return false;
+
+      if (direction === 'forward') {
+        canvas.bringObjectForward(target);
+      } else if (direction === 'backward') {
+        canvas.sendObjectBackwards(target);
+      } else if (direction === 'front') {
+        canvas.bringObjectToFront(target);
+      } else {
+        canvas.sendObjectToBack(target);
+      }
+
       canvas.renderAll();
       refreshLayers();
       saveHistory();
+      return true;
     },
-    [findLayerById, refreshLayers, saveHistory],
+    [refreshLayers, saveHistory],
+  );
+
+  const moveLayerUp = useCallback(
+    (id: string) => {
+      const item = findLayerById(id);
+      if (!item) return;
+      reorderObject(item.obj, 'forward');
+    },
+    [findLayerById, reorderObject],
   );
 
   const moveLayerDown = useCallback(
     (id: string) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
       const item = findLayerById(id);
       if (!item) return;
-      canvas.sendObjectBackwards(item.obj);
-      canvas.renderAll();
-      refreshLayers();
-      saveHistory();
+      reorderObject(item.obj, 'backward');
     },
-    [findLayerById, refreshLayers, saveHistory],
+    [findLayerById, reorderObject],
   );
+
+  const moveLayerToFront = useCallback(
+    (id: string) => {
+      const item = findLayerById(id);
+      if (!item) return;
+      reorderObject(item.obj, 'front');
+    },
+    [findLayerById, reorderObject],
+  );
+
+  const moveLayerToBack = useCallback(
+    (id: string) => {
+      const item = findLayerById(id);
+      if (!item) return;
+      reorderObject(item.obj, 'back');
+    },
+    [findLayerById, reorderObject],
+  );
+
+  const bringSelectionForward = useCallback(() => {
+    const activeObject = canvasRef.current?.getActiveObject();
+    if (!activeObject) return;
+    reorderObject(activeObject, 'forward');
+  }, [reorderObject]);
+
+  const sendSelectionBackward = useCallback(() => {
+    const activeObject = canvasRef.current?.getActiveObject();
+    if (!activeObject) return;
+    reorderObject(activeObject, 'backward');
+  }, [reorderObject]);
+
+  const bringSelectionToFront = useCallback(() => {
+    const activeObject = canvasRef.current?.getActiveObject();
+    if (!activeObject) return;
+    reorderObject(activeObject, 'front');
+  }, [reorderObject]);
+
+  const sendSelectionToBack = useCallback(() => {
+    const activeObject = canvasRef.current?.getActiveObject();
+    if (!activeObject) return;
+    reorderObject(activeObject, 'back');
+  }, [reorderObject]);
 
   const alignSelected = useCallback(
     (type: AlignType) => {
@@ -959,8 +1457,12 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
         setActiveTool,
         strokeColor,
         setStrokeColor,
+        strokePantoneCode,
+        setStrokePantoneCode,
         fillColor,
         setFillColor,
+        fillPantoneCode,
+        setFillPantoneCode,
         strokeWidth,
         setStrokeWidth,
         fontSize,
@@ -969,6 +1471,8 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
         setFontFamily,
         fontWeight,
         setFontWeight,
+        fontStyle,
+        setFontStyle,
         cornerRadius,
         setCornerRadius,
         selectedType,
@@ -989,6 +1493,12 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
         toggleLayerExpanded,
         moveLayerUp,
         moveLayerDown,
+        moveLayerToFront,
+        moveLayerToBack,
+        bringSelectionForward,
+        sendSelectionBackward,
+        bringSelectionToFront,
+        sendSelectionToBack,
         alignSelected,
         uploadToCanvas,
         activeLayerId,
