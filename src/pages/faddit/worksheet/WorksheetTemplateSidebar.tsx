@@ -21,6 +21,7 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
+import ThemeToggle from '../../../components/ThemeToggle';
 import FadditLogoOnly from '../../../images/icons/faddit-logo-only.svg';
 import {
   createDriveFile,
@@ -1953,7 +1954,8 @@ export default function WorksheetTemplateSidebar({
             </button>
           ))}
           {collapsible && (
-            <div className='mt-auto flex justify-center py-2'>
+            <div className='mt-auto flex flex-col items-center gap-1 py-2'>
+              <ThemeToggle variant='sidebar' />
               <button
                 type='button'
                 onClick={() => setContentOpen((open) => !open)}

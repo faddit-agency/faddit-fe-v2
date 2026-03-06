@@ -47,6 +47,7 @@ import {
   CgPathTrim,
   CgPathUnite,
 } from 'react-icons/cg';
+import ThemeToggle from '../../../components/ThemeToggle';
 import FadditLogoOnly from '../../../images/icons/faddit-logo-only.svg';
 import { useCanvas, type AlignType, type ToolType } from './CanvasProvider';
 import type { PathfinderOp } from './pathfinder';
@@ -628,7 +629,8 @@ export default function WorksheetToolbox() {
               </button>
             </SidePanelTooltip>
           ))}
-          <div className='mt-auto flex justify-center py-2'>
+          <div className='mt-auto flex flex-col items-center gap-1 py-2'>
+            <ThemeToggle variant='sidebar' />
             <SidePanelTooltip title={contentOpen ? '도구모음 접기' : '도구모음 펼치기'}>
               <button
                 type='button'
