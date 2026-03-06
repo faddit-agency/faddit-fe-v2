@@ -282,3 +282,41 @@
 .dark .arc-file-icon--active {
   color: #d2b7db;
 }
+
+.drive-top-nav-icon-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  line-height: 0;
+  flex-shrink: 0;
+}
+
+.drive-top-nav-icon {
+  width: 15px;
+  height: 15px;
+  display: block;
+  transform-origin: center;
+  transition: color 0.2s ease;
+}
+
+.drive-top-nav-icon--home {
+  transform: scale(1.12);
+}
+
+.drive-top-nav-icon--idle {
+  color: #a486b5;
+}
+
+.drive-top-nav-icon--active {
+  color: #a486b5;
+}
+
+.dark .drive-top-nav-icon--idle {
+  color: #c4abd2;
+}
+
+.dark .drive-top-nav-icon--active {
+  color: #e1cbff;
+}
