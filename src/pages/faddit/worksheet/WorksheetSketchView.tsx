@@ -130,7 +130,7 @@ function isArrowPathObject(obj: FabricObject | null): obj is Path {
 function isHoverOverlayObject(obj: FabricObject | null): boolean {
   if (!obj) return false;
   const data = getObjectData(obj);
-  return data?.kind === '__hover_overlay__';
+  return data?.kind === '__hover_overlay__' || data?.kind === '__artboard__';
 }
 
 function buildArrowPathCommands(tail: ArrowPoint, tip: ArrowPoint): TSimplePathData {

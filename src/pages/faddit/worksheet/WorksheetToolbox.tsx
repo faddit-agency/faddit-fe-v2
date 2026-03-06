@@ -47,7 +47,9 @@ import {
   CgPathTrim,
   CgPathUnite,
 } from 'react-icons/cg';
+import ThemeToggle from '../../../components/ThemeToggle';
 import FadditLogoOnly from '../../../images/icons/faddit-logo-only.svg';
+import { useThemeProvider } from '../../../utils/ThemeContext';
 import { useCanvas, type AlignType, type ToolType } from './CanvasProvider';
 import type { PathfinderOp } from './pathfinder';
 import SketchColorPicker from './SketchColorPicker';
@@ -55,12 +57,13 @@ import SketchColorPicker from './SketchColorPicker';
 const CONTENT_PANEL_WIDTH = 230;
 const GAP_X = 12;
 const SIDEPANEL_BUTTON_BASE =
-  'rounded-md border border-transparent transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1';
-const SIDEPANEL_BUTTON_IDLE = 'cursor-pointer text-gray-600 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700';
+  'rounded-md border border-transparent transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1 focus-visible:ring-offset-white dark:focus-visible:ring-offset-gray-900';
+const SIDEPANEL_BUTTON_IDLE =
+  'cursor-pointer text-gray-600 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 dark:text-gray-300 dark:hover:border-violet-400/50 dark:hover:bg-violet-500/10 dark:hover:text-violet-200';
 const SIDEPANEL_BUTTON_ACTIVE =
   'border-violet-500 bg-faddit text-white shadow-[0_4px_10px_rgba(118,59,255,0.22)] hover:border-violet-500 hover:bg-violet-600 hover:text-white';
 const SIDEPANEL_BUTTON_DISABLED =
-  'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-300 hover:border-gray-200 hover:bg-gray-50 hover:text-gray-300';
+  'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-300 hover:border-gray-200 hover:bg-gray-50 hover:text-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-500 dark:hover:border-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-500';
 
 const TOOL_ITEMS = [
   { key: 'template', label: '템플릿', icon: LayoutGrid },
@@ -427,6 +430,8 @@ type SidePanelOpenEventDetail = {
 };
 
 export default function WorksheetToolbox() {
+  const { currentTheme } = useThemeProvider();
+  const isDarkMode = currentTheme === 'dark';
   const [activePanelKey, setActivePanelKey] = useState('template');
   const [contentOpen, setContentOpen] = useState(true);
   const [colorTarget, setColorTarget] = useState<'fill' | 'stroke'>('fill');
@@ -598,12 +603,12 @@ export default function WorksheetToolbox() {
   }, []);
 
   return (
-    <div className='flex h-full min-h-0 bg-white p-2'>
+    <div className={`worksheet-toolbox flex h-full min-h-0 bg-white p-2 dark:bg-gray-900 ${isDarkMode ? 'dark' : ''}`}>
       <div className='flex min-h-0 min-w-0 flex-1'>
         <nav className='flex w-14 shrink-0 flex-col gap-y-2'>
           <Link
             to='/faddit/drive'
-            className='flex aspect-square items-center justify-center rounded-md border border-transparent p-2 text-gray-600 transition-all duration-150 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1'
+            className='flex aspect-square items-center justify-center rounded-md border border-transparent p-2 text-gray-600 transition-all duration-150 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1 dark:text-gray-300 dark:hover:border-violet-400/50 dark:hover:bg-violet-500/10 dark:hover:text-violet-200'
             aria-label='패딧 홈으로 이동'
           >
             <img src={FadditLogoOnly} alt='Faddit' className='h-7 w-7' />
@@ -620,7 +625,7 @@ export default function WorksheetToolbox() {
                 className={`flex w-full touch-manipulation aspect-square cursor-pointer flex-col items-center justify-center gap-0.5 rounded-md border p-2 text-[10px] transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1 ${
                   activePanelKey === key
                     ? 'border-violet-500 bg-faddit text-white shadow-[0_6px_14px_rgba(118,59,255,0.26)] hover:bg-violet-600'
-                    : 'border-transparent text-gray-600 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700'
+                    : 'border-transparent text-gray-600 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 dark:text-gray-300 dark:hover:border-violet-400/50 dark:hover:bg-violet-500/10 dark:hover:text-violet-200'
                 }`}
               >
                 <Icon size={20} strokeWidth={1.5} />
@@ -628,7 +633,8 @@ export default function WorksheetToolbox() {
               </button>
             </SidePanelTooltip>
           ))}
-          <div className='mt-auto flex justify-center py-2'>
+          <div className='mt-auto flex flex-col items-center gap-1 py-2'>
+            <ThemeToggle variant='sidebar' />
             <SidePanelTooltip title={contentOpen ? '도구모음 접기' : '도구모음 펼치기'}>
               <button
                 type='button'
@@ -636,7 +642,7 @@ export default function WorksheetToolbox() {
                   handleFastPress(event, () => setContentOpen((open) => !open))
                 }
                 onClick={() => runClickAction(() => setContentOpen((open) => !open))}
-                className='touch-manipulation rounded-md border border-transparent p-1 text-gray-500 transition-all duration-150 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1'
+                className='touch-manipulation rounded-md border border-transparent p-1 text-gray-500 transition-all duration-150 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1 dark:text-gray-400 dark:hover:border-violet-400/50 dark:hover:bg-violet-500/10 dark:hover:text-violet-200'
                 title={contentOpen ? '도구모음 접기' : '도구모음 펼치기'}
                 aria-label={contentOpen ? '도구모음 접기' : '도구모음 펼치기'}
               >
@@ -660,7 +666,7 @@ export default function WorksheetToolbox() {
           >
             {activePanelKey === 'tools' ? (
               <div className='flex min-h-0 flex-1 flex-col gap-y-3 overflow-y-auto'>
-                <p className='shrink-0 text-[11px] font-semibold tracking-wider text-gray-400 uppercase'>
+                <p className='shrink-0 text-[11px] font-semibold tracking-wider text-gray-400 uppercase dark:text-gray-500'>
                   그리기
                 </p>
                 <div className='grid grid-cols-3 gap-2'>
@@ -686,7 +692,7 @@ export default function WorksheetToolbox() {
             ) : activePanelKey === 'text' ? (
               <div className='flex min-h-0 flex-1 flex-col gap-y-3 overflow-y-auto overflow-x-hidden'>
                 <div className='flex items-center justify-between gap-2'>
-                  <p className='text-[11px] font-semibold tracking-wider text-gray-400 uppercase'>
+                  <p className='text-[11px] font-semibold tracking-wider text-gray-400 uppercase dark:text-gray-500'>
                     텍스트
                   </p>
                   <SidePanelTooltip title={activeTool === 'text' ? '텍스트 모드' : '텍스트 추가'}>
@@ -702,11 +708,11 @@ export default function WorksheetToolbox() {
                   </SidePanelTooltip>
                 </div>
 
-                <div className='rounded-md border border-gray-200/90 bg-gray-50/70 p-2'>
-                  <p className='mb-1 text-[10px] font-semibold tracking-wide text-gray-500'>텍스트 스타일</p>
+                <div className='rounded-md border border-gray-200/90 bg-gray-50/70 p-2 dark:border-gray-700 dark:bg-gray-800/70'>
+                  <p className='mb-1 text-[10px] font-semibold tracking-wide text-gray-500 dark:text-gray-400'>텍스트 스타일</p>
                   <div className='grid grid-cols-[1fr_auto_auto] items-center gap-1.5'>
-                    <label className='flex min-w-0 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2'>
-                      <span className='shrink-0 text-[10px] text-gray-500'>크기</span>
+                    <label className='flex min-w-0 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2 dark:border-gray-700 dark:bg-gray-900'>
+                      <span className='shrink-0 text-[10px] text-gray-500 dark:text-gray-400'>크기</span>
                       <input
                         type='number'
                         min={8}
@@ -719,7 +725,7 @@ export default function WorksheetToolbox() {
                           }
                           setFontSize(Math.max(8, Math.min(200, Math.round(parsed))));
                         }}
-                        className='h-7 min-w-0 flex-1 text-right text-[11px] text-gray-700 outline-none border-none focus:ring-0'
+                        className='h-7 min-w-0 flex-1 text-right text-[11px] text-gray-700 outline-none border-none focus:ring-0 dark:text-gray-200 dark:bg-transparent'
                       />
                     </label>
                     <SidePanelTooltip title='굵게'>
@@ -749,19 +755,19 @@ export default function WorksheetToolbox() {
                   </div>
                 </div>
 
-                <div className='flex min-h-0 flex-1 flex-col rounded-md border border-gray-200/90 bg-gray-50/70 p-2'>
+                <div className='flex min-h-0 flex-1 flex-col rounded-md border border-gray-200/90 bg-gray-50/70 p-2 dark:border-gray-700 dark:bg-gray-800/70'>
                   <div className='mb-1.5 flex items-center justify-between'>
-                    <p className='text-[10px] font-semibold tracking-wide text-gray-500'>글꼴 검색/목록</p>
-                    <span className='text-[10px] text-gray-400'>{filteredFontPresets.length}개</span>
+                    <p className='text-[10px] font-semibold tracking-wide text-gray-500 dark:text-gray-400'>글꼴 검색/목록</p>
+                    <span className='text-[10px] text-gray-400 dark:text-gray-500'>{filteredFontPresets.length}개</span>
                   </div>
-                  <div className='mb-1.5 flex min-w-0 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2'>
-                    <Search size={13} className='shrink-0 text-gray-400' />
+                  <div className='mb-1.5 flex min-w-0 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2 dark:border-gray-700 dark:bg-gray-900'>
+                    <Search size={13} className='shrink-0 text-gray-400 dark:text-gray-500' />
                     <input
                       type='text'
                       value={fontSearchQuery}
                       onChange={(event) => setFontSearchQuery(event.target.value)}
                       placeholder='폰트명 검색'
-                      className='h-7 min-w-0 flex-1 text-[11px] text-gray-700 outline-none border-none focus:ring-0'
+                      className='h-7 min-w-0 flex-1 text-[11px] text-gray-700 outline-none border-none focus:ring-0 dark:text-gray-200 dark:bg-transparent'
                     />
                   </div>
                   <div
@@ -793,14 +799,14 @@ export default function WorksheetToolbox() {
                         </SidePanelTooltip>
                       ))
                     ) : (
-                      <p className='rounded border border-dashed border-gray-200 bg-white px-2 py-2 text-[10px] text-gray-500'>
+                      <p className='rounded border border-dashed border-gray-200 bg-white px-2 py-2 text-[10px] text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400'>
                         검색 결과가 없습니다.
                       </p>
                     )}
                   </div>
                 </div>
 
-                <p className='text-[10px] text-gray-400'>
+                <p className='text-[10px] text-gray-400 dark:text-gray-500'>
                   {selectedType === 'i-text'
                     ? '선택한 텍스트 레이어에 즉시 적용됩니다.'
                     : '텍스트 레이어를 선택하지 않으면 새로 추가되는 텍스트 기본값으로 저장됩니다.'}
@@ -809,10 +815,10 @@ export default function WorksheetToolbox() {
             ) : activePanelKey === 'color' ? (
               <div className='flex min-h-0 flex-1 flex-col gap-y-3 overflow-y-auto overflow-x-hidden'>
                 <div className='flex items-center justify-between'>
-                  <p className='text-[11px] font-semibold tracking-wider text-gray-400 uppercase'>
+                  <p className='text-[11px] font-semibold tracking-wider text-gray-400 uppercase dark:text-gray-500'>
                     색상
                   </p>
-                  <div className='grid w-28 grid-cols-2 items-center rounded-md border border-gray-200 bg-gray-50 p-0.5'>
+                  <div className='grid w-28 grid-cols-2 items-center rounded-md border border-gray-200 bg-gray-50 p-0.5 dark:border-gray-700 dark:bg-gray-800'>
                     <SidePanelTooltip title='채우기 색상'>
                       <button
                         type='button'
@@ -840,7 +846,7 @@ export default function WorksheetToolbox() {
                   </div>
                 </div>
 
-                <div className='min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-xl border border-gray-200 bg-white'>
+                <div className='min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900'>
                   {colorTarget === 'fill' ? (
                     <SketchColorPicker
                       color={fillColor}
@@ -863,7 +869,7 @@ export default function WorksheetToolbox() {
             ) : activePanelKey === 'layer' ? (
               <div className='flex min-h-0 flex-1 flex-col gap-y-3 overflow-hidden'>
                 <div className='shrink-0'>
-                  <p className='mb-1.5 text-[11px] font-semibold text-gray-400'>
+                  <p className='mb-1.5 text-[11px] font-semibold text-gray-400 dark:text-gray-500'>
                     정렬
                   </p>
                   <div className='grid grid-cols-6 gap-1'>
@@ -880,7 +886,7 @@ export default function WorksheetToolbox() {
                 </div>
 
                 <div className='shrink-0'>
-                  <p className='mb-1.5 text-[11px] font-semibold text-gray-400'>
+                  <p className='mb-1.5 text-[11px] font-semibold text-gray-400 dark:text-gray-500'>
                     패스파인더
                   </p>
                   <div className='grid grid-cols-5 gap-1'>
@@ -898,7 +904,7 @@ export default function WorksheetToolbox() {
 
                 <div className='flex min-h-0 flex-1 flex-col overflow-hidden'>
                   <div className='mb-1.5 flex shrink-0 items-center gap-1'>
-                    <p className='flex-1 text-[11px] font-semibold text-gray-400'>
+                    <p className='flex-1 text-[11px] font-semibold text-gray-400 dark:text-gray-500'>
                       레이어
                     </p>
                     <IconGridTooltipButton title='그룹화' onClick={groupSelected} size='compact'>
@@ -951,7 +957,7 @@ export default function WorksheetToolbox() {
                   </div>
                   <div className='flex min-h-0 flex-1 flex-col gap-y-0.5 overflow-y-auto'>
                     {layers.length === 0 && (
-                      <p className='py-4 text-center text-xs text-gray-400'>
+                      <p className='py-4 text-center text-xs text-gray-400 dark:text-gray-500'>
                         캔버스가 비어 있습니다
                       </p>
                     )}
@@ -1007,7 +1013,7 @@ export default function WorksheetToolbox() {
                         </SidePanelTooltip>
 
                         <div
-                          className='h-3 w-3 shrink-0 rounded-sm border border-gray-200'
+                          className='h-3 w-3 shrink-0 rounded-sm border border-gray-200 dark:border-gray-700'
                           style={{ background: layer.previewColor }}
                           title={layer.previewColor}
                         />
@@ -1033,7 +1039,7 @@ export default function WorksheetToolbox() {
                           />
                         ) : (
                           <span
-                            className='min-w-0 flex-1 truncate text-xs text-gray-700'
+                            className='min-w-0 flex-1 truncate text-xs text-gray-700 dark:text-gray-200'
                             onDoubleClick={(e) => {
                               e.stopPropagation();
                               beginLayerRename(layer.id, layer.name);
@@ -1090,7 +1096,7 @@ export default function WorksheetToolbox() {
             ) : (
               <>
                 <div className='shrink-0 border-b border-gray-100'>
-                  <div className='relative flex items-center gap-1 rounded-lg border border-gray-200 bg-white'>
+                  <div className='relative flex items-center gap-1 rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900'>
                     <textarea
                       placeholder='템플릿 검색 (예: 카라가 있는 티셔츠)'
                       className='form-input min-w-0 flex-1 resize-none rounded-l-lg border-0 px-2 py-1 pb-9 text-sm text-[13px] outline-none focus:ring-0'
@@ -1110,7 +1116,7 @@ export default function WorksheetToolbox() {
                 <div className='flex min-h-0 flex-1 flex-col gap-y-4 overflow-y-auto'>
                   {Array.from({ length: RECOMMENDED_SECTIONS_COUNT }).map((_, sectionIndex) => (
                     <div key={sectionIndex} className='flex flex-col gap-y-2'>
-                      <p className='text-xs font-semibold text-gray-700'>추천 템플릿</p>
+                      <p className='text-xs font-semibold text-gray-700 dark:text-gray-200'>추천 템플릿</p>
                       <div className='grid grid-cols-2 gap-2'>
                         {Array.from({ length: PLACEHOLDERS_PER_SECTION }).map((_, i) => (
                           <div key={i} className='aspect-square rounded-lg bg-gray-100' />

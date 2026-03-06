@@ -13,10 +13,12 @@ import {
   FabricImage,
   FabricObject,
   Group,
+  Rect,
   cache,
   loadSVGFromString,
 } from 'fabric';
 import { applyPathfinderOperation, type PathfinderOp } from './pathfinder';
+import type { WorksheetCanvasSpec } from './worksheetEditorSchema';
 
 export type ToolType =
   | 'select'
@@ -81,6 +83,7 @@ interface CanvasCtx {
   exportCanvasJson: () => string | null;
   importCanvasJson: (json: string) => Promise<boolean>;
   clearCanvas: () => void;
+  setCanvasPageSpec: (spec: WorksheetCanvasSpec) => void;
   layers: LayerItem[];
   refreshLayers: () => void;
   toggleLayerVisibility: (id: string) => void;
@@ -131,6 +134,33 @@ type ObjectData = {
 };
 
 type ObjWithData = FabricObject & { data?: ObjectData };
+
+const CANVAS_ARTBOARD_OBJECT_ID = '__canvas-artboard__';
+const MIN_ARTBOARD_SIZE = 64;
+const MAX_ARTBOARD_SIZE = 8192;
+
+function clampArtboardSize(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 1920;
+  }
+  return Math.max(MIN_ARTBOARD_SIZE, Math.min(MAX_ARTBOARD_SIZE, Math.round(value)));
+}
+
+function normalizeArtboardBackground(value: unknown): string {
+  if (typeof value !== 'string') {
+    return '#FFFFFF';
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : '#FFFFFF';
+}
+
+function isArtboardObject(obj: FabricObject | null | undefined): boolean {
+  if (!obj) {
+    return false;
+  }
+  const data = (obj as ObjWithData).data;
+  return data?.kind === '__artboard__' || data?.id === CANVAS_ARTBOARD_OBJECT_ID;
+}
 
 type CanvasTextObject = FabricObject & {
   text?: string;
@@ -315,6 +345,9 @@ function isArrowObject(obj: FabricObject): boolean {
 }
 
 function isInternalOverlayObject(obj: FabricObject): boolean {
+  if (isArtboardObject(obj)) {
+    return true;
+  }
   const data = (obj as ObjWithData).data;
   return data?.kind === '__hover_overlay__';
 }
@@ -605,6 +638,96 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
     historyIdxRef.current = 0;
     syncUndoRedo();
   }, [refreshLayers, syncSelectionProps, syncUndoRedo]);
+
+  const setCanvasPageSpec = useCallback(
+    (spec: WorksheetCanvasSpec) => {
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        return;
+      }
+
+      const nextWidth = clampArtboardSize(spec.width);
+      const nextHeight = clampArtboardSize(spec.height);
+      const nextBackground = normalizeArtboardBackground(spec.backgroundColor);
+      const centerX = canvas.getWidth() / 2;
+      const centerY = canvas.getHeight() / 2;
+
+      const existingArtboard = canvas.getObjects().find((obj) => isArtboardObject(obj)) as
+        | Rect
+        | undefined;
+
+      if (existingArtboard) {
+        existingArtboard.set({
+          left: centerX,
+          top: centerY,
+          width: nextWidth,
+          height: nextHeight,
+          fill: nextBackground,
+          stroke: '#CBD5E1',
+          strokeWidth: 1,
+          selectable: false,
+          evented: false,
+          hasControls: false,
+          hasBorders: false,
+          hoverCursor: 'default',
+          moveCursor: 'default',
+          lockMovementX: true,
+          lockMovementY: true,
+          lockScalingX: true,
+          lockScalingY: true,
+          lockRotation: true,
+        });
+        (existingArtboard as ObjWithData).data = {
+          id: CANVAS_ARTBOARD_OBJECT_ID,
+          name: '아트보드',
+          kind: '__artboard__',
+        };
+        existingArtboard.setCoords();
+        canvas.sendObjectToBack(existingArtboard);
+      } else {
+        const artboard = new Rect({
+          left: centerX,
+          top: centerY,
+          originX: 'center',
+          originY: 'center',
+          width: nextWidth,
+          height: nextHeight,
+          fill: nextBackground,
+          stroke: '#CBD5E1',
+          strokeWidth: 1,
+          selectable: false,
+          evented: false,
+          hasControls: false,
+          hasBorders: false,
+          hoverCursor: 'default',
+          moveCursor: 'default',
+          lockMovementX: true,
+          lockMovementY: true,
+          lockScalingX: true,
+          lockScalingY: true,
+          lockRotation: true,
+        });
+        (artboard as ObjWithData).data = {
+          id: CANVAS_ARTBOARD_OBJECT_ID,
+          name: '아트보드',
+          kind: '__artboard__',
+        };
+        canvas.add(artboard);
+        canvas.sendObjectToBack(artboard);
+      }
+
+      canvas.backgroundColor = 'transparent';
+      canvas.renderAll();
+      refreshLayers();
+      syncSelectionProps(canvas.getActiveObject() ?? null);
+
+      const json = JSON.stringify(canvas.toObject(['data', 'selectable', 'evented', 'visible']));
+      historyRef.current = [json];
+      historyIdxRef.current = 0;
+      syncUndoRedo();
+    },
+    [refreshLayers, syncSelectionProps, syncUndoRedo],
+  );
 
   const registerCanvas = useCallback(
     (c: Canvas) => {
@@ -1486,6 +1609,7 @@ export function CanvasProvider({ children }: { children: React.ReactNode }) {
         exportCanvasJson,
         importCanvasJson,
         clearCanvas,
+        setCanvasPageSpec,
         layers,
         refreshLayers,
         toggleLayerVisibility,

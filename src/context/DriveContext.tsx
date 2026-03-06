@@ -41,7 +41,7 @@ export interface DriveFolder {
   name: string;
   shared: boolean;
   updatedAt: string;
-  updatedBy: string;
+  creatorName: string;
   parentId: string | null;
   isStarred: boolean;
 }
@@ -111,7 +111,7 @@ const toDriveFolder = (folder: DriveNode): DriveFolder => ({
   name: folder.name,
   shared: false,
   updatedAt: folder.updatedAt || '',
-  updatedBy: '',
+  creatorName: folder.creatorName || '',
   parentId: folder.parentId,
   isStarred: folder.isStarred,
 });

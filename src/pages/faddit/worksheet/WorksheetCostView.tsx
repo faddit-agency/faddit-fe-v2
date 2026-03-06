@@ -280,24 +280,24 @@ export default function WorksheetCostView() {
   }, [materialSections, totalProductionQty]);
 
   return (
-    <div className='h-full overflow-y-auto bg-[#f6f6f7] p-2'>
+    <div className='h-full overflow-y-auto bg-[#f6f6f7] p-2 dark:bg-gray-950'>
       <div className='grid min-h-full grid-cols-12 gap-3'>
         <div className='col-span-8 space-y-3'>
-          <section className='rounded-xl border border-gray-200 bg-white p-4'>
-            <div className='mb-3 flex items-center gap-2 text-[26px] font-semibold text-gray-800'>
-              <ChevronDown size={18} className='text-gray-500' />
+          <section className='rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900'>
+            <div className='mb-3 flex items-center gap-2 text-[26px] font-semibold text-gray-800 dark:text-gray-100'>
+              <ChevronDown size={18} className='text-gray-500 dark:text-gray-400' />
               자재비 (Material Cost)
             </div>
 
             {materialSections.map((section) => (
               <div key={section.key} className='mb-4 last:mb-0'>
-                <h4 className='mb-2 border-l-2 border-faddit pl-2 text-base font-semibold text-gray-800'>
+                <h4 className='mb-2 border-l-2 border-faddit pl-2 text-base font-semibold text-gray-800 dark:text-gray-100'>
                   {section.title}
                 </h4>
-                <div className='overflow-hidden rounded-xl border border-gray-200'>
+                <div className='overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700'>
                   <table className='w-full text-sm'>
                     <thead>
-                      <tr className='bg-gray-50 text-gray-500'>
+                      <tr className='bg-gray-50 text-gray-500 dark:bg-gray-800 dark:text-gray-300'>
                         <th className='px-4 py-2 text-left font-medium'>항목</th>
                         <th className='px-3 py-2 text-right font-medium'>단가 (원)</th>
                         <th className='px-3 py-2 text-right font-medium'>소요량</th>
@@ -308,20 +308,20 @@ export default function WorksheetCostView() {
                     <tbody>
                       {section.lines.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className='px-4 py-4 text-center text-gray-400'>
+                          <td colSpan={5} className='px-4 py-4 text-center text-gray-400 dark:text-gray-500'>
                             항목이 없습니다.
                           </td>
                         </tr>
                       ) : (
                         section.lines.map((line, lineIndex) => (
-                          <tr key={`${section.key}-${lineIndex}`} className='border-t border-gray-100'>
-                            <td className='px-4 py-2 text-gray-800'>{line.name}</td>
-                            <td className='px-3 py-2 text-right text-gray-800'>
+                          <tr key={`${section.key}-${lineIndex}`} className='border-t border-gray-100 dark:border-gray-800'>
+                            <td className='px-4 py-2 text-gray-800 dark:text-gray-100'>{line.name}</td>
+                            <td className='px-3 py-2 text-right text-gray-800 dark:text-gray-100'>
                               {formatQuantity(line.unitPrice)}
                             </td>
-                            <td className='px-3 py-2 text-right text-gray-700'>{formatQuantity(line.quantity)}</td>
-                            <td className='px-3 py-2 text-right text-gray-800'>{formatKrw(line.perUnitCost)}</td>
-                            <td className='px-4 py-2 text-right font-medium text-gray-900'>
+                            <td className='px-3 py-2 text-right text-gray-700 dark:text-gray-300'>{formatQuantity(line.quantity)}</td>
+                            <td className='px-3 py-2 text-right text-gray-800 dark:text-gray-100'>{formatKrw(line.perUnitCost)}</td>
+                            <td className='px-4 py-2 text-right font-medium text-gray-900 dark:text-gray-100'>
                               {formatKrw(line.totalCost)}
                             </td>
                           </tr>
@@ -335,22 +335,22 @@ export default function WorksheetCostView() {
 
             <div className='flex justify-end pt-2 text-right'>
               <div>
-                <p className='text-sm text-gray-500'>자재비 소계 (벌당)</p>
-                <p className='text-4xl font-semibold text-gray-800'>{formatKrw(materialSubtotalPerUnit)}</p>
+                <p className='text-sm text-gray-500 dark:text-gray-400'>자재비 소계 (벌당)</p>
+                <p className='text-4xl font-semibold text-gray-800 dark:text-gray-100'>{formatKrw(materialSubtotalPerUnit)}</p>
               </div>
             </div>
           </section>
 
-          <section className='rounded-xl border border-gray-200 bg-white p-4'>
-            <div className='mb-3 flex items-center gap-2 text-[26px] font-semibold text-gray-800'>
-              <ChevronDown size={18} className='text-gray-500' />
+          <section className='rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900'>
+            <div className='mb-3 flex items-center gap-2 text-[26px] font-semibold text-gray-800 dark:text-gray-100'>
+              <ChevronDown size={18} className='text-gray-500 dark:text-gray-400' />
               가공 및 공임 (Processing & Labor)
             </div>
 
-            <div className='overflow-hidden rounded-xl border border-gray-200'>
+            <div className='overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700'>
               <table className='w-full text-sm'>
                 <thead>
-                  <tr className='bg-gray-50 text-gray-500'>
+                  <tr className='bg-gray-50 text-gray-500 dark:bg-gray-800 dark:text-gray-300'>
                     <th className='px-4 py-2 text-left font-medium'>항목</th>
                     <th className='px-3 py-2 text-right font-medium'>벌당 공임 (원)</th>
                     <th className='px-4 py-2 text-right font-medium'>총 공임</th>
@@ -358,10 +358,10 @@ export default function WorksheetCostView() {
                 </thead>
                 <tbody>
                   {processingLines.map((line) => (
-                    <tr key={line.key} className='border-t border-gray-100'>
-                      <td className='px-4 py-2 text-gray-800'>{line.name}</td>
-                      <td className='px-3 py-2 text-right text-gray-800'>{formatQuantity(line.perUnitCost)}</td>
-                      <td className='px-4 py-2 text-right font-medium text-gray-900'>
+                    <tr key={line.key} className='border-t border-gray-100 dark:border-gray-800'>
+                      <td className='px-4 py-2 text-gray-800 dark:text-gray-100'>{line.name}</td>
+                      <td className='px-3 py-2 text-right text-gray-800 dark:text-gray-100'>{formatQuantity(line.perUnitCost)}</td>
+                      <td className='px-4 py-2 text-right font-medium text-gray-900 dark:text-gray-100'>
                         {formatKrw(line.totalCost)}
                       </td>
                     </tr>
@@ -372,8 +372,8 @@ export default function WorksheetCostView() {
 
             <div className='flex justify-end pt-2 text-right'>
               <div>
-                <p className='text-sm text-gray-500'>공임 소계 (벌당)</p>
-                <p className='text-4xl font-semibold text-gray-800'>{formatKrw(processingSubtotalPerUnit)}</p>
+                <p className='text-sm text-gray-500 dark:text-gray-400'>공임 소계 (벌당)</p>
+                <p className='text-4xl font-semibold text-gray-800 dark:text-gray-100'>{formatKrw(processingSubtotalPerUnit)}</p>
               </div>
             </div>
           </section>
@@ -427,10 +427,10 @@ export default function WorksheetCostView() {
             </button>
           </aside>
 
-          <section className='rounded-xl border border-gray-200 bg-white p-4'>
-            <h4 className='text-lg font-semibold text-gray-800'>생산 체크리스트</h4>
+          <section className='rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900'>
+            <h4 className='text-lg font-semibold text-gray-800 dark:text-gray-100'>생산 체크리스트</h4>
 
-            <div className='mt-4 space-y-4 text-sm text-gray-700'>
+            <div className='mt-4 space-y-4 text-sm text-gray-700 dark:text-gray-200'>
               <div>
                 <div className='flex items-center justify-between font-semibold'>
                   <span>원단 총 필요량</span>
@@ -438,7 +438,7 @@ export default function WorksheetCostView() {
                     {formatQuantity(checklist.fabric.total)} {fabricLengthUnit}
                   </span>
                 </div>
-                <ul className='mt-1 space-y-1 text-gray-500'>
+                <ul className='mt-1 space-y-1 text-gray-500 dark:text-gray-400'>
                   {checklist.fabric.lines.map((line) => (
                     <li key={`fabric-${line.name}`} className='flex items-center justify-between'>
                       <span>↳ {line.name}</span>
@@ -455,7 +455,7 @@ export default function WorksheetCostView() {
                   <span>라벨 총 필요량</span>
                   <span>{formatQuantity(checklist.label.total)}개</span>
                 </div>
-                <ul className='mt-1 space-y-1 text-gray-500'>
+                <ul className='mt-1 space-y-1 text-gray-500 dark:text-gray-400'>
                   {checklist.label.lines.map((line) => (
                     <li key={`label-${line.name}`} className='flex items-center justify-between'>
                       <span>↳ {line.name}</span>
@@ -470,7 +470,7 @@ export default function WorksheetCostView() {
                   <span>부자재 총 필요량</span>
                   <span>{formatQuantity(checklist.trim.total)}개</span>
                 </div>
-                <ul className='mt-1 space-y-1 text-gray-500'>
+                <ul className='mt-1 space-y-1 text-gray-500 dark:text-gray-400'>
                   {checklist.trim.lines.map((line) => (
                     <li key={`trim-${line.name}`} className='flex items-center justify-between'>
                       <span>↳ {line.name}</span>
@@ -482,9 +482,9 @@ export default function WorksheetCostView() {
             </div>
           </section>
 
-          <section className='rounded-xl border border-gray-200 bg-white p-4'>
-            <h4 className='text-lg font-semibold text-gray-800'>기타 주의사항</h4>
-            <div className='mt-3 h-[160px] rounded-lg border border-dashed border-gray-200 bg-gray-50' />
+          <section className='rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900'>
+            <h4 className='text-lg font-semibold text-gray-800 dark:text-gray-100'>기타 주의사항</h4>
+            <div className='mt-3 h-[160px] rounded-lg border border-dashed border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800' />
           </section>
         </div>
       </div>

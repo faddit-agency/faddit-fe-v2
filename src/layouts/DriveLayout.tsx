@@ -553,7 +553,7 @@ const DriveLayoutContent: React.FC = () => {
         showAction={false}
         className='fixed right-4 bottom-4 z-50'
       >
-        <div className='mb-1 font-medium text-gray-800 dark:text-gray-100'>폴더 이동</div>
+        <div className='mb-1 font-medium text-gray-800 dark:text-gray-100'>파일 이동</div>
         <div>
           <span>{moveMessage}</span>
         </div>

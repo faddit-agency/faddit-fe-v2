@@ -113,7 +113,7 @@ export default function WorksheetTopBar({
         <button
           type='button'
           onClick={onExit}
-          className='pointer-events-auto inline-flex h-9 w-[116px] cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-900 transition-colors hover:bg-violet-50'
+          className='pointer-events-auto inline-flex h-9 w-[116px] cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-900 transition-colors hover:bg-violet-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800'
         >
           <ArrowLeft size={14} className='shrink-0 translate-y-[0.5px]' />
           나가기
@@ -134,7 +134,7 @@ export default function WorksheetTopBar({
         style={saveButtonWidth > 0 ? { width: `${saveButtonWidth}px` } : undefined}
       >
         <span
-          className={`absolute inset-x-0 bottom-0 h-[2px] bg-white/75 transition-[width,opacity] duration-300 ease-out ${
+          className={`absolute inset-x-0 bottom-0 h-[2px] bg-white/75 dark:bg-gray-100/60 transition-[width,opacity] duration-300 ease-out ${
             visualState === 'saving'
               ? 'w-full opacity-100'
               : visualState === 'saved'

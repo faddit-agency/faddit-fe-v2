@@ -27,7 +27,9 @@ function ToolButton({ active, onClick, title, children, disabled }: ToolButtonPr
         title={title}
         aria-label={title}
         className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-          active ? 'bg-gray-800 text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'
+          active
+            ? 'bg-gray-800 text-white dark:bg-violet-600'
+            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100'
         }`}
       >
         {children}
@@ -96,40 +98,40 @@ export default function SketchBottomBar({ onZoomReset }: SketchBottomBarProps) {
   return (
     <div className='pointer-events-none absolute inset-x-0 bottom-4 z-40 flex flex-col items-center gap-2'>
       {isShapeSelection && (
-        <div className='pointer-events-auto flex items-center gap-2 rounded-xl bg-white px-3 py-1.5 ring-1 shadow-lg ring-gray-200'>
+        <div className='pointer-events-auto flex items-center gap-2 rounded-xl bg-white px-3 py-1.5 ring-1 shadow-lg ring-gray-200 dark:bg-gray-900 dark:ring-gray-700'>
           <div className='flex items-center gap-1.5'>
-            <span className='text-[11px] text-gray-500'>선 굵기</span>
+            <span className='text-[11px] text-gray-500 dark:text-gray-400'>선 굵기</span>
             <input
               type='range'
               min={1}
               max={50}
               value={strokeWidth}
               onChange={(e) => setStrokeWidth(Number(e.target.value))}
-              className='h-1.5 w-24 cursor-pointer accent-gray-800'
+              className='h-1.5 w-24 cursor-pointer accent-gray-800 dark:accent-violet-400'
             />
-            <span className='w-8 text-right font-mono text-[11px] text-gray-700'>
+            <span className='w-8 text-right font-mono text-[11px] text-gray-700 dark:text-gray-200'>
               {strokeWidth}px
             </span>
           </div>
-          <div className='h-5 w-px bg-gray-200' />
+          <div className='h-5 w-px bg-gray-200 dark:bg-gray-700' />
           <div className='flex items-center gap-1.5'>
-            <span className='text-[11px] text-gray-500'>둥글기</span>
+            <span className='text-[11px] text-gray-500 dark:text-gray-400'>둥글기</span>
             <input
               type='range'
               min={0}
               max={40}
               value={cornerRadius}
               onChange={(e) => setCornerRadius(Number(e.target.value))}
-              className='h-1.5 w-24 cursor-pointer accent-gray-800'
+              className='h-1.5 w-24 cursor-pointer accent-gray-800 dark:accent-violet-400'
             />
-            <span className='w-7 text-right font-mono text-[11px] text-gray-700'>
+            <span className='w-7 text-right font-mono text-[11px] text-gray-700 dark:text-gray-200'>
               {cornerRadius}
             </span>
           </div>
         </div>
       )}
 
-      <div className='pointer-events-auto relative flex items-center gap-1 rounded-xl bg-white px-2 py-1.5 ring-1 shadow-lg ring-gray-200'>
+      <div className='pointer-events-auto relative flex items-center gap-1 rounded-xl bg-white px-2 py-1.5 ring-1 shadow-lg ring-gray-200 dark:bg-gray-900 dark:ring-gray-700'>
         <ToolButton
           active={activeTool === 'select'}
           onClick={() => setActiveTool('select')}
@@ -138,7 +140,7 @@ export default function SketchBottomBar({ onZoomReset }: SketchBottomBarProps) {
           <MousePointer2 size={16} strokeWidth={1.5} />
         </ToolButton>
 
-        <div className='mx-1 h-5 w-px bg-gray-200' />
+        <div className='mx-1 h-5 w-px bg-gray-200 dark:bg-gray-700' />
 
         <ToolButton onClick={undo} disabled={!canUndo} title='실행 취소 (Cmd/Ctrl+Z)'>
           <Undo2 size={16} strokeWidth={1.5} />
@@ -147,12 +149,12 @@ export default function SketchBottomBar({ onZoomReset }: SketchBottomBarProps) {
           <Redo2 size={16} strokeWidth={1.5} />
         </ToolButton>
 
-        <div className='mx-1 h-5 w-px bg-gray-200' />
+        <div className='mx-1 h-5 w-px bg-gray-200 dark:bg-gray-700' />
 
-        <div className='flex h-8 items-center gap-0.5 rounded-md px-1 text-gray-600'>
+        <div className='flex h-8 items-center gap-0.5 rounded-md px-1 text-gray-600 dark:text-gray-300'>
           <ToolButton onClick={() => openColorPanel('fill')} title='채우기 색상 열기'>
             <span
-              className='block h-4 w-4 rounded border border-gray-300'
+              className='block h-4 w-4 rounded border border-gray-300 dark:border-gray-600'
               style={{ background: fillColor }}
             />
           </ToolButton>
@@ -164,7 +166,7 @@ export default function SketchBottomBar({ onZoomReset }: SketchBottomBarProps) {
           </ToolButton>
         </div>
 
-        <div className='mx-1 h-5 w-px bg-gray-200' />
+        <div className='mx-1 h-5 w-px bg-gray-200 dark:bg-gray-700' />
 
         <ToolButton onClick={() => fileInputRef.current?.click()} title='이미지 업로드'>
           <ImageUp size={16} strokeWidth={1.5} />
@@ -181,7 +183,7 @@ export default function SketchBottomBar({ onZoomReset }: SketchBottomBarProps) {
           <Grid3X3 size={16} strokeWidth={1.5} />
         </ToolButton>
 
-        <div className='mx-1 h-5 w-px bg-gray-200' />
+        <div className='mx-1 h-5 w-px bg-gray-200 dark:bg-gray-700' />
 
         <ToolButton onClick={onZoomReset} title='줌 리셋 (100%)'>
           <RefreshCw size={16} strokeWidth={1.5} />

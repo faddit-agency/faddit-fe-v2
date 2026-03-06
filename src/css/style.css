@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import './additional-styles/utility-patterns.css' layer(components);
+@import './additional-styles/worksheet-dark-mode.css' layer(components);
 
 @plugin '@tailwindcss/forms' {
   strategy: base;
@@ -37,7 +38,7 @@
   --color-violet-800: #4634b1;
   --color-violet-900: #2f227c;
   --color-violet-950: #1c1357;
-  --color-faddit: #763bff;
+  --color-faddit: #5C23E1;
 
   --color-sky-50: #e3f3ff;
   --color-sky-100: #d1ecff;
@@ -228,4 +229,56 @@
       0 14px 36px rgba(15, 23, 42, 0.08),
       0 0 24px 5px rgba(118, 59, 255, 0.24);
   }
+}
+
+.arc-folder-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.arc-folder-icon svg {
+  display: block;
+}
+
+.arc-folder-icon path {
+  transition: fill 0.2s ease;
+}
+
+.arc-folder-icon--closed path:first-child {
+  fill: #b493b1;
+}
+
+.arc-folder-icon--closed path:last-child {
+  fill: #ddc9da;
+}
+
+.arc-folder-icon--open path:first-child {
+  fill: #a983a6;
+}
+
+.arc-folder-icon--open path:last-child {
+  fill: #d9c2d6;
+}
+
+.arc-file-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  color: #bca8c5;
+  transition: color 0.2s ease;
+}
+
+.dark .arc-file-icon {
+  color: #a88fb3;
+}
+
+.arc-file-icon--active {
+  color: #8f6ca0;
+}
+
+.dark .arc-file-icon--active {
+  color: #d2b7db;
 }

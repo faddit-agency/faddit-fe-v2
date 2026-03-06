@@ -92,15 +92,15 @@ const mapTemplateCategory = (row: RecommendRow): TemplateCategory => {
 };
 
 const getModeLabel = (mode?: RecommendResponse['mode']) => {
-  if (mode === 'hybrid') return '키워드 + 이미지';
-  if (mode === 'image_only') return '이미지 전용';
-  if (mode === 'keyword_only') return '키워드 전용';
+  if (mode === 'hybrid') return '종합 검색';
+  if (mode === 'image_only') return '이미지 모드';
+  if (mode === 'keyword_only') return '키워드 모드';
   return '-';
 };
 
 const getSourceLabel = (source: ResultSource) => {
-  if (source === 'keyword_priority') return '키워드 우선';
-  if (source === 'image_priority') return '이미지 우선';
+  if (source === 'keyword_priority') return '키워드 검색 기준';
+  if (source === 'image_priority') return '이미지 검색 기준';
   return '기본 결과';
 };
 
@@ -192,6 +192,15 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
 
   const hasConflict = Boolean(recommendResponse?.conflict?.detected);
   const conflictReasons = recommendResponse?.conflict?.reasons || [];
+  const normalizedQuery = query.trim();
+  const composerModeLabel =
+    uploadedFile && !normalizedQuery
+      ? '이미지 모드'
+      : !uploadedFile && normalizedQuery
+        ? '키워드 모드'
+        : uploadedFile && normalizedQuery
+          ? '종합 검색'
+          : '키워드 모드';
 
   const sourceRows = useMemo(() => {
     if (!recommendResponse) {
@@ -362,8 +371,12 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
         if (response.conflict?.detected) {
           const hasKeywordPriority =
             (response.alternative_recommendations?.keyword_priority || []).length > 0;
+          const hasImagePriority =
+            (response.alternative_recommendations?.image_priority || []).length > 0;
           if (hasKeywordPriority) {
             setResultSource('keyword_priority');
+          } else if (hasImagePriority) {
+            setResultSource('image_priority');
           } else {
             setResultSource('primary');
           }
@@ -617,7 +630,7 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
 
               <div className='flex items-center gap-2 justify-self-end'>
                 <span className='text-xs font-semibold text-gray-500 dark:text-gray-400'>
-                  {uploadedFile ? '하이브리드 모드' : '키워드 모드'}
+                  {composerModeLabel}
                 </span>
                 <button
                   type='submit'
@@ -901,7 +914,7 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
                   </div>
                 </div>
               ) : currentStep === 'selection' ? (
-                <div className='flex min-h-0 flex-1 flex-col gap-6'>
+                <div className='flex min-h-0 flex-1 flex-col gap-4'>
                   <form onSubmit={handleSearchSubmit} className='shrink-0 space-y-3'>
                     {renderUnifiedComposer({
                       inputId: 'faddit-worksheet-recommend-file-inline',
@@ -924,19 +937,6 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
                             : ''}
                         </div>
                         <div className='mt-2 flex flex-wrap gap-2'>
-                          {hasKeywordPriority ? (
-                            <button
-                              type='button'
-                              onClick={() => setResultSource('keyword_priority')}
-                              className={`btn h-8 px-3 text-xs ${
-                                resultSource === 'keyword_priority'
-                                  ? 'bg-faddit text-white'
-                                  : 'border-gray-200 text-gray-700 dark:border-gray-700/60 dark:text-gray-200'
-                              }`}
-                            >
-                              키워드 우선
-                            </button>
-                          ) : null}
                           {hasImagePriority ? (
                             <button
                               type='button'
@@ -947,26 +947,28 @@ const CreateWorksheetModal = ({ modalOpen, setModalOpen, isSubmitting, onSubmit 
                                   : 'border-gray-200 text-gray-700 dark:border-gray-700/60 dark:text-gray-200'
                               }`}
                             >
-                              이미지 우선
+                              이미지 검색 기준
                             </button>
                           ) : null}
-                          <button
-                            type='button'
-                            onClick={() => setResultSource('primary')}
-                            className={`btn h-8 px-3 text-xs ${
-                              resultSource === 'primary'
-                                ? 'bg-faddit text-white'
-                                : 'border-gray-200 text-gray-700 dark:border-gray-700/60 dark:text-gray-200'
-                            }`}
-                          >
-                            기본 결과
-                          </button>
+                          {hasKeywordPriority ? (
+                            <button
+                              type='button'
+                              onClick={() => setResultSource('keyword_priority')}
+                              className={`btn h-8 px-3 text-xs ${
+                                resultSource === 'keyword_priority'
+                                  ? 'bg-faddit text-white'
+                                  : 'border-gray-200 text-gray-700 dark:border-gray-700/60 dark:text-gray-200'
+                              }`}
+                            >
+                              키워드 검색 기준
+                            </button>
+                          ) : null}
                         </div>
                       </div>
                     ) : null}
                   </form>
 
-                  <div className='mt-4 flex min-h-0 flex-1 justify-center overflow-y-auto px-0'>
+                  <div className='flex min-h-0 flex-1 justify-center overflow-y-auto px-0'>
                     <div className='w-full max-w-[100vw] lg:max-w-[50rem]'>
                       <div className='rounded-2xl border border-gray-200 bg-white p-4 shadow-xs dark:border-gray-700/60 dark:bg-gray-800'>
                         <div className='text-xs font-bold tracking-wide text-gray-500 dark:text-gray-400'>

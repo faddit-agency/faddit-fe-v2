@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pipette, Star } from 'lucide-react';
+import { useThemeProvider } from '../../../utils/ThemeContext';
 
 interface HSB {
   h: number;
@@ -96,12 +97,13 @@ const STORAGE_KEYS = {
 const MAX_COLOR_ITEMS = 12;
 const MAX_PANTONE_ITEMS = 12;
 const SIDEPANEL_BUTTON_BASE =
-  'rounded-md border border-transparent transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1';
-const SIDEPANEL_BUTTON_IDLE = 'cursor-pointer text-gray-600 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700';
+  'rounded-md border border-transparent transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1 focus-visible:ring-offset-white dark:focus-visible:ring-offset-gray-900';
+const SIDEPANEL_BUTTON_IDLE =
+  'cursor-pointer text-gray-600 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 dark:text-gray-300 dark:hover:border-violet-400/50 dark:hover:bg-violet-500/10 dark:hover:text-violet-200';
 const SIDEPANEL_BUTTON_ACTIVE =
   'border-violet-500 bg-faddit text-white shadow-[0_4px_10px_rgba(118,59,255,0.22)] hover:border-violet-500 hover:bg-violet-600 hover:text-white';
 const SIDEPANEL_BUTTON_DISABLED =
-  'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-300 hover:border-gray-200 hover:bg-gray-50 hover:text-gray-300';
+  'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-300 hover:border-gray-200 hover:bg-gray-50 hover:text-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-500 dark:hover:border-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-500';
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
@@ -406,6 +408,8 @@ export default function SketchColorPicker({
   selectedPantoneCode,
   onPantoneCodeChange,
 }: SketchColorPickerProps) {
+  const { currentTheme } = useThemeProvider();
+  const isDarkMode = currentTheme === 'dark';
   const [hsb, setHsb] = useState<HSB>(() => hexToHsb(color));
   const [hexInput, setHexInput] = useState(() => normalizeHexColor(color));
   const [pantoneQuery, setPantoneQuery] = useState('');
@@ -730,10 +734,14 @@ export default function SketchColorPicker({
   const hueThumbX = `${(hsb.h / 360) * 100}%`;
 
   return (
-    <div className='flex h-full min-h-0 w-full min-w-0 flex-col gap-2.5 overflow-x-hidden p-2.5'>
-      <p className='text-[11px] font-medium text-gray-500'>{label}</p>
+    <div
+      className={`sketch-color-picker flex h-full min-h-0 w-full min-w-0 flex-col gap-2.5 overflow-x-hidden p-2.5 ${
+        isDarkMode ? 'dark' : ''
+      }`}
+    >
+      <p className='text-[11px] font-medium text-gray-500 dark:text-gray-400'>{label}</p>
 
-      <div className='grid grid-cols-2 items-center rounded-md border border-gray-200 bg-gray-50 p-0.5'>
+      <div className='grid grid-cols-2 items-center rounded-md border border-gray-200 bg-gray-50 p-0.5 dark:border-gray-700 dark:bg-gray-800'>
         <button
           type='button'
           onClick={() => setActiveTab('color')}
@@ -793,12 +801,12 @@ export default function SketchColorPicker({
           </div>
 
           <div className='flex min-w-0 items-center gap-2'>
-            <div className='h-6 w-6 shrink-0 rounded border border-gray-200' style={{ background: currentHex }} />
+            <div className='h-6 w-6 shrink-0 rounded border border-gray-200 dark:border-gray-600' style={{ background: currentHex }} />
             <input
               type='text'
               value={hexInput}
               onChange={handleHexChange}
-              className='min-w-0 flex-1 rounded border border-gray-200 px-2 py-0.5 font-mono text-xs uppercase focus:ring-1 focus:ring-gray-400 focus:outline-none'
+              className='min-w-0 flex-1 rounded border border-gray-200 bg-white px-2 py-0.5 font-mono text-xs uppercase text-gray-700 focus:ring-1 focus:ring-gray-400 focus:outline-none dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:focus:ring-gray-600'
               maxLength={7}
               spellCheck={false}
             />
@@ -808,7 +816,7 @@ export default function SketchColorPicker({
               title={isCurrentColorFavorite ? '색상 즐겨찾기 해제' : '색상 즐겨찾기'}
               className={`inline-flex h-6 w-6 shrink-0 items-center justify-center ${SIDEPANEL_BUTTON_BASE} ${
                 isCurrentColorFavorite
-                  ? 'border-amber-300 bg-amber-50 text-amber-600'
+                  ? 'border-amber-300 bg-amber-50 text-amber-600 dark:border-amber-400/60 dark:bg-amber-500/15 dark:text-amber-300'
                   : SIDEPANEL_BUTTON_IDLE
               }`}
             >
@@ -827,15 +835,15 @@ export default function SketchColorPicker({
             </button>
           </div>
 
-          <div className='rounded-md border border-gray-200/90 bg-gray-50/70 p-2'>
+          <div className='rounded-md border border-gray-200/90 bg-gray-50/70 p-2 dark:border-gray-700 dark:bg-gray-800/70'>
             <div className='mb-1 flex items-center justify-between'>
-              <p className='text-[10px] font-semibold tracking-wide text-gray-500'>CMYK</p>
-              <span className='text-[10px] text-gray-400'>%</span>
+              <p className='text-[10px] font-semibold tracking-wide text-gray-500 dark:text-gray-400'>CMYK</p>
+              <span className='text-[10px] text-gray-400 dark:text-gray-500'>%</span>
             </div>
             <div className='grid grid-cols-4 gap-1.5'>
               {(['c', 'm', 'y', 'k'] as (keyof CMYK)[]).map((channel) => (
                 <label key={channel} className='flex min-w-0 flex-col gap-1'>
-                  <span className='text-[10px] font-medium uppercase text-gray-500'>{channel}</span>
+                  <span className='text-[10px] font-medium uppercase text-gray-500 dark:text-gray-400'>{channel}</span>
                   <input
                     type='number'
                     min={0}
@@ -843,18 +851,18 @@ export default function SketchColorPicker({
                     step={1}
                     value={currentCmyk[channel]}
                     onChange={(event) => handleCmykChange(channel, event.target.value)}
-                    className='h-6 w-full rounded border border-gray-200 bg-white px-1.5 text-[11px] text-gray-700 outline-none focus:border-gray-300 focus:ring-1 focus:ring-gray-300'
+                    className='h-6 w-full rounded border border-gray-200 bg-white px-1.5 text-[11px] text-gray-700 outline-none focus:border-gray-300 focus:ring-1 focus:ring-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:focus:border-gray-500 dark:focus:ring-gray-600'
                   />
                 </label>
               ))}
             </div>
           </div>
 
-          <div className='flex min-h-0 flex-1 flex-col rounded-md border border-gray-200/90 bg-gray-50/70 p-2'>
-            <p className='mb-1 text-[10px] font-semibold tracking-wide text-gray-500'>색상 히스토리</p>
+          <div className='flex min-h-0 flex-1 flex-col rounded-md border border-gray-200/90 bg-gray-50/70 p-2 dark:border-gray-700 dark:bg-gray-800/70'>
+            <p className='mb-1 text-[10px] font-semibold tracking-wide text-gray-500 dark:text-gray-400'>색상 히스토리</p>
             <div className='flex min-h-0 flex-1 flex-col gap-2'>
               <div className='flex min-h-0 flex-1 flex-col'>
-                <p className='mb-1 text-[10px] font-medium text-gray-500'>즐겨찾는 색상</p>
+                <p className='mb-1 text-[10px] font-medium text-gray-500 dark:text-gray-400'>즐겨찾는 색상</p>
                 <div className='min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden pr-0.5'>
                   {colorFavorites.length > 0 ? (
                     colorFavorites.map((hex) => (
@@ -862,23 +870,23 @@ export default function SketchColorPicker({
                         key={`fav-${hex}`}
                         type='button'
                         onClick={() => applyHexColor(hex, { trackRecentColor: true })}
-                        className={`flex w-full min-w-0 items-center gap-2 bg-white px-2 py-1 text-left ${SIDEPANEL_BUTTON_BASE} ${SIDEPANEL_BUTTON_IDLE}`}
+                        className={`flex w-full min-w-0 items-center gap-2 bg-white px-2 py-1 text-left dark:bg-gray-900 ${SIDEPANEL_BUTTON_BASE} ${SIDEPANEL_BUTTON_IDLE}`}
                         title={`${hex} 적용`}
                         aria-label={`${hex} 적용`}
                       >
                         <span
-                          className='h-4 w-4 shrink-0 rounded border border-gray-200'
+                          className='h-4 w-4 shrink-0 rounded border border-gray-200 dark:border-gray-600'
                           style={{ background: hex }}
                         />
-                        <span className='min-w-0 text-[10px] text-gray-600'>
-                          <span className='block truncate font-mono text-gray-700'>{hex}</span>
+                        <span className='min-w-0 text-[10px] text-gray-600 dark:text-gray-300'>
+                          <span className='block truncate font-mono text-gray-700 dark:text-gray-100'>{hex}</span>
                           <span className='block truncate'>{formatRgbLabel(hex)}</span>
                           <span className='block truncate'>{formatCmykLabel(hex)}</span>
                         </span>
                       </button>
                     ))
                   ) : (
-                    <p className='rounded border border-dashed border-gray-200 bg-white px-2 py-2 text-[10px] text-gray-500'>
+                    <p className='rounded border border-dashed border-gray-200 bg-white px-2 py-2 text-[10px] text-gray-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-400'>
                       저장된 즐겨찾기 색상이 없습니다.
                     </p>
                   )}
@@ -886,7 +894,7 @@ export default function SketchColorPicker({
               </div>
 
               <div className='flex min-h-0 flex-1 flex-col'>
-                <p className='mb-1 text-[10px] font-medium text-gray-500'>최근 사용 색상</p>
+                <p className='mb-1 text-[10px] font-medium text-gray-500 dark:text-gray-400'>최근 사용 색상</p>
                 <div className='min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden pr-0.5'>
                   {colorRecent.length > 0 ? (
                     colorRecent.map((hex) => (
@@ -894,23 +902,23 @@ export default function SketchColorPicker({
                         key={`recent-${hex}`}
                         type='button'
                         onClick={() => applyHexColor(hex, { trackRecentColor: true })}
-                        className={`flex w-full min-w-0 items-center gap-2 bg-white px-2 py-1 text-left ${SIDEPANEL_BUTTON_BASE} ${SIDEPANEL_BUTTON_IDLE}`}
+                        className={`flex w-full min-w-0 items-center gap-2 bg-white px-2 py-1 text-left dark:bg-gray-900 ${SIDEPANEL_BUTTON_BASE} ${SIDEPANEL_BUTTON_IDLE}`}
                         title={`${hex} 적용`}
                         aria-label={`${hex} 적용`}
                       >
                         <span
-                          className='h-4 w-4 shrink-0 rounded border border-gray-200'
+                          className='h-4 w-4 shrink-0 rounded border border-gray-200 dark:border-gray-600'
                           style={{ background: hex }}
                         />
-                        <span className='min-w-0 text-[10px] text-gray-600'>
-                          <span className='block truncate font-mono text-gray-700'>{hex}</span>
+                        <span className='min-w-0 text-[10px] text-gray-600 dark:text-gray-300'>
+                          <span className='block truncate font-mono text-gray-700 dark:text-gray-100'>{hex}</span>
                           <span className='block truncate'>{formatRgbLabel(hex)}</span>
                           <span className='block truncate'>{formatCmykLabel(hex)}</span>
                         </span>
                       </button>
                     ))
                   ) : (
-                    <p className='rounded border border-dashed border-gray-200 bg-white px-2 py-2 text-[10px] text-gray-500'>
+                    <p className='rounded border border-dashed border-gray-200 bg-white px-2 py-2 text-[10px] text-gray-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-400'>
                       최근 사용 색상이 없습니다.
                     </p>
                   )}
@@ -923,29 +931,29 @@ export default function SketchColorPicker({
         </div>
       ) : (
         <div className='flex min-h-0 flex-1 flex-col gap-2.5'>
-          <div className='rounded-md border border-gray-200/90 bg-gray-50/70 p-2'>
-            <p className='mb-1 text-[10px] font-semibold tracking-wide text-gray-500'>현재 색상</p>
+          <div className='rounded-md border border-gray-200/90 bg-gray-50/70 p-2 dark:border-gray-700 dark:bg-gray-800/70'>
+            <p className='mb-1 text-[10px] font-semibold tracking-wide text-gray-500 dark:text-gray-400'>현재 색상</p>
             <div className='flex min-w-0 items-center gap-2'>
-              <span className='inline-block h-5 w-5 shrink-0 rounded border border-gray-200' style={{ background: currentHex }} />
-              <div className='min-w-0 text-[10px] text-gray-600'>
-                <p className='truncate font-mono text-gray-700'>{currentHex}</p>
+              <span className='inline-block h-5 w-5 shrink-0 rounded border border-gray-200 dark:border-gray-600' style={{ background: currentHex }} />
+              <div className='min-w-0 text-[10px] text-gray-600 dark:text-gray-300'>
+                <p className='truncate font-mono text-gray-700 dark:text-gray-100'>{currentHex}</p>
                 <p className='truncate'>{formatRgbLabel(currentHex)}</p>
                 <p className='truncate'>{formatCmykLabel(currentHex)}</p>
               </div>
             </div>
           </div>
 
-          <div className='rounded-md border border-gray-200/90 bg-gray-50/70 p-2'>
+          <div className='rounded-md border border-gray-200/90 bg-gray-50/70 p-2 dark:border-gray-700 dark:bg-gray-800/70'>
             <div className='mb-1 flex items-center justify-between'>
-              <label className='text-[10px] font-semibold tracking-wide text-gray-500'>팬톤 코드 검색</label>
+              <label className='text-[10px] font-semibold tracking-wide text-gray-500 dark:text-gray-400'>팬톤 코드 검색</label>
               <button
                 type='button'
                 onClick={togglePantoneFavorite}
                 title={isPantoneFavorite ? '팬톤 즐겨찾기 해제' : '팬톤 즐겨찾기'}
                 className={`inline-flex h-6 w-6 shrink-0 items-center justify-center ${SIDEPANEL_BUTTON_BASE} ${
                   isPantoneFavorite
-                    ? 'border-amber-300 bg-amber-50 text-amber-600'
-                    : `bg-white ${SIDEPANEL_BUTTON_IDLE}`
+                    ? 'border-amber-300 bg-amber-50 text-amber-600 dark:border-amber-400/60 dark:bg-amber-500/15 dark:text-amber-300'
+                    : `bg-white dark:bg-gray-900 ${SIDEPANEL_BUTTON_IDLE}`
                 }`}
               >
                 <Star size={13} fill={isPantoneFavorite ? 'currentColor' : 'none'} />
@@ -962,12 +970,12 @@ export default function SketchColorPicker({
                 }}
                 onKeyDown={handlePantoneInputKeyDown}
                 placeholder='예: 186 C, 19-4052 TCX'
-                className='min-w-0 flex-1 rounded border border-gray-200 bg-white px-2 text-[11px] text-gray-700 outline-none focus:border-gray-300 focus:ring-1 focus:ring-gray-300'
+                className='min-w-0 flex-1 rounded border border-gray-200 bg-white px-2 text-[11px] text-gray-700 outline-none focus:border-gray-300 focus:ring-1 focus:ring-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:focus:border-gray-500 dark:focus:ring-gray-600'
               />
               <button
                 type='button'
                 onClick={applyPantoneByQuery}
-                className={`h-7 shrink-0 bg-white px-2 text-[11px] font-medium ${SIDEPANEL_BUTTON_BASE} ${SIDEPANEL_BUTTON_IDLE}`}
+                className={`h-7 shrink-0 bg-white px-2 text-[11px] font-medium dark:bg-gray-900 ${SIDEPANEL_BUTTON_BASE} ${SIDEPANEL_BUTTON_IDLE}`}
                 title='팬톤 적용'
                 aria-label='팬톤 적용'
               >
@@ -975,13 +983,13 @@ export default function SketchColorPicker({
               </button>
             </div>
 
-            <div className='mt-1.5 rounded border border-gray-200 bg-white p-1.5'>
+            <div className='mt-1.5 rounded border border-gray-200 bg-white p-1.5 dark:border-gray-600 dark:bg-gray-900'>
               <div className='mb-1 flex items-center justify-between'>
-                <p className='text-[10px] font-medium text-gray-500'>현재 색상 최근접 추천</p>
+                <p className='text-[10px] font-medium text-gray-500 dark:text-gray-400'>현재 색상 최근접 추천</p>
                 <button
                   type='button'
                   onClick={() => applyPantone(recommendedPantone.swatch)}
-                  className='rounded px-1.5 py-0.5 text-[10px] font-medium text-violet-700 transition-colors hover:bg-violet-50'
+                  className='rounded px-1.5 py-0.5 text-[10px] font-medium text-violet-700 transition-colors hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-500/15'
                   title='추천 팬톤 적용'
                   aria-label='추천 팬톤 적용'
                 >
@@ -990,11 +998,11 @@ export default function SketchColorPicker({
               </div>
               <div className='flex min-w-0 items-center gap-2'>
                 <span
-                  className='inline-block h-4 w-4 shrink-0 rounded border border-gray-200'
+                  className='inline-block h-4 w-4 shrink-0 rounded border border-gray-200 dark:border-gray-600'
                   style={{ background: recommendedPantone.swatch.hex }}
                 />
-                <div className='min-w-0 text-[10px] text-gray-600'>
-                  <p className='truncate font-medium text-gray-700'>{recommendedPantone.swatch.code}</p>
+                <div className='min-w-0 text-[10px] text-gray-600 dark:text-gray-300'>
+                  <p className='truncate font-medium text-gray-700 dark:text-gray-100'>{recommendedPantone.swatch.code}</p>
                   <p className='truncate'>{recommendedPantone.swatch.name}</p>
                   <p className='truncate'>
                     {recommendedPantone.swatch.hex} · ΔE {recommendedPantone.distance.toFixed(1)}
@@ -1003,36 +1011,36 @@ export default function SketchColorPicker({
               </div>
             </div>
 
-            <div className='mt-1.5 max-h-28 overflow-y-auto overflow-x-hidden rounded border border-gray-200 bg-white'>
+            <div className='mt-1.5 max-h-28 overflow-y-auto overflow-x-hidden rounded border border-gray-200 bg-white dark:border-gray-600 dark:bg-gray-900'>
               {pantoneCandidates.length > 0 ? (
                 pantoneCandidates.map(({ swatch }) => (
                   <button
                     key={swatch.code}
                     type='button'
                     onClick={() => applyPantone(swatch)}
-                    className='flex w-full min-w-0 items-center gap-2 border-b border-gray-100 px-2 py-1 text-left last:border-b-0 hover:bg-violet-50'
+                    className='flex w-full min-w-0 items-center gap-2 border-b border-gray-100 px-2 py-1 text-left last:border-b-0 hover:bg-violet-50 dark:border-gray-700 dark:hover:bg-violet-500/15'
                     title={`${swatch.code} 적용`}
                     aria-label={`${swatch.code} 적용`}
                   >
                     <span
-                      className='inline-block h-3 w-3 shrink-0 rounded border border-gray-200'
+                      className='inline-block h-3 w-3 shrink-0 rounded border border-gray-200 dark:border-gray-600'
                       style={{ background: swatch.hex }}
                     />
-                    <span className='min-w-0 text-[10px] text-gray-700'>
+                    <span className='min-w-0 text-[10px] text-gray-700 dark:text-gray-100'>
                       <span className='block truncate font-medium'>{swatch.code}</span>
-                      <span className='block truncate text-gray-500'>{swatch.name}</span>
+                      <span className='block truncate text-gray-500 dark:text-gray-400'>{swatch.name}</span>
                     </span>
                   </button>
                 ))
               ) : (
-                <p className='px-2 py-2 text-[10px] text-gray-500'>검색 결과가 없습니다.</p>
+                <p className='px-2 py-2 text-[10px] text-gray-500 dark:text-gray-400'>검색 결과가 없습니다.</p>
               )}
             </div>
 
             {selectedPantone ? (
-              <div className='mt-1.5 flex min-w-0 items-center gap-1.5 rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] text-emerald-700'>
+              <div className='mt-1.5 flex min-w-0 items-center gap-1.5 rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-300'>
                 <span
-                  className='inline-block h-3 w-3 shrink-0 rounded border border-emerald-200'
+                  className='inline-block h-3 w-3 shrink-0 rounded border border-emerald-200 dark:border-emerald-500/40'
                   style={{ background: selectedPantone.hex }}
                 />
                 <span className='truncate'>{selectedPantone.code}</span>
@@ -1042,11 +1050,11 @@ export default function SketchColorPicker({
             {pantoneInputError ? <p className='mt-1 text-[10px] text-red-500'>{pantoneInputError}</p> : null}
           </div>
 
-          <div className='flex min-h-0 flex-1 flex-col rounded-md border border-gray-200/90 bg-gray-50/70 p-2'>
-            <p className='mb-1 text-[10px] font-semibold tracking-wide text-gray-500'>팬톤 히스토리</p>
+          <div className='flex min-h-0 flex-1 flex-col rounded-md border border-gray-200/90 bg-gray-50/70 p-2 dark:border-gray-700 dark:bg-gray-800/70'>
+            <p className='mb-1 text-[10px] font-semibold tracking-wide text-gray-500 dark:text-gray-400'>팬톤 히스토리</p>
             <div className='grid min-h-0 flex-1 gap-2'>
               <div className='flex min-h-0 flex-col'>
-                <p className='mb-1 text-[10px] font-medium text-gray-500'>즐겨찾는 팬톤</p>
+                <p className='mb-1 text-[10px] font-medium text-gray-500 dark:text-gray-400'>즐겨찾는 팬톤</p>
                 <div className='min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden pr-0.5'>
                   {pantoneFavorites.length > 0 ? (
                     pantoneFavorites.map((swatch) => (
@@ -1054,29 +1062,29 @@ export default function SketchColorPicker({
                         key={`pantone-fav-${swatch.code}`}
                         type='button'
                         onClick={() => applyPantone(swatch)}
-                        className={`flex w-full min-w-0 items-center gap-2 bg-white px-2 py-1 text-left ${SIDEPANEL_BUTTON_BASE} ${SIDEPANEL_BUTTON_IDLE}`}
+                        className={`flex w-full min-w-0 items-center gap-2 bg-white px-2 py-1 text-left dark:bg-gray-900 ${SIDEPANEL_BUTTON_BASE} ${SIDEPANEL_BUTTON_IDLE}`}
                         title={`${swatch.code} 적용`}
                         aria-label={`${swatch.code} 적용`}
                       >
                         <span
-                          className='inline-block h-3 w-3 shrink-0 rounded border border-gray-200'
+                          className='inline-block h-3 w-3 shrink-0 rounded border border-gray-200 dark:border-gray-600'
                           style={{ background: swatch.hex }}
                         />
-                        <span className='min-w-0 text-[10px] text-gray-700'>
+                        <span className='min-w-0 text-[10px] text-gray-700 dark:text-gray-100'>
                           <span className='block truncate font-medium'>{swatch.code}</span>
-                          <span className='block truncate text-gray-500'>{swatch.name}</span>
+                          <span className='block truncate text-gray-500 dark:text-gray-400'>{swatch.name}</span>
                         </span>
                       </button>
                     ))
                   ) : (
-                    <p className='rounded border border-dashed border-gray-200 bg-white px-2 py-2 text-[10px] text-gray-500'>
+                    <p className='rounded border border-dashed border-gray-200 bg-white px-2 py-2 text-[10px] text-gray-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-400'>
                       저장된 팬톤 즐겨찾기가 없습니다.
                     </p>
                   )}
                 </div>
               </div>
               <div className='flex min-h-0 flex-col'>
-                <p className='mb-1 text-[10px] font-medium text-gray-500'>최근 사용 팬톤</p>
+                <p className='mb-1 text-[10px] font-medium text-gray-500 dark:text-gray-400'>최근 사용 팬톤</p>
                 <div className='min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden pr-0.5'>
                   {pantoneRecent.length > 0 ? (
                     pantoneRecent.map((swatch) => (
@@ -1084,22 +1092,22 @@ export default function SketchColorPicker({
                         key={`pantone-recent-${swatch.code}`}
                         type='button'
                         onClick={() => applyPantone(swatch)}
-                        className={`flex w-full min-w-0 items-center gap-2 bg-white px-2 py-1 text-left ${SIDEPANEL_BUTTON_BASE} ${SIDEPANEL_BUTTON_IDLE}`}
+                        className={`flex w-full min-w-0 items-center gap-2 bg-white px-2 py-1 text-left dark:bg-gray-900 ${SIDEPANEL_BUTTON_BASE} ${SIDEPANEL_BUTTON_IDLE}`}
                         title={`${swatch.code} 적용`}
                         aria-label={`${swatch.code} 적용`}
                       >
                         <span
-                          className='inline-block h-3 w-3 shrink-0 rounded border border-gray-200'
+                          className='inline-block h-3 w-3 shrink-0 rounded border border-gray-200 dark:border-gray-600'
                           style={{ background: swatch.hex }}
                         />
-                        <span className='min-w-0 text-[10px] text-gray-700'>
+                        <span className='min-w-0 text-[10px] text-gray-700 dark:text-gray-100'>
                           <span className='block truncate font-medium'>{swatch.code}</span>
-                          <span className='block truncate text-gray-500'>{swatch.name}</span>
+                          <span className='block truncate text-gray-500 dark:text-gray-400'>{swatch.name}</span>
                         </span>
                       </button>
                     ))
                   ) : (
-                    <p className='rounded border border-dashed border-gray-200 bg-white px-2 py-2 text-[10px] text-gray-500'>
+                    <p className='rounded border border-dashed border-gray-200 bg-white px-2 py-2 text-[10px] text-gray-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-400'>
                       최근 사용 팬톤이 없습니다.
                     </p>
                   )}

@@ -1,13 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Minus, PenLine, Pencil, Plus, Scissors, Table, Trash2 } from 'lucide-react';
+import { Check, Minus, PenLine, Pencil, Plus, Scissors, Table, Tag, Trash2 } from 'lucide-react';
 import ToggleButton from '../../../components/atoms/ToggleButton';
 import WorksheetSketchView from './WorksheetSketchView';
 import WorksheetSizeSpecView from './WorksheetSizeSpecView';
 import { useCanvas } from './CanvasProvider';
 import type {
+  WorksheetCanvasSpec,
   WorksheetEditorDocument,
   WorksheetEditorPage,
   WorksheetEditorPageType,
+} from './worksheetEditorSchema';
+import {
+  createCanvasSpec,
+  getDefaultCanvasSpecForPageType,
+  isWorksheetCanvasPageType,
 } from './worksheetEditorSchema';
 
 type PageType = WorksheetEditorPageType;
@@ -76,6 +82,12 @@ const PAGE_TYPE_META: Record<
   PageType,
   { icon: React.ElementType; iconColor: string; bgColor: string; defaultLabel: string }
 > = {
+  'custom-design': {
+    icon: PenLine,
+    iconColor: 'text-sky-500',
+    bgColor: 'bg-sky-100',
+    defaultLabel: '새 디자인',
+  },
   sketch: {
     icon: PenLine,
     iconColor: 'text-blue-500',
@@ -87,6 +99,12 @@ const PAGE_TYPE_META: Record<
     iconColor: 'text-green-500',
     bgColor: 'bg-green-100',
     defaultLabel: '패턴',
+  },
+  label: {
+    icon: Tag,
+    iconColor: 'text-amber-500',
+    bgColor: 'bg-amber-100',
+    defaultLabel: '라벨',
   },
   'size-spec': {
     icon: Table,
@@ -100,17 +118,21 @@ const THUMB_W = 120;
 const THUMB_H = 80;
 const PAGE_CARD_TOTAL_H = 112;
 
-const ADDABLE_PAGE_TYPES: PageType[] = ['sketch', 'pattern'];
+const ADDABLE_PAGE_TYPES: PageType[] = ['custom-design', 'sketch', 'pattern', 'label'];
 
 const PAGE_TYPE_ORDER: Record<PageType, number> = {
-  sketch: 0,
-  pattern: 1,
-  'size-spec': 2,
+  'custom-design': 0,
+  sketch: 1,
+  pattern: 2,
+  label: 3,
+  'size-spec': 4,
 };
 
 const PAGE_TYPE_CHIP_CLASS: Record<PageType, string> = {
+  'custom-design': 'bg-sky-100 text-sky-700',
   sketch: 'bg-violet-100 text-violet-700',
   pattern: 'bg-gray-200 text-gray-700',
+  label: 'bg-amber-100 text-amber-700',
   'size-spec': 'bg-indigo-100 text-indigo-700',
 };
 
@@ -119,15 +141,36 @@ function sortPagesByType(nextPages: WorksheetPage[]): WorksheetPage[] {
 }
 
 function isCanvasPageType(type: PageType): boolean {
-  return type === 'sketch' || type === 'pattern';
+  return isWorksheetCanvasPageType(type);
 }
 
-const makePage = (type: PageType, sameTypeCount: number): WorksheetPage => {
+function resolveCanvasSpecForPage(page: WorksheetPage): WorksheetCanvasSpec | undefined {
+  const defaultSpec = getDefaultCanvasSpecForPageType(page.type);
+  if (!defaultSpec) {
+    return undefined;
+  }
+  if (page.type === 'sketch' || page.type === 'pattern') {
+    return defaultSpec;
+  }
+  if (!page.canvasSpec) {
+    return defaultSpec;
+  }
+  return createCanvasSpec(page.canvasSpec.width, page.canvasSpec.height);
+}
+
+const makePage = (
+  type: PageType,
+  sameTypeCount: number,
+  canvasSpec?: WorksheetCanvasSpec,
+): WorksheetPage => {
   const meta = PAGE_TYPE_META[type];
+  const nextCanvasSpec =
+    canvasSpec ?? getDefaultCanvasSpecForPageType(type) ?? undefined;
   return {
     id: crypto.randomUUID(),
     label: sameTypeCount > 0 ? `${meta.defaultLabel} ${sameTypeCount + 1}` : meta.defaultLabel,
     type,
+    canvasSpec: nextCanvasSpec,
   };
 };
 
@@ -165,16 +208,15 @@ export default function WorksheetContentPanel({
     session: null,
   });
 
-  const { canvasRef, canvasSession, exportCanvasJson, importCanvasJson, clearCanvas } = useCanvas();
+  const {
+    canvasRef,
+    canvasSession,
+    exportCanvasJson,
+    importCanvasJson,
+    clearCanvas,
+    setCanvasPageSpec,
+  } = useCanvas();
   const orderedPages = useMemo(() => sortPagesByType(pages), [pages]);
-  const protectedPageIds = useMemo(() => {
-    const firstSketchPageId = pages.find((page) => page.type === 'sketch')?.id ?? null;
-    const firstPatternPageId = pages.find((page) => page.type === 'pattern')?.id ?? null;
-
-    return new Set(
-      [firstSketchPageId, firstPatternPageId].filter((id): id is string => Boolean(id)),
-    );
-  }, [pages]);
 
   const selectedPage = pages.find((p) => p.id === selectedId) ?? pages[0];
 
@@ -251,6 +293,8 @@ export default function WorksheetContentPanel({
       return;
     }
 
+    const canvasSpec = resolveCanvasSpecForPage(selectedPage);
+
     const savedJson = sketchPagesRef.current[selectedPage.id];
 
     if (
@@ -263,13 +307,19 @@ export default function WorksheetContentPanel({
 
     if (!savedJson) {
       clearCanvas();
+      if (canvasSpec) {
+        setCanvasPageSpec(canvasSpec);
+      }
       lastLoadedRef.current = { pageId: selectedPage.id, json: null, session: sessionKey };
       return;
     }
 
     await importCanvasJson(savedJson);
+    if (canvasSpec) {
+      setCanvasPageSpec(canvasSpec);
+    }
     lastLoadedRef.current = { pageId: selectedPage.id, json: savedJson, session: sessionKey };
-  }, [selectedPage, importCanvasJson, clearCanvas, canvasSession]);
+  }, [selectedPage, importCanvasJson, clearCanvas, canvasSession, setCanvasPageSpec]);
 
   useEffect(() => {
     if (!selectedPage) return;
@@ -364,11 +414,44 @@ export default function WorksheetContentPanel({
     };
   }, [addMenuOpen]);
 
+  const requestCustomCanvasSpec = useCallback((pageType: PageType): WorksheetCanvasSpec | null => {
+    const pageLabel = PAGE_TYPE_META[pageType].defaultLabel;
+    const widthRaw = window.prompt(`${pageLabel} 가로(px)를 입력해 주세요.`, '1920');
+    if (widthRaw === null) {
+      return null;
+    }
+
+    const heightRaw = window.prompt(`${pageLabel} 세로(px)를 입력해 주세요.`, '1080');
+    if (heightRaw === null) {
+      return null;
+    }
+
+    const width = Number(widthRaw);
+    const height = Number(heightRaw);
+
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      window.alert('가로/세로는 0보다 큰 숫자로 입력해 주세요.');
+      return null;
+    }
+
+    return createCanvasSpec(width, height);
+  }, []);
+
   const handleAddPage = useCallback(
     (type: PageType) => {
       if (readOnly) return;
+      let customCanvasSpec: WorksheetCanvasSpec | undefined;
+
+      if (type === 'custom-design' || type === 'label') {
+        const requested = requestCustomCanvasSpec(type);
+        if (!requested) {
+          return;
+        }
+        customCanvasSpec = requested;
+      }
+
       const sameTypeCount = pages.filter((p) => p.type === type).length;
-      const newPage = makePage(type, sameTypeCount);
+      const newPage = makePage(type, sameTypeCount, customCanvasSpec);
 
       updateDocument((prev) => {
         const nextPages = sortPagesByType([...prev.pages, newPage]);
@@ -381,14 +464,13 @@ export default function WorksheetContentPanel({
 
       setAddMenuOpen(false);
     },
-    [pages, readOnly, updateDocument],
+    [pages, readOnly, requestCustomCanvasSpec, updateDocument],
   );
 
   const handleDeletePage = useCallback(
     (pageId: string) => {
       if (readOnly) return;
       if (pages.length <= 1) return;
-      if (protectedPageIds.has(pageId)) return;
 
       if (pageId === selectedId) {
         persistSketchPageSnapshot(pageId);
@@ -416,7 +498,7 @@ export default function WorksheetContentPanel({
         };
       });
     },
-    [pages, protectedPageIds, readOnly, selectedId, persistSketchPageSnapshot, updateDocument],
+    [pages, readOnly, selectedId, persistSketchPageSnapshot, updateDocument],
   );
 
   const startPageLabelEdit = useCallback((page: WorksheetPage) => {
@@ -451,7 +533,7 @@ export default function WorksheetContentPanel({
 
   return (
     <section className='flex h-full min-w-0 flex-1 flex-col gap-2'>
-      <div className='relative min-h-0 flex-1 overflow-hidden rounded-md'>
+      <div className='relative min-h-0 flex-1 overflow-hidden rounded-md bg-white dark:bg-gray-900'>
         {!selectedPage && <div className='absolute inset-0' />}
         {selectedPage && isCanvasPageType(selectedPage.type) && (
           <div className='absolute inset-0'>
@@ -490,7 +572,7 @@ export default function WorksheetContentPanel({
                       const meta = PAGE_TYPE_META[page.type];
                       const isEditingName = editingPageId === page.id;
                       const thumbnail = editorDocument.pageThumbnails[page.id];
-                      const isProtectedPage = protectedPageIds.has(page.id);
+                      const canDeletePage = pages.length > 1;
                       return (
                         <div key={page.id} className='relative flex shrink-0 flex-col gap-1'>
                           <div
@@ -503,10 +585,10 @@ export default function WorksheetContentPanel({
                                 if (readOnly) return;
                                 updateDocument((prev) => ({ ...prev, activePageId: page.id }));
                               }}
-                              className={`relative h-full w-full cursor-pointer overflow-hidden rounded-md bg-white transition-all ${
+                              className={`relative h-full w-full cursor-pointer overflow-hidden rounded-md bg-white transition-all dark:bg-gray-900 ${
                                 selectedId === page.id
                                   ? 'border-2 border-violet-500'
-                                  : 'border border-gray-300 hover:border-gray-400'
+                                  : 'border border-gray-300 hover:border-gray-400 dark:border-gray-700 dark:hover:border-gray-500'
                               }`}
                             >
                               <span
@@ -514,7 +596,7 @@ export default function WorksheetContentPanel({
                               >
                                 {meta.defaultLabel}
                               </span>
-                              <span className='absolute right-2 bottom-2 z-10 text-[10px] leading-none font-semibold text-gray-800'>
+                              <span className='absolute right-2 bottom-2 z-10 text-[10px] leading-none font-semibold text-gray-800 dark:text-gray-100'>
                                 {idx + 1}
                               </span>
 
@@ -527,14 +609,14 @@ export default function WorksheetContentPanel({
                               )}
                             </button>
 
-                            {!isProtectedPage && (
+                            {canDeletePage && (
                               <button
                                 type='button'
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleDeletePage(page.id);
                                 }}
-                                className='absolute top-1/2 right-1.5 z-30 flex h-5 w-6 -translate-y-1/2 translate-x-3 scale-95 cursor-pointer items-center justify-center rounded-md border border-red-200 bg-white text-red-500 opacity-0 shadow-sm transition-all duration-300 ease-out will-change-transform group-hover/thumb:translate-x-0 group-hover/thumb:scale-100 group-hover/thumb:opacity-100 hover:border-red-300 hover:bg-red-50 hover:text-red-600 active:scale-95'
+                                className='absolute top-1/2 right-1.5 z-30 flex h-5 w-6 -translate-y-1/2 translate-x-3 scale-95 cursor-pointer items-center justify-center rounded-md border border-red-200 bg-white text-red-500 opacity-0 shadow-sm transition-all duration-300 ease-out will-change-transform group-hover/thumb:translate-x-0 group-hover/thumb:scale-100 group-hover/thumb:opacity-100 hover:border-red-300 hover:bg-red-50 hover:text-red-600 active:scale-95 dark:border-red-500/40 dark:bg-gray-900 dark:text-red-300 dark:hover:bg-red-500/10'
                                 title='페이지 삭제'
                               >
                                 <Trash2 size={11} strokeWidth={2.1} />
@@ -566,7 +648,7 @@ export default function WorksheetContentPanel({
                                   type='button'
                                   onMouseDown={(e) => e.preventDefault()}
                                   onClick={commitPageLabelEdit}
-                                  className='flex h-7 w-7 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-gray-100'
+                                  className='flex h-7 w-7 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
                                   title='시트명 저장'
                                 >
                                   <Check size={13} />
@@ -575,14 +657,14 @@ export default function WorksheetContentPanel({
                             ) : (
                               <>
                                 <div className='absolute inset-0 flex items-center justify-center px-2 transition-all duration-300 ease-out group-hover/title:pr-8'>
-                                  <p className='w-full truncate text-center text-base font-semibold text-gray-800'>
+                                  <p className='w-full truncate text-center text-base font-semibold text-gray-800 dark:text-gray-100'>
                                     {page.label}
                                   </p>
                                 </div>
                                 <button
                                   type='button'
                                   onClick={() => startPageLabelEdit(page)}
-                                  className='absolute top-1/2 right-0 flex h-6 w-6 -translate-y-1/2 translate-x-1 items-center justify-center rounded-md text-gray-500 opacity-0 transition-all duration-300 ease-out group-hover/title:translate-x-0 group-hover/title:opacity-100 hover:bg-gray-100 hover:text-gray-700'
+                                  className='absolute top-1/2 right-0 flex h-6 w-6 -translate-y-1/2 translate-x-1 items-center justify-center rounded-md text-gray-500 opacity-0 transition-all duration-300 ease-out group-hover/title:translate-x-0 group-hover/title:opacity-100 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200'
                                   title='시트명 수정'
                                 >
                                   <Pencil size={12} />
@@ -599,7 +681,7 @@ export default function WorksheetContentPanel({
                         type='button'
                         disabled={readOnly}
                         onClick={() => setAddMenuOpen((v) => !v)}
-                        className='flex shrink-0 cursor-pointer items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 transition-colors hover:border-gray-300 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50'
+                        className='flex shrink-0 cursor-pointer items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 transition-colors hover:border-gray-300 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-500 dark:hover:border-gray-500 dark:hover:text-gray-300'
                         aria-label='페이지 추가'
                         style={{ width: THUMB_W, height: THUMB_H }}
                       >
@@ -616,7 +698,7 @@ export default function WorksheetContentPanel({
         {addMenuOpen && !readOnly && addMenuPosition && (
           <div
             ref={addMenuPanelRef}
-            className='fixed z-[260] w-36 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg'
+            className='fixed z-[260] w-36 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900'
             style={{
               left: addMenuPosition.left,
               top: addMenuPosition.top,
@@ -631,7 +713,7 @@ export default function WorksheetContentPanel({
                   key={type}
                   type='button'
                   onClick={() => handleAddPage(type)}
-                  className='flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50'
+                  className='flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800'
                 >
                   <Icon size={14} className={meta.iconColor} />
                   {meta.defaultLabel}
@@ -683,18 +765,18 @@ export default function WorksheetContentPanel({
                   if (readOnly) return;
                   updateDocument((prev) => ({ ...prev, zoom: Math.max(10, prev.zoom - 10) }));
                 }}
-                className='flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-gray-600 transition-all duration-300 hover:bg-gray-100'
+                className='flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-gray-600 transition-all duration-300 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
               >
                 <Minus size={14} />
               </button>
-              <span className='min-w-[3.5rem] text-center text-sm text-gray-800'>{zoom}%</span>
+              <span className='min-w-[3.5rem] text-center text-sm text-gray-800 dark:text-gray-100'>{zoom}%</span>
               <button
                 type='button'
                 onClick={() => {
                   if (readOnly) return;
                   updateDocument((prev) => ({ ...prev, zoom: Math.min(200, prev.zoom + 10) }));
                 }}
-                className='flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-gray-600 transition-all duration-300 hover:bg-gray-100'
+                className='flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-gray-600 transition-all duration-300 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
               >
                 <Plus size={14} />
               </button>
@@ -704,22 +786,22 @@ export default function WorksheetContentPanel({
       </div>
 
       {guideModeEnabled && (
-        <aside className='pointer-events-auto fixed top-[72px] right-3 z-[240] w-[320px] rounded-xl border border-gray-200 bg-white/70 p-3 opacity-70 shadow-lg backdrop-blur-[2px] transition-opacity duration-200 hover:opacity-100'>
-          <h3 className='mb-2 text-sm font-semibold text-gray-800'>단축키 가이드</h3>
+        <aside className='pointer-events-auto fixed top-[72px] right-3 z-[240] w-[320px] rounded-xl border border-gray-200 bg-white/70 p-3 opacity-70 shadow-lg backdrop-blur-[2px] transition-opacity duration-200 hover:opacity-100 dark:border-gray-700 dark:bg-gray-900/75'>
+          <h3 className='mb-2 text-sm font-semibold text-gray-800 dark:text-gray-100'>단축키 가이드</h3>
           <div className='max-h-[70vh] overflow-y-auto pr-1'>
             <div className='space-y-1.5'>
               {GUIDE_MANUAL_ITEMS.map((item) => (
                 <div
                   key={`${item.title}-${item.shortcut}`}
-                  className='rounded-md bg-white/70 px-2 py-1.5'
+                  className='rounded-md bg-white/70 px-2 py-1.5 dark:bg-gray-900/70'
                 >
                   <div className='flex items-center justify-between gap-2'>
-                    <span className='text-xs font-semibold text-gray-800'>{item.title}</span>
-                    <span className='rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600'>
+                    <span className='text-xs font-semibold text-gray-800 dark:text-gray-100'>{item.title}</span>
+                    <span className='rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300'>
                       {item.shortcut}
                     </span>
                   </div>
-                  <p className='mt-1 text-[11px] leading-4 text-gray-600'>{item.usage}</p>
+                  <p className='mt-1 text-[11px] leading-4 text-gray-600 dark:text-gray-300'>{item.usage}</p>
                 </div>
               ))}
             </div>

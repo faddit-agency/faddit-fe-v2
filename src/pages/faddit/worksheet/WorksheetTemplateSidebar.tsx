@@ -21,6 +21,7 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
+import ThemeToggle from '../../../components/ThemeToggle';
 import FadditLogoOnly from '../../../images/icons/faddit-logo-only.svg';
 import {
   createDriveFile,
@@ -771,12 +772,12 @@ export default function WorksheetTemplateSidebar({
           <img
             src={file.thumbnailUrl}
             alt={file.name}
-            className='h-full w-full rounded-md border border-gray-200 object-cover transition-transform duration-200 group-hover:scale-105'
+            className='h-full w-full rounded-md border border-gray-200 object-cover transition-transform duration-200 group-hover:scale-105 dark:border-gray-700'
             loading='lazy'
           />
         ) : (
-          <div className='flex h-full w-full items-center justify-center rounded-md border border-gray-200 bg-[#f3f3f5]'>
-            <Shapes size={20} className='text-gray-400' />
+          <div className='flex h-full w-full items-center justify-center rounded-md border border-gray-200 bg-[#f3f3f5] dark:border-gray-700 dark:bg-gray-800'>
+            <Shapes size={20} className='text-gray-400 dark:text-gray-500' />
           </div>
         )}
         <div className='pointer-events-none absolute top-1.5 left-1.5 inline-flex items-center gap-1'>
@@ -798,10 +799,10 @@ export default function WorksheetTemplateSidebar({
               event.stopPropagation();
               onAction(file);
             }}
-            className={`absolute top-1.5 right-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full text-gray-700 shadow-sm transition-all duration-200 ${
+            className={`absolute top-1.5 right-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full text-gray-700 shadow-sm transition-all duration-200 dark:text-gray-200 ${
               isDetailOpen
-                ? 'bg-white opacity-100'
-                : 'bg-white/90 opacity-0 group-hover:opacity-100 hover:bg-white'
+                ? 'bg-white opacity-100 dark:bg-gray-900'
+                : 'bg-white/90 opacity-0 group-hover:opacity-100 hover:bg-white dark:bg-gray-900/90 dark:hover:bg-gray-800'
             }`}
             aria-label='요소 상세 보기'
           >
@@ -1364,15 +1365,15 @@ export default function WorksheetTemplateSidebar({
     <>
       {activeTab === 'template' && (
         <>
-          <div className='shrink-0 border-b border-gray-100 pb-2'>
-            <div className='relative flex items-center gap-1 rounded-lg border border-gray-200 bg-white'>
+          <div className='shrink-0 border-b border-gray-100 pb-2 dark:border-gray-700'>
+            <div className='relative flex items-center gap-1 rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900'>
               <textarea
                 placeholder='템플릿 검색 (예: 카라가 있는 티셔츠)'
                 className='form-input min-w-0 flex-1 resize-none rounded-l-lg border-0 px-2 py-1 pb-9 text-[13px] outline-none focus:ring-0'
               />
               <button
                 type='button'
-                className='absolute right-2 bottom-2 flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full bg-gray-100 text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-700'
+                className='absolute right-2 bottom-2 flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full bg-gray-100 text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100'
                 aria-label='검색'
               >
                 <ArrowRight size={14} strokeWidth={2} />
@@ -1382,12 +1383,12 @@ export default function WorksheetTemplateSidebar({
 
           <div className='min-h-0 flex-1 overflow-y-auto'>
             <div className='mb-3'>
-              <h4 className='mb-1 text-xs font-semibold text-gray-700'>추천 템플릿</h4>
+              <h4 className='mb-1 text-xs font-semibold text-gray-700 dark:text-gray-200'>추천 템플릿</h4>
               <div className='grid grid-cols-2 gap-1.5'>
                 {MOCK_RECOMMENDED.map((i) => (
                   <div
                     key={i}
-                    className='aspect-square rounded-md border border-gray-200 bg-[#f6f6f7]'
+                    className='aspect-square rounded-md border border-gray-200 bg-[#f6f6f7] dark:border-gray-700 dark:bg-gray-800'
                   />
                 ))}
               </div>
@@ -1399,7 +1400,11 @@ export default function WorksheetTemplateSidebar({
                   key={c}
                   type='button'
                   onClick={() => setCat1((prev) => (prev === c ? '' : c))}
-                  className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${cat1 === c ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                  className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+                    cat1 === c
+                      ? 'bg-faddit text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
+                  }`}
                 >
                   {c}
                 </button>
@@ -1412,7 +1417,11 @@ export default function WorksheetTemplateSidebar({
                   key={c}
                   type='button'
                   onClick={() => setCat2((prev) => (prev === c ? '' : c))}
-                  className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${cat2 === c ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                  className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+                    cat2 === c
+                      ? 'bg-faddit text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
+                  }`}
                 >
                   {c}
                 </button>
@@ -1422,8 +1431,8 @@ export default function WorksheetTemplateSidebar({
             <div className='grid grid-cols-2 gap-1.5'>
               {MOCK_TEMPLATES.map((i) => (
                 <div key={i} className='group cursor-pointer'>
-                  <div className='mb-1 aspect-[4/3] rounded-md border border-gray-200 bg-[#f6f6f7] transition-colors group-hover:border-violet-300' />
-                  <p className='truncate text-[10px] text-gray-500'>템플릿 {i + 1}</p>
+                  <div className='mb-1 aspect-[4/3] rounded-md border border-gray-200 bg-[#f6f6f7] transition-colors group-hover:border-violet-300 dark:border-gray-700 dark:bg-gray-800 dark:group-hover:border-violet-400/60' />
+                  <p className='truncate text-[10px] text-gray-500 dark:text-gray-400'>템플릿 {i + 1}</p>
                 </div>
               ))}
             </div>
@@ -1443,7 +1452,7 @@ export default function WorksheetTemplateSidebar({
             <button
               type='button'
               onClick={addCustomModule}
-              className='inline-flex h-8 w-8 items-center justify-center rounded border border-gray-200 text-gray-600 hover:bg-gray-50'
+              className='inline-flex h-8 w-8 items-center justify-center rounded border border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'
               aria-label='커스텀 모듈 추가'
             >
               <Plus size={14} />
@@ -1466,12 +1475,12 @@ export default function WorksheetTemplateSidebar({
               setDragCardId(null);
               setDraggingCardId(null);
             }}
-            className='rounded border border-dashed border-gray-300 bg-gray-50 px-2 py-1.5 text-[11px] text-gray-500'
+            className='rounded border border-dashed border-gray-300 bg-gray-50 px-2 py-1.5 text-[11px] text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'
           >
             숨김 모듈을 여기로 드래그하면 화면에 표시됩니다.
           </div>
 
-          <div className='overflow-hidden rounded-lg border border-gray-200'>
+          <div className='overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700'>
             {cards.map((card) => {
               const visible = visMap[card.id] ?? true;
               const custom = !card.isDefault;
@@ -1494,7 +1503,7 @@ export default function WorksheetTemplateSidebar({
                     setDragCardId(null);
                     setDraggingCardId(null);
                   }}
-                  className='flex items-center gap-2 border-b border-gray-100 bg-white px-2 py-2 text-sm last:border-b-0'
+                  className='flex items-center gap-2 border-b border-gray-100 bg-white px-2 py-2 text-sm last:border-b-0 dark:border-gray-700 dark:bg-gray-900'
                 >
                   <button
                     type='button'
@@ -1506,15 +1515,15 @@ export default function WorksheetTemplateSidebar({
                     <span
                       className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
                         visible
-                          ? 'border-gray-700 bg-gray-700 text-white'
-                          : 'border-gray-300 bg-white'
+                          ? 'border-violet-500 bg-faddit text-white'
+                          : 'border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-900'
                       }`}
                     >
                       {visible && <Check size={10} strokeWidth={3} />}
                     </span>
                   </button>
 
-                  {!visible ? <GripVertical size={13} className='text-gray-400' /> : null}
+                  {!visible ? <GripVertical size={13} className='text-gray-400 dark:text-gray-500' /> : null}
 
                   <div className='min-w-0 flex-1'>
                     {isEditingCustom ? (
@@ -1538,7 +1547,7 @@ export default function WorksheetTemplateSidebar({
                     ) : (
                       <p className='truncate text-xs'>{card.title}</p>
                     )}
-                    <p className={`text-[10px] ${visible ? 'text-emerald-600' : 'text-gray-400'}`}>
+                    <p className={`text-[10px] ${visible ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400 dark:text-gray-500'}`}>
                       {visible ? '표시 중' : '숨김'}
                     </p>
                   </div>
@@ -1550,7 +1559,7 @@ export default function WorksheetTemplateSidebar({
                           type='button'
                           onMouseDown={(event) => event.preventDefault()}
                           onClick={commitEditingCustomModule}
-                          className='inline-flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'
+                          className='inline-flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-emerald-50 hover:text-emerald-600 dark:text-gray-500 dark:hover:bg-emerald-500/15 dark:hover:text-emerald-300'
                           aria-label='커스텀 모듈 이름 수정완료'
                         >
                           <Check size={13} />
@@ -1560,7 +1569,7 @@ export default function WorksheetTemplateSidebar({
                           <button
                             type='button'
                             onClick={() => startEditingCustomModule(card.id, card.title)}
-                            className='inline-flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600'
+                            className='inline-flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200'
                             aria-label='커스텀 모듈 이름 수정'
                           >
                             <Pencil size={13} />
@@ -1568,7 +1577,7 @@ export default function WorksheetTemplateSidebar({
                           <button
                             type='button'
                             onClick={() => deleteCustomCard(worksheetActiveTab, card.id)}
-                            className='inline-flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-red-50 hover:text-red-500'
+                            className='inline-flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-red-50 hover:text-red-500 dark:text-gray-500 dark:hover:bg-red-500/15 dark:hover:text-red-300'
                             aria-label='커스텀 모듈 삭제'
                           >
                             <Trash2 size={13} />
@@ -1581,10 +1590,10 @@ export default function WorksheetTemplateSidebar({
                   <span
                     className={`rounded px-1.5 py-0.5 text-[10px] ${
                       required
-                        ? 'bg-amber-50 text-amber-600'
+                        ? 'bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300'
                         : custom
-                          ? 'bg-blue-50 text-blue-600'
-                          : 'bg-gray-100 text-gray-500'
+                          ? 'bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300'
+                          : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-300'
                     }`}
                   >
                     {required ? '필수' : custom ? '커스텀' : '기본'}
@@ -1601,14 +1610,14 @@ export default function WorksheetTemplateSidebar({
           {elementWorkspaceView === 'overview' ? (
             <>
               <div className='space-y-2'>
-                <label className='flex h-9 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3'>
-                  <Search size={14} className='text-gray-400' />
+                <label className='flex h-9 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 dark:border-gray-700 dark:bg-gray-900'>
+                  <Search size={14} className='text-gray-400 dark:text-gray-500' />
                   <input
                     type='text'
                     placeholder='요소 검색'
                     value={elementSearchQuery}
                     onChange={(event) => setElementSearchQuery(event.target.value)}
-                    className='h-full min-w-0 flex-1 border-0 bg-transparent text-xs text-gray-700 outline-none placeholder:text-gray-400'
+                    className='h-full min-w-0 flex-1 border-0 bg-transparent text-xs text-gray-700 outline-none placeholder:text-gray-400 dark:text-gray-200 dark:placeholder:text-gray-500'
                   />
                 </label>
                 <button
@@ -1629,11 +1638,11 @@ export default function WorksheetTemplateSidebar({
 
               <section className='space-y-2'>
                 <div className='flex items-center justify-between'>
-                  <h4 className='text-xs font-semibold text-gray-700'>업로드 항목</h4>
+                  <h4 className='text-xs font-semibold text-gray-700 dark:text-gray-200'>업로드 항목</h4>
                   <button
                     type='button'
                     onClick={() => setElementWorkspaceView('upload')}
-                    className='text-[11px] text-gray-500 hover:text-gray-700'
+                    className='text-[11px] text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
                   >
                     더보기
                   </button>
@@ -1641,7 +1650,7 @@ export default function WorksheetTemplateSidebar({
                 <div className='grid grid-cols-2 gap-2'>
                   {elementWorkspaceLoading
                     ? ELEMENT_PLACEHOLDER_ITEMS.map((_, index) => (
-                        <div key={`element-upload-loading-${index}`} className='aspect-square rounded-md bg-[#f3f3f5]' />
+                        <div key={`element-upload-loading-${index}`} className='aspect-square rounded-md bg-[#f3f3f5] dark:bg-gray-800' />
                       ))
                     : previewUploadedElementFiles.map((file) =>
                         renderElementWorkspaceFileCard(
@@ -1655,7 +1664,7 @@ export default function WorksheetTemplateSidebar({
                       )}
                 </div>
                 {!elementWorkspaceLoading && !elementUploadError && previewUploadedElementFiles.length === 0 ? (
-                  <p className='text-[11px] text-gray-400'>이 작업지시서에 업로드된 요소가 없습니다.</p>
+                  <p className='text-[11px] text-gray-400 dark:text-gray-500'>이 작업지시서에 업로드된 요소가 없습니다.</p>
                 ) : null}
               </section>
 
@@ -1664,14 +1673,14 @@ export default function WorksheetTemplateSidebar({
                   <button
                     type='button'
                     onClick={() => setElementWorkspaceView('workspace')}
-                    className='text-xs font-semibold text-gray-700 hover:text-gray-900'
+                    className='text-xs font-semibold text-gray-700 hover:text-gray-900 dark:text-gray-200 dark:hover:text-gray-100'
                   >
                     나의 워크스페이스
                   </button>
                   <button
                     type='button'
                     onClick={() => setElementWorkspaceView('workspace')}
-                    className='text-[11px] text-gray-500 hover:text-gray-700'
+                    className='text-[11px] text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
                   >
                     더보기
                   </button>
@@ -1679,7 +1688,7 @@ export default function WorksheetTemplateSidebar({
                 <div className='grid w-full grid-cols-2 gap-2 text-left'>
                   {elementWorkspaceLoading
                     ? ELEMENT_PLACEHOLDER_ITEMS.map((_, index) => (
-                        <div key={`element-workspace-loading-${index}`} className='aspect-square rounded-md bg-[#f3f3f5]' />
+                        <div key={`element-workspace-loading-${index}`} className='aspect-square rounded-md bg-[#f3f3f5] dark:bg-gray-800' />
                       ))
                     : previewElementWorkspaceFiles.map((file) =>
                         renderElementWorkspaceFileCard(file, 'element-workspace', (targetFile) => {
@@ -1691,7 +1700,7 @@ export default function WorksheetTemplateSidebar({
                   <p className='text-[11px] text-rose-500'>{elementWorkspaceError}</p>
                 ) : null}
                 {!elementWorkspaceLoading && !elementWorkspaceError && previewElementWorkspaceFiles.length === 0 ? (
-                  <p className='text-[11px] text-gray-400'>표시할 파일이 없습니다.</p>
+                  <p className='text-[11px] text-gray-400 dark:text-gray-500'>표시할 파일이 없습니다.</p>
                 ) : null}
               </section>
             </>
@@ -1701,18 +1710,18 @@ export default function WorksheetTemplateSidebar({
                 <button
                   type='button'
                   onClick={() => setElementWorkspaceView('overview')}
-                  className='inline-flex h-6 w-6 items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                  className='inline-flex h-6 w-6 items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200'
                   aria-label='요소 목록으로 돌아가기'
                 >
                   <ChevronLeft size={16} />
                 </button>
-                <p className='text-sm font-semibold text-gray-800'>업로드 항목</p>
+                <p className='text-sm font-semibold text-gray-800 dark:text-gray-100'>업로드 항목</p>
               </div>
 
               <div className='grid grid-cols-2 gap-2'>
                 {elementWorkspaceLoading
                   ? Array.from({ length: 6 }).map((_, index) => (
-                      <div key={`upload-filtered-loading-${index}`} className='aspect-square rounded-md bg-[#f3f3f5]' />
+                      <div key={`upload-filtered-loading-${index}`} className='aspect-square rounded-md bg-[#f3f3f5] dark:bg-gray-800' />
                     ))
                   : searchedUploadedElementFiles.map((file) =>
                       renderElementWorkspaceFileCard(file, 'element-upload', (targetFile) => {
@@ -1724,7 +1733,7 @@ export default function WorksheetTemplateSidebar({
                 <p className='text-[11px] text-rose-500'>{elementUploadError}</p>
               ) : null}
               {!elementWorkspaceLoading && !elementUploadError && searchedUploadedElementFiles.length === 0 ? (
-                <p className='text-[11px] text-gray-400'>업로드된 항목이 없습니다.</p>
+                <p className='text-[11px] text-gray-400 dark:text-gray-500'>업로드된 항목이 없습니다.</p>
               ) : null}
             </>
           ) : (
@@ -1733,12 +1742,12 @@ export default function WorksheetTemplateSidebar({
                 <button
                   type='button'
                   onClick={() => setElementWorkspaceView('overview')}
-                  className='inline-flex h-6 w-6 items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                  className='inline-flex h-6 w-6 items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200'
                   aria-label='요소 목록으로 돌아가기'
                 >
                   <ChevronLeft size={16} />
                 </button>
-                <p className='text-sm font-semibold text-gray-800'>나의 워크스페이스</p>
+                <p className='text-sm font-semibold text-gray-800 dark:text-gray-100'>나의 워크스페이스</p>
               </div>
 
               <div className='flex flex-wrap gap-1.5'>
@@ -1751,8 +1760,8 @@ export default function WorksheetTemplateSidebar({
                       onClick={() => setElementWorkspaceCategory(category)}
                       className={`rounded-full border px-2.5 py-0.5 text-[11px] transition-colors ${
                         active
-                          ? 'border-violet-500 bg-violet-50 text-violet-600'
-                          : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                          ? 'border-violet-500 bg-violet-50 text-violet-600 dark:bg-violet-500/15 dark:text-violet-200'
+                          : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-500 dark:hover:text-gray-200'
                       }`}
                     >
                       {category}
@@ -1764,7 +1773,7 @@ export default function WorksheetTemplateSidebar({
               <div className='grid grid-cols-2 gap-2'>
                 {elementWorkspaceLoading
                   ? Array.from({ length: 6 }).map((_, index) => (
-                      <div key={`workspace-filtered-loading-${index}`} className='aspect-square rounded-md bg-[#f3f3f5]' />
+                      <div key={`workspace-filtered-loading-${index}`} className='aspect-square rounded-md bg-[#f3f3f5] dark:bg-gray-800' />
                     ))
                   : filteredElementWorkspaceFiles.map((file) =>
                       renderElementWorkspaceFileCard(file, 'workspace-filtered', (targetFile) => {
@@ -1776,7 +1785,7 @@ export default function WorksheetTemplateSidebar({
                 <p className='text-[11px] text-rose-500'>{elementWorkspaceError}</p>
               ) : null}
               {!elementWorkspaceLoading && !elementWorkspaceError && filteredElementWorkspaceFiles.length === 0 ? (
-                <p className='text-[11px] text-gray-400'>필터 조건에 맞는 파일이 없습니다.</p>
+                <p className='text-[11px] text-gray-400 dark:text-gray-500'>필터 조건에 맞는 파일이 없습니다.</p>
               ) : null}
             </>
           )}
@@ -1784,36 +1793,36 @@ export default function WorksheetTemplateSidebar({
       )}
 
       {activeTab === 'history' && (
-        <div className='flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-2'>
+        <div className='flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-2 dark:border-gray-700 dark:bg-gray-800'>
           {Array.from({ length: 7 }).map((_, i) => (
             <div
               key={`history-placeholder-${i}`}
-              className='rounded-md border border-gray-200 bg-white px-2 py-1.5'
+              className='rounded-md border border-gray-200 bg-white px-2 py-1.5 dark:border-gray-700 dark:bg-gray-900'
             >
-              <div className='mb-1 h-2 w-2/3 rounded bg-gray-200' />
-              <div className='h-2 w-1/3 rounded bg-gray-100' />
+              <div className='mb-1 h-2 w-2/3 rounded bg-gray-200 dark:bg-gray-700' />
+              <div className='h-2 w-1/3 rounded bg-gray-100 dark:bg-gray-800' />
             </div>
           ))}
-          <p className='pt-1 text-center text-[11px] text-gray-400'>히스토리는 준비 중입니다</p>
+          <p className='pt-1 text-center text-[11px] text-gray-400 dark:text-gray-500'>히스토리는 준비 중입니다</p>
         </div>
       )}
 
       {activeTab === 'comment' && (
-        <div className='flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-2'>
+        <div className='flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-2 dark:border-gray-700 dark:bg-gray-800'>
           {Array.from({ length: 5 }).map((_, i) => (
             <div
               key={`comment-placeholder-${i}`}
-              className='rounded-md border border-gray-200 bg-white px-2 py-2'
+              className='rounded-md border border-gray-200 bg-white px-2 py-2 dark:border-gray-700 dark:bg-gray-900'
             >
               <div className='mb-1 flex items-center gap-2'>
-                <div className='h-4 w-4 rounded-full bg-gray-200' />
-                <div className='h-2 w-16 rounded bg-gray-200' />
+                <div className='h-4 w-4 rounded-full bg-gray-200 dark:bg-gray-700' />
+                <div className='h-2 w-16 rounded bg-gray-200 dark:bg-gray-700' />
               </div>
-              <div className='mb-1 h-2 w-full rounded bg-gray-100' />
-              <div className='h-2 w-3/4 rounded bg-gray-100' />
+              <div className='mb-1 h-2 w-full rounded bg-gray-100 dark:bg-gray-800' />
+              <div className='h-2 w-3/4 rounded bg-gray-100 dark:bg-gray-800' />
             </div>
           ))}
-          <p className='pt-1 text-center text-[11px] text-gray-400'>코멘트는 준비 중입니다</p>
+          <p className='pt-1 text-center text-[11px] text-gray-400 dark:text-gray-500'>코멘트는 준비 중입니다</p>
         </div>
       )}
     </>
@@ -1824,7 +1833,7 @@ export default function WorksheetTemplateSidebar({
       ? createPortal(
           <div
             ref={elementDetailPanelRef}
-            className='fixed z-[700] rounded-xl border border-gray-200 bg-white p-3 shadow-[0_20px_50px_rgba(15,23,42,0.22)] transition-[opacity,transform] duration-200 ease-out'
+            className='fixed z-[700] rounded-xl border border-gray-200 bg-white p-3 text-gray-800 shadow-[0_20px_50px_rgba(15,23,42,0.22)] transition-[opacity,transform] duration-200 ease-out dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:shadow-[0_20px_50px_rgba(0,0,0,0.55)]'
             style={{
               top: elementDetailPosition.top,
               left: elementDetailPosition.left,
@@ -1832,7 +1841,7 @@ export default function WorksheetTemplateSidebar({
             }}
           >
             <div className='mb-2 flex items-start gap-2'>
-              <div className='h-12 w-12 shrink-0 overflow-hidden rounded-md border border-gray-200 bg-gray-100'>
+              <div className='h-12 w-12 shrink-0 overflow-hidden rounded-md border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800'>
                 {selectedElementDetailFile.thumbnailUrl ? (
                   <img
                     src={selectedElementDetailFile.thumbnailUrl}
@@ -1841,15 +1850,15 @@ export default function WorksheetTemplateSidebar({
                   />
                 ) : (
                   <div className='flex h-full w-full items-center justify-center'>
-                    <Shapes size={18} className='text-gray-400' />
+                    <Shapes size={18} className='text-gray-400 dark:text-gray-500' />
                   </div>
                 )}
               </div>
               <div className='min-w-0'>
-                <p className='truncate text-xs font-semibold text-gray-800'>
+                <p className='truncate text-xs font-semibold text-gray-800 dark:text-gray-100'>
                   {selectedElementDetailFile.name}
                 </p>
-                <p className='mt-0.5 text-[11px] text-gray-500'>
+                <p className='mt-0.5 text-[11px] text-gray-500 dark:text-gray-400'>
                   {isSelectedDetailUploaded
                     ? '업로드 이미지'
                     : `${selectedElementDetailFile.category} · ${selectedElementDetailFile.type}`}
@@ -1858,12 +1867,12 @@ export default function WorksheetTemplateSidebar({
               </div>
             </div>
 
-            <div className='rounded-md border border-gray-100 bg-gray-50/70 px-2 py-1.5'>
+            <div className='rounded-md border border-gray-100 bg-gray-50/70 px-2 py-1.5 dark:border-gray-700 dark:bg-gray-800/70'>
               <div className='grid grid-cols-[68px_1fr] gap-x-2 gap-y-1'>
                 {elementDetailSummaryRows.map((row) => (
                   <React.Fragment key={`summary-${row.label}`}>
-                    <span className='text-[10px] font-semibold text-gray-500'>{row.label}</span>
-                    <span className='truncate text-[10px] text-gray-700'>{row.value}</span>
+                    <span className='text-[10px] font-semibold text-gray-500 dark:text-gray-400'>{row.label}</span>
+                    <span className='truncate text-[10px] text-gray-700 dark:text-gray-200'>{row.value}</span>
                   </React.Fragment>
                 ))}
               </div>
@@ -1872,7 +1881,7 @@ export default function WorksheetTemplateSidebar({
             <button
               type='button'
               onClick={() => setIsElementDetailExpanded((prev) => !prev)}
-              className='mt-2 flex w-full items-center justify-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-800'
+              className='mt-2 flex w-full items-center justify-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100'
             >
               {isElementDetailExpanded ? '상세 접기' : '더보기'}
               <ChevronDown
@@ -1886,33 +1895,33 @@ export default function WorksheetTemplateSidebar({
                 isElementDetailExpanded ? 'mt-2 max-h-[440px] opacity-100' : 'mt-0 max-h-0 opacity-0'
               }`}
             >
-              <div className='max-h-48 overflow-y-auto rounded-md border border-gray-100 bg-gray-50 px-2 py-1.5'>
+              <div className='max-h-48 overflow-y-auto rounded-md border border-gray-100 bg-gray-50 px-2 py-1.5 dark:border-gray-700 dark:bg-gray-800'>
                 {elementDetailServiceRows.length === 0 ? (
-                  <p className='text-[10px] text-gray-500'>표시할 속성 정보가 없습니다.</p>
+                  <p className='text-[10px] text-gray-500 dark:text-gray-400'>표시할 속성 정보가 없습니다.</p>
                 ) : (
                   <div className='grid grid-cols-[100px_1fr] gap-x-2 gap-y-1'>
                     {elementDetailServiceRows.map((row) => (
                       <React.Fragment key={`detail-${row.label}`}>
-                        <span className='text-[10px] font-semibold text-gray-500'>{row.label}</span>
-                        <span className='break-all text-[10px] text-gray-700'>{row.value}</span>
+                        <span className='text-[10px] font-semibold text-gray-500 dark:text-gray-400'>{row.label}</span>
+                        <span className='break-all text-[10px] text-gray-700 dark:text-gray-200'>{row.value}</span>
                       </React.Fragment>
                     ))}
                   </div>
                 )}
                 {isSelectedMaterialFieldDefsLoading ? (
-                  <p className='mt-1 text-[10px] text-gray-400'>속성 라벨 정보를 동기화하는 중...</p>
+                  <p className='mt-1 text-[10px] text-gray-400 dark:text-gray-500'>속성 라벨 정보를 동기화하는 중...</p>
                 ) : null}
               </div>
-              <div className='mt-2 rounded-md border border-gray-100 bg-white px-2 py-1.5'>
-                <p className='text-[10px] font-semibold text-gray-500'>소재 연결 상태</p>
+              <div className='mt-2 rounded-md border border-gray-100 bg-white px-2 py-1.5 dark:border-gray-700 dark:bg-gray-900'>
+                <p className='text-[10px] font-semibold text-gray-500 dark:text-gray-400'>소재 연결 상태</p>
                 {selectedElementMaterialsLoading ? (
-                  <p className='mt-1 text-[10px] text-gray-500'>소재 정보를 불러오는 중...</p>
+                  <p className='mt-1 text-[10px] text-gray-500 dark:text-gray-400'>소재 정보를 불러오는 중...</p>
                 ) : selectedElementMaterialsError ? (
                   <p className='mt-1 text-[10px] text-rose-500'>{selectedElementMaterialsError}</p>
                 ) : selectedElementMaterials.length === 0 ? (
-                  <p className='mt-1 text-[10px] text-gray-500'>연결된 소재 정보가 없습니다.</p>
+                  <p className='mt-1 text-[10px] text-gray-500 dark:text-gray-400'>연결된 소재 정보가 없습니다.</p>
                 ) : (
-                  <p className='mt-1 text-[10px] text-gray-700'>
+                  <p className='mt-1 text-[10px] text-gray-700 dark:text-gray-200'>
                     소재 {selectedElementMaterials.length}건 연결됨
                     {selectedPrimaryMaterial ? ` · 대표: ${stringifyDetailValue(selectedPrimaryMaterial.item_name)}` : ''}
                   </p>
@@ -1926,12 +1935,12 @@ export default function WorksheetTemplateSidebar({
 
   return (
     <>
-      <div className='flex h-full min-h-0 bg-white p-2'>
+      <div className='worksheet-template-sidebar flex h-full min-h-0 bg-white p-2 dark:bg-gray-900'>
         <div className='flex min-h-0 min-w-0 flex-1'>
         <nav className='flex w-14 shrink-0 flex-col gap-y-2'>
           <Link
             to='/faddit/drive'
-            className='flex aspect-square items-center justify-center rounded-md border border-transparent p-2 text-gray-600 transition-all duration-150 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1'
+            className='flex aspect-square items-center justify-center rounded-md border border-transparent p-2 text-gray-600 transition-all duration-150 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1 dark:text-gray-300 dark:hover:border-violet-400/50 dark:hover:bg-violet-500/10 dark:hover:text-violet-200'
             aria-label='패딧 홈으로 이동'
           >
             <img src={FadditLogoOnly} alt='Faddit' className='h-7 w-7' />
@@ -1945,7 +1954,7 @@ export default function WorksheetTemplateSidebar({
               className={`flex aspect-square flex-col items-center justify-center gap-0.5 rounded-md border p-2 text-[10px] transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1 ${
                 activeTab === key
                   ? 'border-violet-500 bg-faddit text-white shadow-[0_6px_14px_rgba(118,59,255,0.26)] hover:bg-violet-600'
-                  : 'border-transparent text-gray-600 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700'
+                  : 'border-transparent text-gray-600 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 dark:text-gray-300 dark:hover:border-violet-400/50 dark:hover:bg-violet-500/10 dark:hover:text-violet-200'
               }`}
             >
               <Icon size={20} strokeWidth={1.5} />
@@ -1953,11 +1962,12 @@ export default function WorksheetTemplateSidebar({
             </button>
           ))}
           {collapsible && (
-            <div className='mt-auto flex justify-center py-2'>
+            <div className='mt-auto flex flex-col items-center gap-1 py-2'>
+              <ThemeToggle variant='sidebar' />
               <button
                 type='button'
                 onClick={() => setContentOpen((open) => !open)}
-                className='rounded-md border border-transparent p-1 text-gray-500 transition-all duration-150 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1'
+                className='rounded-md border border-transparent p-1 text-gray-500 transition-all duration-150 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/80 focus-visible:ring-offset-1 dark:text-gray-400 dark:hover:border-violet-400/50 dark:hover:bg-violet-500/10 dark:hover:text-violet-200'
                 aria-label={contentOpen ? '도구모음 접기' : '도구모음 펼치기'}
               >
                 {contentOpen ? (
